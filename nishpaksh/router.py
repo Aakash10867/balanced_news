@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
@@ -99,16 +100,19 @@ class LLMResult:
 class GeminiBackend:
     """Thin wrapper over google-genai so tests can swap in a fake."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, timeout_s: int = 150):
         from google import genai
-        self.client = genai.Client(api_key=api_key)
+        from google.genai import types
+        # without a timeout a stuck call to an overloaded model can hang the whole run
+        self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=timeout_s * 1000))
 
     def list_models(self) -> list[str]:
         return [m.name.split("/")[-1] for m in self.client.models.list()]
 
     def generate(self, model: str, prompt: str, json_mode: bool, grounded: bool):
         from google.genai import types
-        cfg: dict = {"temperature": 0.0}
+        cfg: dict = {"temperature": 0.0,
+                     "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True)}
         if grounded:
             cfg["tools"] = [types.Tool(google_search=types.GoogleSearch())]
         elif json_mode:
@@ -141,6 +145,7 @@ class Router:
         self.store = store
         self.max_wait = max_wait
         self.day = quota_day()
+        self._lock = threading.Lock()
         self.tiers: dict[str, list[ModelSlot]] = {
             name: [ModelSlot(**m) for m in models] for name, models in tiers_cfg.items()
         }
@@ -241,32 +246,41 @@ class Router:
             slot.cooldown_until = time.time() + 30
         log.warning("model %s error: %s", slot.id, msg[:200])
 
+    def _reserve(self, tier: str, est: int) -> ModelSlot:
+        """Block until some model in the tier can take the call, then book it. Thread-safe."""
+        while True:
+            with self._lock:
+                pick = self._pick(tier, est)
+                if not pick:
+                    raise QuotaExhausted(tier)
+                wait, slot = pick
+                if wait > self.max_wait:
+                    raise QuotaExhausted(f"{tier} (next slot in {wait:.0f}s)")
+                if wait <= 0:
+                    slot.window.append((time.time(), est))
+                    slot.used_today += 1
+                    return slot
+            time.sleep(min(wait, 5.0))
+
     def call(self, tier: str, prompt: str, json_out: bool = True, grounded: bool = False,
              max_output_tokens: int = 2500) -> LLMResult:
         est = estimate_tokens(prompt) + max_output_tokens
         json_retry_used = False
         for _ in range(8):
-            pick = self._pick(tier, est)
-            if not pick:
-                raise QuotaExhausted(tier)
-            wait, slot = pick
-            if wait > self.max_wait:
-                raise QuotaExhausted(f"{tier} (next slot in {wait:.0f}s)")
-            if wait > 0:
-                time.sleep(wait)
-            now = time.time()
-            slot.window.append((now, est))
-            slot.used_today += 1
+            slot = self._reserve(tier, est)
+            booked = slot.window[-1] if slot.window else None
             try:
                 text, sources, tokens = self.backend.generate(
                     slot.id, prompt, json_mode=json_out and slot.json_mode, grounded=grounded)
             except Exception as e:  # noqa: BLE001
-                self._handle_error(slot, e)
-                self._record(slot, 0)
+                with self._lock:
+                    self._handle_error(slot, e)
+                    self._record(slot, 0)
                 continue
-            if tokens:
-                slot.window[-1] = (now, tokens)
-            self._record(slot, tokens or est)
+            with self._lock:
+                if tokens and booked in slot.window:
+                    slot.window[slot.window.index(booked)] = (booked[0], tokens)
+                self._record(slot, tokens or est)
             data = parse_json(text) if json_out else None
             if json_out and data is None:
                 if json_retry_used:
@@ -284,14 +298,10 @@ class Router:
             est = sum(estimate_tokens(t) for t in chunk)
             done = False
             for _ in range(4):
-                pick = self._pick("embed", est)
-                if not pick or pick[0] > self.max_wait:
+                try:
+                    slot = self._reserve("embed", est)
+                except QuotaExhausted:
                     return None
-                wait, slot = pick
-                if wait > 0:
-                    time.sleep(wait)
-                slot.window.append((time.time(), est))
-                slot.used_today += 1
                 try:
                     vecs = self.backend.embed(slot.id, chunk)
                 except Exception as e:  # noqa: BLE001

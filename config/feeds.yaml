@@ -19,7 +19,7 @@ feeds:
   - {name: India Today, lang: en, url: "https://www.indiatoday.in/rss/1206578"}
   - {name: News18, lang: en, url: "https://www.news18.com/commonfeeds/v1/eng/rss/india.xml"}
   - {name: Firstpost, lang: en, url: "https://www.firstpost.com/commonfeeds/v1/mfp/rss/india.xml"}
-  - {name: Republic World, lang: en, url: "https://www.republicworld.com/rss/india-news.xml"}
+  - {name: Republic World, lang: en, url: "https://www.republicworld.com/rss/india.xml"}
   - {name: Zee News, lang: en, url: "https://zeenews.india.com/rss/india-national-news.xml"}
   - {name: The Print, lang: en, url: "https://theprint.in/feed/"}
   - {name: Scroll, lang: en, url: "https://scroll.in/feed"}
@@ -33,10 +33,9 @@ feeds:
   - {name: BBC News India, lang: en, url: "https://feeds.bbci.co.uk/news/world/asia/india/rss.xml"}
 
   # ---------- Hindi ----------
-  - {name: Dainik Jagran, lang: hi, url: "https://www.jagran.com/rss/news/national.xml"}
   - {name: Amar Ujala, lang: hi, url: "https://www.amarujala.com/rss/india-news.xml"}
   - {name: Live Hindustan, lang: hi, url: "https://api.livehindustan.com/feeds/rss/national/rssfeed.xml"}
-  - {name: Navbharat Times, lang: hi, url: "https://navbharattimes.indiatimes.com/rssfeedsdefault.cms"}
+  - {name: News18 Hindi, lang: hi, url: "https://hindi.news18.com/rss/khabar/nation/nation.xml"}
   - {name: Aaj Tak, lang: hi, url: "https://www.aajtak.in/rssfeeds/?id=home"}
   - {name: NDTV India, lang: hi, url: "https://feeds.feedburner.com/ndtvkhabar-latest"}
   - {name: ABP Live Hindi, lang: hi, url: "https://www.abplive.com/news/india/feed"}

@@ -206,3 +206,41 @@ def test_quota_exhaustion_degrades_safely(store):
     run(store=store, backend=NoJudge(), time_budget_min=30, ingest_news=False)
     verdicts = {r["verdict"] for r in store.rows(select(canonical))}
     assert "false" not in verdicts and "confirmed" not in verdicts
+
+
+def test_db_url_pins_psycopg2():
+    from nishpaksh.config import normalize_db_url
+    assert normalize_db_url("postgresql://u:p@h:5432/d") == "postgresql+psycopg2://u:p@h:5432/d"
+    assert normalize_db_url("postgres://u:p@h/d") == "postgresql+psycopg2://u:p@h/d"
+    assert normalize_db_url("postgresql+psycopg2://u:p@h/d") == "postgresql+psycopg2://u:p@h/d"
+    assert normalize_db_url("sqlite:///x.db") == "sqlite:///x.db"
+
+
+def test_router_respects_limits_under_parallel_calls():
+    import threading
+    import time as _t
+
+    class Slow:
+        def __init__(self):
+            self.starts = []
+            self.lock = threading.Lock()
+        def list_models(self): return ["m"]
+        def generate(self, model, prompt, json_mode, grounded):
+            with self.lock:
+                self.starts.append(_t.time())
+            _t.sleep(0.05)
+            return '{"ok": 1}', [], 5
+    b = Slow()
+    r = Router({"t": [dict(id="m", rpm=4, tpm=10**6, rpd=100)]}, b, max_wait=0.5)
+    results = []
+
+    def go():
+        try:
+            results.append(r.call("t", "x").data)
+        except Exception as e:  # noqa: BLE001
+            results.append(type(e).__name__)
+    th = [threading.Thread(target=go) for _ in range(8)]
+    [t.start() for t in th]
+    [t.join() for t in th]
+    assert len(b.starts) == 4                 # never more than rpm calls in the minute
+    assert results.count({"ok": 1}) == 4 and results.count("QuotaExhausted") == 4

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import threading
 import time
 from zoneinfo import ZoneInfo
 
@@ -167,35 +168,64 @@ def store_extraction(store: Store, article_id: int, story_id: int | None, ex: di
             c.execute(insert(claims), rows)
 
 
-def extract_pending(store: Store, router: Router, deadline: float) -> int:
+def _extract_one(store: Store, router: Router, a: dict) -> str:
+    prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
+                                   title=a["title"] or "", text=(a["text"] or "")[: SETTINGS.max_article_chars])
+    try:
+        res = router.call("bulk", prompt, json_out=True, max_output_tokens=3000)
+        ex = normalize_extraction(res.data)
+        if ex is None:
+            raise ValueError("empty extraction")
+    except QuotaExhausted:
+        return "quota"
+    except Exception as e:  # noqa: BLE001
+        log.warning("extract failed for article %s: %s", a["id"], str(e)[:200])
+        store.exec(update(articles).where(articles.c.id == a["id"])
+                   .values(extract_failures=(a["extract_failures"] or 0) + 1))
+        return "failed"
+    store_extraction(store, a["id"], None, ex)
+    store.exec(update(articles).where(articles.c.id == a["id"]).values(
+        extraction={"model": res.model}, extracted_at=utcnow(), signature=ex["signature"]))
+    return "done"
+
+
+def extract_pending(store: Store, router: Router, deadline: float, workers: int = 6) -> int:
+    """Read pending articles, several at a time: free-tier Gemma can take a minute or two per
+    article, so calls run in parallel while the router keeps every model inside its limits."""
     pending = store.rows(
         select(articles.c.id, articles.c.outlet, articles.c.title, articles.c.text, articles.c.published_at,
                articles.c.extract_failures)
         .where(articles.c.extracted_at.is_(None), articles.c.text.is_not(None), articles.c.extract_failures < 3)
         .order_by(articles.c.published_at.desc())
     )
-    done = 0
-    for a in pending:
-        if time.time() > deadline:
-            log.info("extract: time budget reached with %d pending", len(pending) - done)
-            break
-        prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
-                                       title=a["title"] or "", text=(a["text"] or "")[: SETTINGS.max_article_chars])
-        try:
-            res = router.call("bulk", prompt, json_out=True, max_output_tokens=3000)
-            ex = normalize_extraction(res.data)
-            if ex is None:
-                raise ValueError("empty extraction")
-        except QuotaExhausted as e:
-            log.info("extract: quota exhausted (%s); %d left for next run", e, len(pending) - done)
-            break
-        except Exception as e:  # noqa: BLE001
-            log.warning("extract failed for article %s: %s", a["id"], e)
-            store.exec(update(articles).where(articles.c.id == a["id"])
-                       .values(extract_failures=(a["extract_failures"] or 0) + 1))
-            continue
-        store_extraction(store, a["id"], None, ex)
-        store.exec(update(articles).where(articles.c.id == a["id"]).values(
-            extraction={"model": res.model}, extracted_at=utcnow(), signature=ex["signature"]))
-        done += 1
-    return done
+    if not pending:
+        return 0
+    stop = threading.Event()
+    counts = {"done": 0, "failed": 0, "quota": 0}
+    lock = threading.Lock()
+    queue = iter(pending)
+
+    def worker():
+        while not stop.is_set():
+            if time.time() > deadline:
+                stop.set()
+                return
+            with lock:
+                a = next(queue, None)
+            if a is None:
+                return
+            outcome = _extract_one(store, router, a)
+            with lock:
+                counts[outcome] += 1
+            if outcome == "quota":
+                stop.set()
+
+    threads = [threading.Thread(target=worker, daemon=True) for _ in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    left = len(pending) - counts["done"] - counts["failed"]
+    log.info("extract: %d done, %d failed, %d left for next run%s", counts["done"], counts["failed"], left,
+             " (quota exhausted)" if counts["quota"] else "")
+    return counts["done"]

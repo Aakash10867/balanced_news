@@ -13,6 +13,7 @@ import streamlit as st
 from sqlalchemy import select
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from nishpaksh.config import normalize_db_url  # noqa: E402
 from nishpaksh.db import Store, published, utcnow  # noqa: E402
 
 st.set_page_config(page_title="Nishpaksh · निष्पक्ष", page_icon="⚖️", layout="centered")
@@ -92,7 +93,7 @@ def get_store() -> Store:
     except Exception:  # no secrets file locally
         pass
     if url:
-        url = url.replace("postgres://", "postgresql://", 1)
+        url = normalize_db_url(url)
     else:
         url = f"sqlite:///{Path(__file__).resolve().parent.parent / 'data' / 'nishpaksh.db'}"
     s = Store(url)

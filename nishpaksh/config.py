@@ -16,11 +16,19 @@ def load_yaml(name: str) -> dict:
     return yaml.safe_load((CONFIG_DIR / name).read_text(encoding="utf-8"))
 
 
+def normalize_db_url(url: str) -> str:
+    """Pin the psycopg2 driver: SQLAlchemy 2.1 switched its default Postgres driver to psycopg 3."""
+    url = url.strip()
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg2://" + url[len(prefix):]
+    return url
+
+
 def database_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if url:
-        # Supabase hands out postgres:// ; SQLAlchemy wants postgresql://
-        return url.replace("postgres://", "postgresql://", 1)
+        return normalize_db_url(url)
     DATA_DIR.mkdir(exist_ok=True)
     return f"sqlite:///{DATA_DIR / 'nishpaksh.db'}"
 

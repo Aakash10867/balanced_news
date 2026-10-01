@@ -18,7 +18,10 @@ from .db import Store, articles, feeds, insert, select, update, utcnow
 from .wire import minhash
 
 log = logging.getLogger(__name__)
-UA = "Mozilla/5.0 (compatible; NishpakshBot/0.1; +https://github.com/nishpaksh) balanced-news research"
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+      "Chrome/128.0 Safari/537.36")
+HEADERS = {"User-Agent": UA, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+           "Accept-Language": "en-IN,en;q=0.9,hi;q=0.8"}
 TRACKING = re.compile(r"^(utm_|fbclid|gclid|mc_|ref$|ref_|cmp$|ito$)")
 
 AGENCY_PATTERNS = [
@@ -67,17 +70,22 @@ def entry_time(e) -> dt.datetime | None:
 
 
 def sync_feeds(store: Store) -> None:
+    """Make the feeds table match config/feeds.yaml: add new feeds, re-enable edited ones,
+    and disable feeds that were removed from the file."""
     cfg = load_yaml("feeds.yaml")["feeds"]
+    wanted = {f["url"]: f for f in cfg}
     existing = {r["url"]: r for r in store.rows(select(feeds))}
-    for f in cfg:
-        if f["url"] in existing:
-            continue
-        store.exec(insert(feeds).values(name=f["name"], url=f["url"], lang=f.get("lang", "en"),
-                                        role=f.get("role", "news"), fail_count=0, disabled=False))
+    for url, f in wanted.items():
+        if url not in existing:
+            store.exec(insert(feeds).values(name=f["name"], url=url, lang=f.get("lang", "en"),
+                                            role=f.get("role", "news"), fail_count=0, disabled=False))
+    for url, r in existing.items():
+        if url not in wanted and not r["disabled"]:
+            store.exec(update(feeds).where(feeds.c.id == r["id"]).values(disabled=True))
 
 
 def fetch_feed(feed: dict) -> list[dict]:
-    r = requests.get(feed["url"], headers={"User-Agent": UA}, timeout=20)
+    r = requests.get(feed["url"], headers=HEADERS, timeout=20)
     r.raise_for_status()
     parsed = feedparser.parse(r.content)
     if parsed.bozo and not parsed.entries:
@@ -99,7 +107,7 @@ def fetch_feed(feed: dict) -> list[dict]:
 
 def fetch_article(url: str) -> dict | None:
     try:
-        r = requests.get(url, headers={"User-Agent": UA}, timeout=25)
+        r = requests.get(url, headers=HEADERS, timeout=25)
         if r.status_code != 200 or not r.text:
             return None
         doc = trafilatura.bare_extraction(r.text, url=url, with_metadata=True, include_comments=False)
