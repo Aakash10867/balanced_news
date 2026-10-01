@@ -1,0 +1,171 @@
+"""Stage 1: read RSS feeds and article pages. Plain HTTP, no AI, no quota."""
+from __future__ import annotations
+
+import calendar
+import datetime as dt
+import html
+import logging
+import re
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+import feedparser
+import requests
+import trafilatura
+
+from .config import SETTINGS, load_yaml
+from .db import Store, articles, feeds, insert, select, update, utcnow
+from .wire import minhash
+
+log = logging.getLogger(__name__)
+UA = "Mozilla/5.0 (compatible; NishpakshBot/0.1; +https://github.com/nishpaksh) balanced-news research"
+TRACKING = re.compile(r"^(utm_|fbclid|gclid|mc_|ref$|ref_|cmp$|ito$)")
+
+AGENCY_PATTERNS = [
+    ("PTI", r"\(\s*PTI\s*\)|\bPTI\b\s*$|^PTI\b"),
+    ("ANI", r"\(\s*ANI\s*\)|^ANI\b"),
+    ("IANS", r"\(\s*IANS\s*\)|^IANS\b"),
+    ("UNI", r"\(\s*UNI\s*\)"),
+    ("Reuters", r"\(\s*Reuters\s*\)"),
+    ("AFP", r"\(\s*AFP\s*\)"),
+    ("Bhasha", r"\(\s*भाषा\s*\)|^भाषा\b"),
+    ("ANI", r"\(\s*एएनआई\s*\)"),
+    ("IANS", r"\(\s*आईएएनएस\s*\)"),
+    ("Agency", r"\(\s*एजेंसी\s*\)"),
+]
+
+
+def canonical_url(u: str) -> str:
+    p = urlsplit(u.strip())
+    q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if not TRACKING.match(k.lower())]
+    return urlunsplit((p.scheme.lower(), p.netloc.lower(), p.path, urlencode(q), ""))
+
+
+def detect_agency(author: str | None, text: str | None) -> str | None:
+    probes = [(author or "").strip()]
+    if text:
+        probes += [text[:300], text[-200:]]
+    for name, pat in AGENCY_PATTERNS:
+        for p in probes:
+            if p and re.search(pat, p, flags=re.MULTILINE):
+                return name
+    if author and re.fullmatch(r"(?i)\s*(pti|ani|ians|uni|reuters|afp|agencies|agency)\s*", author):
+        return author.strip().upper()
+    return None
+
+
+def strip_html(s: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", " ", s or "")).strip()
+
+
+def entry_time(e) -> dt.datetime | None:
+    for key in ("published_parsed", "updated_parsed"):
+        t = e.get(key)
+        if t:
+            return dt.datetime.fromtimestamp(calendar.timegm(t), dt.timezone.utc).replace(tzinfo=None)
+    return None
+
+
+def sync_feeds(store: Store) -> None:
+    cfg = load_yaml("feeds.yaml")["feeds"]
+    existing = {r["url"]: r for r in store.rows(select(feeds))}
+    for f in cfg:
+        if f["url"] in existing:
+            continue
+        store.exec(insert(feeds).values(name=f["name"], url=f["url"], lang=f.get("lang", "en"),
+                                        role=f.get("role", "news"), fail_count=0, disabled=False))
+
+
+def fetch_feed(feed: dict) -> list[dict]:
+    r = requests.get(feed["url"], headers={"User-Agent": UA}, timeout=20)
+    r.raise_for_status()
+    parsed = feedparser.parse(r.content)
+    if parsed.bozo and not parsed.entries:
+        raise ValueError(f"unparseable feed: {parsed.bozo_exception}")
+    out = []
+    for e in parsed.entries:
+        link = e.get("link")
+        if not link:
+            continue
+        out.append({
+            "url": canonical_url(link),
+            "title": strip_html(e.get("title", "")),
+            "summary": strip_html(e.get("summary", "")),
+            "author": e.get("author"),
+            "published_at": entry_time(e),
+        })
+    return out
+
+
+def fetch_article(url: str) -> dict | None:
+    try:
+        r = requests.get(url, headers={"User-Agent": UA}, timeout=25)
+        if r.status_code != 200 or not r.text:
+            return None
+        doc = trafilatura.bare_extraction(r.text, url=url, with_metadata=True, include_comments=False)
+    except Exception as e:  # noqa: BLE001
+        log.debug("fetch failed %s: %s", url, e)
+        return None
+    if doc is None:
+        return None
+    d = doc.as_dict() if hasattr(doc, "as_dict") else dict(doc)
+    return {"text": d.get("text") or "", "author": d.get("author"), "title": d.get("title")}
+
+
+def ingest(store: Store) -> int:
+    now = utcnow()
+    oldest = now - dt.timedelta(hours=SETTINGS.max_article_age_hours)
+    candidates: list[tuple[dict, dict]] = []
+    seen: set[str] = set()
+
+    for feed in store.rows(select(feeds).where(feeds.c.disabled.is_(False))):
+        try:
+            entries = fetch_feed(feed)
+            store.exec(update(feeds).where(feeds.c.id == feed["id"]).values(fail_count=0, last_ok=now))
+        except Exception as e:  # noqa: BLE001
+            fails = (feed["fail_count"] or 0) + 1
+            disabled = fails >= SETTINGS.feed_disable_after_failures
+            store.exec(update(feeds).where(feeds.c.id == feed["id"]).values(fail_count=fails, disabled=disabled))
+            log.warning("feed %s failed (%d)%s: %s", feed["name"], fails, " -> DISABLED" if disabled else "", e)
+            continue
+        for en in entries:
+            pub = en["published_at"] or now
+            if pub < oldest or en["url"] in seen:
+                continue
+            seen.add(en["url"])
+            candidates.append((feed, en))
+
+    if not candidates:
+        return 0
+    known = set()
+    urls = [en["url"] for _, en in candidates]
+    for i in range(0, len(urls), 500):
+        known |= {r["url"] for r in store.rows(select(articles.c.url).where(articles.c.url.in_(urls[i:i + 500])))}
+    todo = [(f, en) for f, en in candidates if en["url"] not in known]
+    todo.sort(key=lambda fe: fe[1]["published_at"] or now, reverse=True)
+    todo = todo[: SETTINGS.max_new_articles_per_run]
+    log.info("ingest: %d new links across %d feeds", len(todo), len({f['id'] for f, _ in todo}))
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        pages = list(pool.map(lambda fe: fetch_article(fe[1]["url"]), todo))
+
+    added = 0
+    for (feed, en), page in zip(todo, pages):
+        text, source = (page or {}).get("text") or "", "full"
+        if len(text) < SETTINGS.min_full_text_chars:
+            text, source = (en["summary"] or text), "summary"
+        if len(text) < 80:
+            continue
+        author = (page or {}).get("author") or en["author"]
+        values = dict(
+            url=en["url"], feed_id=feed["id"], outlet=feed["name"], lang=feed["lang"], role=feed["role"],
+            title=en["title"] or (page or {}).get("title") or "", author=(author or None) and author[:300],
+            published_at=en["published_at"] or now, fetched_at=now, text=text, text_source=source,
+            agency=detect_agency(author, text), minhash=minhash(text), extract_failures=0,
+        )
+        try:
+            store.exec(insert(articles).values(**values))
+            added += 1
+        except Exception as e:  # unique race etc.
+            log.debug("insert skipped %s: %s", en["url"], e)
+    return added

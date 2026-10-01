@@ -1,0 +1,39 @@
+# Quota-aware model pools.
+# Each tier is a list of interchangeable models. The router uses whichever model
+# in the tier has quota left and falls back to the next one when a model runs out.
+# Limits are the free-tier numbers from the AI Studio dashboard (Oct 2026).
+# Model IDs are resolved against the live model list at the start of every run,
+# so close-enough names (e.g. "gemma-4-26b" -> "gemma-4-26b-a4b-it") still work.
+# Run `python -m nishpaksh.tools.list_models` to see the exact IDs on your key.
+
+tiers:
+  # Reads every article: events, claims, times, loaded words. Needs volume.
+  bulk:
+    - {id: gemma-4-31b-it, rpm: 30, tpm: 16000, rpd: 14400, json_mode: false}
+    - {id: gemma-4-26b-it, rpm: 30, tpm: 16000, rpd: 14400, json_mode: false}
+
+  # Claim matching, headlines, Hindi/English translation.
+  light:
+    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
+    - {id: gemini-3.1-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
+
+  # Verdicts on contested claims. Gemma (bulk tier) gives the independent second opinion.
+  # gemini-2.5-flash is deliberately NOT here: its 20/day are reserved for search grounding.
+  judge:
+    - {id: gemini-3.8-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
+    - {id: gemini-3.7-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
+    - {id: gemini-3.6-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
+    - {id: gemini-3.5-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
+    - {id: gemini-3-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
+    - {id: gemini-robotics-er-2-preview, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
+
+  # Google Search grounding for primary evidence (FIRs, court orders, official data).
+  # Only the 2.5 family has grounding quota on the free tier.
+  grounded:
+    - {id: gemini-2.5-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: false, grounding: true}
+    - {id: gemini-2.5-flash-lite, rpm: 10, tpm: 250000, rpd: 20, json_mode: false, grounding: true}
+
+  # Story grouping (multilingual-safe because it runs on the English signatures).
+  embed:
+    - {id: gemini-embedding-2, rpm: 100, tpm: 30000, rpd: 1000}
+    - {id: gemini-embedding-001, rpm: 100, tpm: 30000, rpd: 1000}

@@ -1,0 +1,52 @@
+# Outlets to read. No ideology labels here, on purpose: perspectives are learned
+# from which articles agree with which, not assigned by hand.
+# The list deliberately spans the spectrum so that perspectives can emerge.
+#
+# Feed URLs change. Run `python -m nishpaksh.tools.check_feeds` after adding one.
+# A feed that fails 24 runs in a row (one day) is disabled automatically and logged.
+#
+# role: news     -> ordinary reporting
+# role: official -> government/court sources; ingested like news, but their own
+#                   statements count as "official_statement" evidence, never as truth.
+
+feeds:
+  # ---------- English ----------
+  - {name: The Hindu, lang: en, url: "https://www.thehindu.com/news/national/feeder/default.rss"}
+  - {name: The Indian Express, lang: en, url: "https://indianexpress.com/section/india/feed/"}
+  - {name: NDTV, lang: en, url: "https://feeds.feedburner.com/ndtvnews-india-news"}
+  - {name: Times of India, lang: en, url: "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms"}
+  - {name: Hindustan Times, lang: en, url: "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml"}
+  - {name: India Today, lang: en, url: "https://www.indiatoday.in/rss/1206578"}
+  - {name: News18, lang: en, url: "https://www.news18.com/commonfeeds/v1/eng/rss/india.xml"}
+  - {name: Firstpost, lang: en, url: "https://www.firstpost.com/commonfeeds/v1/mfp/rss/india.xml"}
+  - {name: Republic World, lang: en, url: "https://www.republicworld.com/rss/india-news.xml"}
+  - {name: Zee News, lang: en, url: "https://zeenews.india.com/rss/india-national-news.xml"}
+  - {name: The Print, lang: en, url: "https://theprint.in/feed/"}
+  - {name: Scroll, lang: en, url: "https://scroll.in/feed"}
+  - {name: The Wire, lang: en, url: "https://thewire.in/rss"}
+  - {name: The Quint, lang: en, url: "https://www.thequint.com/stories.rss"}
+  - {name: National Herald, lang: en, url: "https://www.nationalheraldindia.com/stories.rss"}
+  - {name: Newslaundry, lang: en, url: "https://www.newslaundry.com/stories.rss"}
+  - {name: OpIndia, lang: en, url: "https://www.opindia.com/feed/"}
+  - {name: Swarajya, lang: en, url: "https://swarajyamag.com/feed"}
+  - {name: Organiser, lang: en, url: "https://organiser.org/feed/"}
+  - {name: BBC News India, lang: en, url: "https://feeds.bbci.co.uk/news/world/asia/india/rss.xml"}
+
+  # ---------- Hindi ----------
+  - {name: Dainik Jagran, lang: hi, url: "https://www.jagran.com/rss/news/national.xml"}
+  - {name: Amar Ujala, lang: hi, url: "https://www.amarujala.com/rss/india-news.xml"}
+  - {name: Live Hindustan, lang: hi, url: "https://api.livehindustan.com/feeds/rss/national/rssfeed.xml"}
+  - {name: Navbharat Times, lang: hi, url: "https://navbharattimes.indiatimes.com/rssfeedsdefault.cms"}
+  - {name: Aaj Tak, lang: hi, url: "https://www.aajtak.in/rssfeeds/?id=home"}
+  - {name: NDTV India, lang: hi, url: "https://feeds.feedburner.com/ndtvkhabar-latest"}
+  - {name: ABP Live Hindi, lang: hi, url: "https://www.abplive.com/news/india/feed"}
+  - {name: Zee News Hindi, lang: hi, url: "https://zeenews.india.com/hindi/india.xml"}
+  - {name: BBC Hindi, lang: hi, url: "https://feeds.bbci.co.uk/hindi/rss.xml"}
+  - {name: The Wire Hindi, lang: hi, url: "https://thewirehindi.com/feed/"}
+  - {name: Satya Hindi, lang: hi, url: "https://www.satyahindi.com/feed"}
+  - {name: OpIndia Hindi, lang: hi, url: "https://hindi.opindia.com/feed/"}
+  - {name: Panchjanya, lang: hi, url: "https://panchjanya.com/feed/"}
+
+  # ---------- Official ----------
+  - {name: PIB, lang: en, role: official, url: "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3"}
+  - {name: PIB Hindi, lang: hi, role: official, url: "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=2&Regid=3"}

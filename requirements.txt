@@ -1,0 +1,13 @@
+google-genai>=1.0
+feedparser>=6.0
+trafilatura>=2.0
+requests>=2.31
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pyyaml>=6.0
+numpy>=1.26
+scikit-learn>=1.4
+scipy>=1.11
+networkx>=3.2
+streamlit>=1.40
+pytest>=8.0
