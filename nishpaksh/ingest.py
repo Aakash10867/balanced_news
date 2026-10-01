@@ -22,6 +22,20 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
       "Chrome/128.0 Safari/537.36")
 HEADERS = {"User-Agent": UA, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
            "Accept-Language": "en-IN,en;q=0.9,hi;q=0.8"}
+# Some sites block browser-looking requests from cloud servers but allow declared bots,
+# others the reverse. Try one, then the other.
+BOT_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; NishpakshBot/0.2; +https://github.com/Aakash10867/balanced_news)",
+               "Accept": "application/rss+xml,application/xml;q=0.9,*/*;q=0.8"}
+
+
+def _get(url: str, timeout: int) -> requests.Response:
+    r = requests.get(url, headers=HEADERS, timeout=timeout)
+    if r.status_code in (401, 403, 429) or (r.ok and r.text.lstrip()[:15].lower().startswith(("<!doctype html", "<html"))
+                                            and url.endswith((".xml", "/feed/", "/feed", "/rss", ".rss", ".cms"))):
+        r2 = requests.get(url, headers=BOT_HEADERS, timeout=timeout)
+        if r2.ok:
+            return r2
+    return r
 TRACKING = re.compile(r"^(utm_|fbclid|gclid|mc_|ref$|ref_|cmp$|ito$)")
 
 AGENCY_PATTERNS = [
@@ -85,7 +99,7 @@ def sync_feeds(store: Store) -> None:
 
 
 def fetch_feed(feed: dict) -> list[dict]:
-    r = requests.get(feed["url"], headers=HEADERS, timeout=20)
+    r = _get(feed["url"], timeout=20)
     r.raise_for_status()
     parsed = feedparser.parse(r.content)
     if parsed.bozo and not parsed.entries:
@@ -107,7 +121,7 @@ def fetch_feed(feed: dict) -> list[dict]:
 
 def fetch_article(url: str) -> dict | None:
     try:
-        r = requests.get(url, headers=HEADERS, timeout=25)
+        r = _get(url, timeout=25)
         if r.status_code != 200 or not r.text:
             return None
         doc = trafilatura.bare_extraction(r.text, url=url, with_metadata=True, include_comments=False)
