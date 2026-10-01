@@ -2,12 +2,12 @@ name: hourly-pipeline
 
 on:
   schedule:
-    - cron: "7 * * * *"      # every hour at :07 UTC (avoids the top-of-hour rush)
-  workflow_dispatch: {}       # "Run workflow" button for manual runs
+    - cron: "7 * * * *"
+  workflow_dispatch: {}
 
 concurrency:
   group: nishpaksh-pipeline
-  cancel-in-progress: false   # never run two pipelines on the same database at once
+  cancel-in-progress: false
 
 jobs:
   run:
@@ -25,18 +25,3 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m nishpaksh.run --time-budget 45
-
-  # GitHub pauses scheduled workflows in repos with no commits for 60 days.
-  # This touches a file once a month so the hourly schedule never silently stops.
-  keepalive:
-    if: github.event.schedule == '7 * * * *' && github.run_number % 720 == 0
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          date -u > .keepalive
-          git config user.name "nishpaksh-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add .keepalive && git commit -m "keepalive" && git push
