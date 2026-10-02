@@ -98,10 +98,12 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             perspectives.analyze_story(store, sid)
 
     qualifying = {r["id"] for r in store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))}
-    to_publish = [sid for sid in analysed if sid in qualifying]
+    with store.engine.connect() as c:
+        live = {r[0] for r in c.execute(select(_published.c.story_id))}
+    to_publish = [sid for sid in analysed if sid in qualifying or sid in live]  # live: may need taking down
     # stories that cannot be published yet spend no verdict or writing calls; they are
     # re-examined when another of their articles is read
-    idle = [sid for sid in analysed if sid not in qualifying]
+    idle = [sid for sid in analysed if sid not in qualifying and sid not in live]
     for i in range(0, len(idle), 500):
         store.exec(update(stories).where(stories.c.id.in_(idle[i:i + 500])).values(dirty=False))
 
@@ -110,6 +112,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     stats["verify_budget"] = dict(budget)
     checked = 0
     for sid in to_publish:
+        if sid not in qualifying:
+            continue
         verify.base_verdicts(store, sid)
         if time.time() < deadline - 6 * 60 and (budget.get("judge", 0) > 0):
             checked += verify.verify_story(store, router, sid, budget)

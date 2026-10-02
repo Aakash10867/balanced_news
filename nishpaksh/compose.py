@@ -17,7 +17,7 @@ import json
 import logging
 from collections import Counter, defaultdict
 
-from .db import Store, articles, published, select, stories, update, utcnow, insert
+from .db import Store, articles, delete, published, select, stories, update, utcnow, insert
 from .router import QuotaExhausted, Router
 from .timeline import build_timeline
 from .verify import _story_context, relation_text, support_summary
@@ -242,6 +242,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     payload = build_payload(store, router, story_id)
     store.exec(update(stories).where(stories.c.id == story_id).values(dirty=False))
     if payload is None:
+        # no longer meets the bar (e.g. after a rule change): take the page down, not leave it stale
+        store.exec(delete(published).where(published.c.story_id == story_id))
         return False
     prev = store.one(select(published).where(published.c.story_id == story_id))
     from .narrative import input_hash, sections_from_payload, write_narrative
