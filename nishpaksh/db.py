@@ -192,16 +192,6 @@ class Store:
             if new:
                 c.execute(insert(translations), new)
 
-    # retention -----------------------------------------------------------------
-    def purge_old_text(self, days: int) -> int:
-        cutoff = utcnow() - dt.timedelta(days=days)
-        res = self.exec(
-            update(articles)
-            .where(articles.c.published_at < cutoff, articles.c.text.is_not(None))
-            .values(text=None, minhash=None, embedding=None)
-        )
-        return res.rowcount or 0
-
 
 __all__ = [
     "Store", "utcnow", "feeds", "articles", "stories", "claims", "canonical", "story_pairs",

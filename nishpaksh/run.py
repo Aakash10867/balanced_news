@@ -59,9 +59,9 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             checked += verify.verify_story(store, router, sid, budget)
         if compose.publish_story(store, router, sid):
             published += 1
+    from . import retention
     stats.update(stories_processed=len(dirty), claims_checked=checked, published=published,
-                 text_purged=store.purge_old_text(SETTINGS.text_retention_days),
-                 seconds=round(time.time() - t0))
+                 storage=retention.enforce(store), seconds=round(time.time() - t0))
     stats["quota_left"] = {t: router.remaining_today(t) for t in router.tiers}
     log.info("run complete: %s", stats)
     return stats

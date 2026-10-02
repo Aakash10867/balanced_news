@@ -39,6 +39,10 @@ def group_stories(store: Store, router: Router | None) -> int:
     if not any(a["story_id"] is None for a in arts):
         return 0
     texts = [_story_text(a) for a in arts]
+    from .router import EMBED_DIMS
+    for a in arts:
+        if a["embedding"] and len(a["embedding"]) != EMBED_DIMS:
+            a["embedding"] = None  # stored before the size change: re-embed
 
     # embeddings where possible
     missing = [i for i, a in enumerate(arts) if not a["embedding"]]

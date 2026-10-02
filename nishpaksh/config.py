@@ -46,7 +46,12 @@ class Settings:
     max_article_chars: int = 7000
     min_full_text_chars: int = 400
     feed_disable_after_failures: int = 24
-    text_retention_days: int = 30
+    # storage (Supabase free tier is 500 MB)
+    vectors_retention_hours: int = 96        # embeddings + MinHash: only needed inside the 72 h windows
+    unread_retention_days: int = 7           # articles never sent to a model (single-source stories)
+    text_retention_days: int = 14            # full text of read articles; extracted claims are kept
+    story_retention_days: int = 90           # whole stories: claims, verdicts, published pages
+    storage_soft_limit_mb: int = 350         # above this, retention halves until back under
 
     # wire-copy detection (MinHash Jaccard on 5-word shingles)
     wire_jaccard: float = 0.45

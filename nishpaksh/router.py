@@ -18,6 +18,7 @@ from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
 
 log = logging.getLogger(__name__)
+EMBED_DIMS = 256
 PACIFIC = ZoneInfo("America/Los_Angeles")  # Gemini daily quotas reset at midnight Pacific
 
 
@@ -131,8 +132,12 @@ class GeminiBackend:
         return (r.text or ""), sources, tokens
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
-        r = self.client.models.embed_content(model=model, contents=texts)
-        return [list(e.values) for e in r.embeddings]
+        from google.genai import types
+        # 256 dimensions instead of the default 3072: same-event matching barely changes and each
+        # stored vector shrinks from ~60 KB to ~2.5 KB
+        r = self.client.models.embed_content(
+            model=model, contents=texts, config=types.EmbedContentConfig(output_dimensionality=EMBED_DIMS))
+        return [[round(float(x), 5) for x in e.values] for e in r.embeddings]
 
 
 def _norm(model_id: str) -> str:

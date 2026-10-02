@@ -245,3 +245,25 @@ def test_router_respects_limits_under_parallel_calls():
     [t.join() for t in th]
     assert len(b.starts) == 4                 # never more than rpm calls in the minute
     assert results.count({"ok": 1}) == 4 and results.count("QuotaExhausted") == 4
+
+
+def test_retention_keeps_recent_and_drops_old(store):
+    from nishpaksh.retention import enforce
+    old = NOW - dt.timedelta(days=10)
+    mid = NOW - dt.timedelta(days=5)
+    rows = [
+        dict(url="u/old-unread", published_at=old, extracted_at=None, text="t", minhash=[1], embedding=[0.1]),
+        dict(url="u/old-read", published_at=old, extracted_at=old, text="t", minhash=[1], embedding=[0.1]),
+        dict(url="u/mid-read", published_at=mid, extracted_at=mid, text="t", minhash=[1], embedding=[0.1]),
+        dict(url="u/new", published_at=NOW, extracted_at=None, text="t", minhash=[1], embedding=[0.1]),
+    ]
+    for r in rows:
+        store.exec(insert(articles).values(outlet="X", lang="en", extract_failures=0, **r))
+    stats = enforce(store)
+    left = {r["url"]: r for r in store.rows(select(articles))}
+    assert "u/old-unread" not in left                       # never read, past 7 days: gone
+    assert left["u/old-read"]["text"] == "t"                # read 10 days ago: text kept until day 14
+    assert left["u/old-read"]["minhash"] is None            # but vectors dropped after 4 days
+    assert left["u/mid-read"]["embedding"] is None and left["u/mid-read"]["text"] == "t"
+    assert left["u/new"]["embedding"] == [0.1]              # inside the grouping window
+    assert stats["unread_deleted"] == 1
