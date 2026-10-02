@@ -151,7 +151,7 @@ def ingest(store: Store) -> int:
             store.exec(update(feeds).where(feeds.c.id == feed["id"]).values(fail_count=fails, disabled=disabled))
             log.warning("feed %s failed (%d)%s: %s", feed["name"], fails, " -> DISABLED" if disabled else "", e)
             continue
-        diag[feed["name"]] = {"entries": len(entries), "fresh": 0, "added": 0, "too_short": 0}
+        diag[feed["name"]] = {"entries": len(entries), "fresh": 0, "new": 0, "added": 0, "too_short": 0}
         for en in entries:
             pub = en["published_at"] or now
             if pub < oldest or en["url"] in seen:
@@ -168,6 +168,8 @@ def ingest(store: Store) -> int:
     for i in range(0, len(urls), 500):
         known |= {r["url"] for r in store.rows(select(articles.c.url).where(articles.c.url.in_(urls[i:i + 500])))}
     todo = [(f, en) for f, en in candidates if en["url"] not in known]
+    for f, _ in todo:
+        diag[f["name"]]["new"] += 1
     todo.sort(key=lambda fe: fe[1]["published_at"] or now, reverse=True)
     per_feed: dict[int, int] = {}
     fair = []
@@ -203,7 +205,8 @@ def ingest(store: Store) -> int:
             diag[feed["name"]]["added"] += 1
         except Exception as e:  # unique race etc.
             log.debug("insert skipped %s: %s", en["url"], e)
-    quiet = {k: v for k, v in diag.items() if v["added"] == 0}
-    if quiet:
-        log.info("feeds that added nothing this run: %s", quiet)
+    # a feed with new links that still added nothing has a real problem (blocked pages, empty text)
+    stuck = {k: v for k, v in diag.items() if v["new"] and not v["added"]}
+    if stuck:
+        log.info("feeds with new links that added nothing: %s", stuck)
     return added
