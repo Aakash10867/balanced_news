@@ -377,6 +377,9 @@ def test_copied_vectors_are_healed(store):
                                            published_at=NOW, extract_failures=0, embedding=same, story_id=sid))
     store.exec(insert(articles).values(url="u9", outlet="Y", lang="en", title="Other", text="t",
                                        published_at=NOW, extract_failures=0, embedding=[0.2] * 256, story_id=sid))
+    from sqlalchemy import JSON, null
+    store.exec(insert(articles).values(url="u10", outlet="Z", lang="en", title="Cleared", text="t",  # JSON null
+                                       published_at=NOW, extract_failures=0, embedding=JSON.NULL))
     assert _heal_copied_vectors(store, NOW - dt.timedelta(days=1)) == 3
     left = {r["url"]: r for r in store.rows(select(articles))}
     assert left["u0"]["embedding"] is None and left["u0"]["story_id"] is None

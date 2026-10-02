@@ -54,6 +54,8 @@ def _heal_copied_vectors(store: Store, since: dt.datetime) -> int:
                       .where(articles.c.embedding.is_not(None), articles.c.published_at >= since))
     by_vec: dict[tuple, list[dict]] = {}
     for r in rows:
+        if not r["embedding"]:  # a cleared vector can be stored as JSON null, which passes IS NOT NULL
+            continue
         by_vec.setdefault(tuple(r["embedding"][:16]), []).append(r)
     bad = [r for group in by_vec.values() if len({g["title"] for g in group}) > 1 for r in group]
     if not bad:
