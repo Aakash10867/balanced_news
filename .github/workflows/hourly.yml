@@ -40,7 +40,10 @@ jobs:
     needs: gate
     if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    # Safety net only, for a run that hangs. The pipeline's own 45-minute deadline is a
+    # checkpoint: it stops starting new work, finishes what is in progress, and leaves the
+    # rest for the next run, so this limit should never be what ends a healthy run.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
