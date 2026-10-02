@@ -57,6 +57,7 @@ def assign_wire_groups(store: Store) -> int:
         .where(articles.c.published_at >= since, articles.c.minhash.is_not(None))
         .order_by(articles.c.id)
     )
+    rows = [r for r in rows if r["minhash"]]  # cleared fingerprints can be JSON null, which passes IS NOT NULL
     done = [r for r in rows if r["wire_group"] is not None]
     new = [r for r in rows if r["wire_group"] is None]
     if not new:
