@@ -168,7 +168,10 @@ def analyze_story(store: Store, story_id: int) -> dict:
         mode = "none"
         labels = {g: None for g in groups}
 
-    qualifies = n >= 2 and (len(present_global) >= 2 or side is not None)
+    # A split found inside one story is only trusted with >= 3 independent sources: between two
+    # outlets, any discrepancy (a different casualty count, say) would look like two "sides".
+    # Stable cross-story perspectives (global mode) carry their own evidence, so 2 is enough there.
+    qualifies = n >= 2 and (len(present_global) >= 2 or (side is not None and n >= 3))
 
     # per-story pairwise agreement between sources, for the global matrix
     store.exec(delete(story_pairs).where(story_pairs.c.story_id == story_id))

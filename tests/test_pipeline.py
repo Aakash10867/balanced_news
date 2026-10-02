@@ -287,3 +287,17 @@ def test_archive_has_everything_but_article_bodies(store, tmp_path):
     assert len(arts) == len(ARTICLES)
     assert all("text" not in a and "minhash" not in a and "embedding" not in a for a in arts)
     assert any(x["type"] == "published" and x["payload_hi"] for x in lines)
+
+
+def test_two_sources_disagreeing_is_not_two_perspectives(store):
+    """A discrepancy between two outlets must not be published as a perspective split."""
+    from nishpaksh.run import run
+    _seed(store)
+    # keep only two of the contested story's outlets: Alpha Times and Beta News
+    keep = {"Alpha Times", "Beta News", "Daily Alpha"}
+    from nishpaksh.db import delete as _del
+    store.exec(_del(articles).where(articles.c.outlet.not_in(keep)))
+    store.exec(_del(articles).where(articles.c.title.like("%monsoon%") | articles.c.title.like("%Assembly%")))
+    store.exec(_del(articles).where(articles.c.outlet == "Daily Alpha"))
+    run(store=store, backend=FakeBackend(), ingest_news=False)
+    assert store.rows(select(published)) == []
