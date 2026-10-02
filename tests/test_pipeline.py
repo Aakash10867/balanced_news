@@ -267,3 +267,23 @@ def test_retention_keeps_recent_and_drops_old(store):
     assert left["u/mid-read"]["embedding"] is None and left["u/mid-read"]["text"] == "t"
     assert left["u/new"]["embedding"] == [0.1]              # inside the grouping window
     assert stats["unread_deleted"] == 1
+
+
+def test_archive_has_everything_but_article_bodies(store, tmp_path):
+    import gzip
+    import json
+
+    from nishpaksh.archive import export_day
+    from nishpaksh.run import run
+    _seed(store)
+    run(store=store, backend=FakeBackend(), ingest_news=False)
+    lines = []
+    for d in {(NOW - dt.timedelta(hours=h)).date() for h in range(0, 12)}:
+        with gzip.open(export_day(store, d, tmp_path), "rt", encoding="utf-8") as f:
+            lines += [json.loads(x) for x in f]
+    kinds = {x["type"] for x in lines}
+    assert {"article", "story", "claim", "canonical", "published", "source_clusters"} <= kinds
+    arts = [x for x in lines if x["type"] == "article"]
+    assert len(arts) == len(ARTICLES)
+    assert all("text" not in a and "minhash" not in a and "embedding" not in a for a in arts)
+    assert any(x["type"] == "published" and x["payload_hi"] for x in lines)

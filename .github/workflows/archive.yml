@@ -1,0 +1,50 @@
+name: daily-archive
+
+# Once a day, export each of the last few days that is not archived yet (article bodies
+# excluded) and attach it to that month's release, e.g. "archive-2026-10".
+# Days are exported once they are 2 days old, so late updates to a story are included,
+# and only up to 6 days back, because unread articles are deleted after 7.
+on:
+  schedule:
+    - cron: "41 20 * * *"      # 02:11 IST
+  workflow_dispatch: {}
+
+concurrency:
+  group: nishpaksh-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write          # create releases and upload files to them
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Export and upload missing days
+        run: |
+          set -euo pipefail
+          for back in 2 3 4 5 6; do
+            day=$(date -u -d "-$back days" +%F)
+            tag="archive-${day:0:7}"
+            file="nishpaksh-$day.jsonl.gz"
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              gh release create "$tag" --title "Archive ${day:0:7}" \
+                --notes "Daily exports for ${day:0:7}. Extracted facts, claims, verdicts, perspectives and published pages. No article bodies: see each article's url." \
+                --latest=false
+            fi
+            if gh release view "$tag" --json assets -q '.assets[].name' | grep -qx "$file"; then
+              echo "$file already archived"
+              continue
+            fi
+            python -m nishpaksh.archive --day "$day" --out archive
+            gh release upload "$tag" "archive/$file"
+          done

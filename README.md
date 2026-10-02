@@ -68,6 +68,15 @@ Free-tier Gemma 4 was mostly returning 500/504 errors in the first real runs, wh
 
 Share `…streamlit.app/?lang=hi` to open it in Hindi.
 
+## Archive
+
+Supabase keeps a rolling window (see `nishpaksh/retention.py`). Nothing learned is lost: the
+`daily-archive` workflow exports each day, once it is 2 days old, to a gzipped JSON-lines file
+attached to that month's GitHub release (`archive-YYYY-MM`). It holds articles' metadata, every
+extracted statement, verdicts, perspectives and the published pages in both languages.
+It deliberately excludes article bodies: the repository is public, and the text belongs to the
+publishers. Each record keeps the article URL instead.
+
 ## Local run
 
 ```bash
