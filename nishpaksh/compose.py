@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 ESTABLISHED = {"corroborated", "confirmed"}
 
 HEADLINE_PROMPT = """Write one news headline of at most 14 words in plain English, using ONLY the established facts below.
+Say who did what, where: the core event, not a side detail. Facts are listed from most to least supported.
 No judging adjectives, no motives, no blame beyond what the facts state, no words that are not needed.
 
 Established facts:
@@ -155,7 +156,10 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                if len([p for p, w in i["framing"].items() if w]) >= 2]
 
     banned = {w.lower() for i in items.values() for ws in i["framing"].values() for w in ws if len(w) >= 4}
-    facts = [items[n]["text"] for tier in tl["tiers"] for n in tier] + [i["text"] for i in established]
+    # headline material: the best-supported facts first, not the first in time (that one is
+    # often a vague scene-setter)
+    est_all = [items[n] for tier in tl["tiers"] for n in tier] + [items[n] for n in tl["undated"]] + established
+    facts = [i["text"] for i in sorted(est_all, key=lambda i: (-i["n_sources"], -i["n_articles"]))]
     unsettled = [i["text"] for i in contested if not i["minor"]][:8] or [i["text"] for i in contested][:8]
     short_sig = " ".join((story["signature"] or "").rstrip(".").split()[:12])
     fallback = facts[0].rstrip(".") if facts else f"Reports on: {short_sig}"

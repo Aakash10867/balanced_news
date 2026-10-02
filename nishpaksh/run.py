@@ -78,7 +78,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     # pages published before the readable story existed get rewritten once
     from .db import articles as _articles, published as _published
     for row in store.rows(select(_published.c.story_id, _published.c.payload_en)):
-        if not (row["payload_en"] or {}).get("narrative"):
+        if not ((row["payload_en"] or {}).get("narrative") or {}).get("paragraphs"):  # missing or old format
             store.exec(update(stories).where(stories.c.id == row["story_id"]).values(dirty=True))
     dirty = [s["id"] for s in store.rows(select(stories.c.id).where(stories.c.dirty.is_(True)))]
     # most-covered stories first, so the stories readers most likely want are never the ones cut

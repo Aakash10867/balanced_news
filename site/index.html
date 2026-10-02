@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nishpaksh · निष्पक्ष</title>
+<meta name="description" content="Indian news from every side, written as one story: what is established, what is disputed, and who says what.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=Noto+Serif+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #ffffff;
+    --ink: #1d1d1b;
+    --ink-soft: #5c5f63;
+    --rule: #e3e1dc;
+    --brand: #8c1c13;
+    /* verification inks, tuned for long reading on white */
+    --v-established: #1d6a45;
+    --v-disputed: #a0560b;
+    --v-unverified: #6b7075;
+    --v-false: #b2251c;
+    --serif: "Source Serif 4", "Noto Serif Devanagari", Georgia, "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Devanagari", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--serif);
+         font-size: 19px; line-height: 1.62; text-rendering: optimizeLegibility; }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 2px; }
+
+  .wrap { max-width: 40rem; margin: 0 auto; padding: 0 1.25rem; }
+
+  /* masthead */
+  header.mast { border-bottom: 1px solid var(--rule); }
+  header.mast .wrap { display: flex; align-items: baseline; justify-content: space-between;
+                      padding-top: 1.1rem; padding-bottom: .9rem; gap: 1rem; }
+  .brand { text-decoration: none; color: var(--brand); font-weight: 700; font-size: 1.55rem;
+           letter-spacing: -.01em; line-height: 1; }
+  .brand span { font-weight: 600; margin-left: .35rem; }
+  .lang { font-family: var(--sans); font-size: .82rem; display: flex; gap: .2rem; }
+  .lang button { font: inherit; background: none; border: 0; padding: .3rem .45rem; cursor: pointer;
+                 color: var(--ink-soft); border-radius: 4px; }
+  .lang button[aria-pressed="true"] { color: var(--ink); font-weight: 600; text-decoration: underline;
+                                      text-underline-offset: 4px; text-decoration-color: var(--brand); }
+
+  /* front page */
+  .front { padding: 1.4rem 0 4rem; }
+  .front .intro { font-family: var(--sans); font-size: .9rem; color: var(--ink-soft); margin: 0 0 1.6rem; }
+  .item { display: block; text-decoration: none; padding: 1.25rem 0 1.35rem; border-bottom: 1px solid var(--rule); }
+  .item:last-child { border-bottom: 0; }
+  .item h2 { font-size: 1.42rem; line-height: 1.24; margin: 0 0 .45rem; font-weight: 700; letter-spacing: -.005em; }
+  .item:hover h2 { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+  .item p { margin: 0 0 .5rem; color: #3b3d40; font-size: 1.02rem; line-height: 1.5; }
+  .meta { font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); }
+
+  /* story */
+  article { padding: 1.8rem 0 4.5rem; }
+  .back { font-family: var(--sans); font-size: .85rem; color: var(--ink-soft); text-decoration: none; }
+  .back:hover { color: var(--ink); }
+  article h1 { font-size: 2.35rem; line-height: 1.14; margin: 1rem 0 .7rem; font-weight: 700; letter-spacing: -.015em; }
+  article .meta { margin-bottom: 2rem; }
+  .story p { margin: 0 0 1.15rem; hyphens: manual; }
+  .story p:first-child { font-size: 1.1em; line-height: 1.55; }
+  .s.established { color: var(--v-established); }
+  .s.disputed { color: var(--v-disputed); }
+  .s.unverified { color: var(--v-unverified); }
+  .s.false { color: var(--v-false); }
+  .plain .s { color: inherit; }
+  sup { font-family: var(--sans); font-size: .58em; line-height: 0; margin-left: .1em; color: var(--ink-soft); }
+  sup a { text-decoration: none; }
+  sup a:hover { color: var(--brand); text-decoration: underline; }
+
+  /* after the story */
+  .key { font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); margin: 2.6rem 0 0;
+         padding-top: 1rem; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: .35rem 1.1rem;
+         align-items: center; }
+  .key i { display: inline-block; width: .62em; height: .62em; border-radius: 50%; margin-right: .4em;
+           vertical-align: .02em; }
+  .key label { margin-left: auto; cursor: pointer; display: inline-flex; align-items: center; gap: .35rem; }
+  .after { font-family: var(--sans); font-size: .86rem; line-height: 1.6; color: #3b3d40; }
+  .after h3 { font-family: var(--serif); font-size: 1.15rem; color: var(--ink); margin: 2.2rem 0 .6rem; }
+  .sources { margin: 0; padding: 0; list-style: none; }
+  .sources li { display: flex; gap: .55rem; margin: 0 0 .45rem; scroll-margin-top: 1rem; }
+  .sources li b { min-width: 1.3rem; text-align: right; color: var(--ink-soft); font-weight: 500; }
+  .sources a { text-decoration-color: #c9c6bf; text-underline-offset: 3px; }
+  .sources a:hover { text-decoration-color: var(--brand); }
+  .sources li.hit { background: #fbf1cf; border-radius: 3px; }
+  .outlet { font-weight: 600; color: var(--ink); }
+  details { margin-top: 1.4rem; border-top: 1px solid var(--rule); padding-top: .8rem; }
+  summary { cursor: pointer; font-family: var(--serif); font-size: 1.05rem; color: var(--ink); }
+  table { border-collapse: collapse; width: 100%; margin: .6rem 0 0; font-size: .84rem; }
+  th, td { text-align: left; vertical-align: top; padding: .45rem .5rem .45rem 0; border-bottom: 1px solid var(--rule); }
+  th { font-weight: 600; color: var(--ink); }
+  .stmt { margin: .7rem 0; }
+  .stmt .tag { font-size: .74rem; padding: .05rem .4rem; border-radius: 3px; margin-right: .4rem; color: #fff; }
+  .note { color: var(--ink-soft); }
+  .empty, .error { font-family: var(--sans); color: var(--ink-soft); padding: 3rem 0; }
+
+  footer { border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); }
+  footer .wrap { padding-top: 1.2rem; padding-bottom: 2rem; }
+
+  [lang="hi"] body, body.hi { font-size: 19.5px; line-height: 1.75; }
+
+  @media (max-width: 560px) {
+    body { font-size: 18px; }
+    article h1 { font-size: 1.85rem; }
+    .item h2 { font-size: 1.25rem; }
+    .key label { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header class="mast"><div class="wrap">
+  <a class="brand" href="#/" aria-label="Nishpaksh, front page">Nishpaksh<span>निष्पक्ष</span></a>
+  <nav class="lang" aria-label="Language">
+    <button type="button" data-lang="en">English</button>
+    <button type="button" data-lang="hi">हिंदी</button>
+  </nav>
+</div></header>
+
+<main class="wrap" id="main" tabindex="-1"></main>
+
+<footer><div class="wrap" id="foot"></div></footer>
+
+<script>
+const SUPABASE_URL = "https://mmjojuccdgmmiwyzypvh.supabase.co";
+const SUPABASE_KEY = "sb_publishable_0Gex7dG16My6MPvW2M1Jsg_raI1lqfS";  // public, read-only: published stories
+
+const T = {
+  en: {
+    intro: "Each story is written from every outlet that covered it. Colour shows how well each sentence is supported.",
+    sources: n => `${n} independent source${n === 1 ? "" : "s"}`,
+    updated: "updated", ago: a => `${a} ago`, back: "All stories",
+    k_established: "established", k_disputed: "disputed", k_unverified: "one side only", k_false: "shown false",
+    plain: "Plain text", sourcesTitle: "Sources", wording: "How each side worded it", fact: "Statement",
+    detail: "Every statement, with who reported it", perspectives: "Perspectives",
+    localNote: "Grouped from this story alone; stable perspectives need more history.",
+    reported: "reported by", denied: "denied by",
+    unsettled: "Nothing in this story is confirmed by independent sources yet.",
+    empty: "No stories yet. A story appears once outlets from at least two perspectives have covered it.",
+    error: "Stories could not be loaded. Check your connection and reload the page.",
+    missing: "This story is no longer published.",
+    foot: "Nishpaksh reads Indian news outlets in English and Hindi every hour. A sentence is green only when independent sources from different perspectives agree and none deny it; grey when one side alone reports it; amber when sources contradict each other; red when primary evidence (FIR, court record, official data, video) shows it is false.",
+    tags: {corroborated: "Established", confirmed: "Confirmed", disputed: "Disputed", unverified: "One side only", pending: "One side only", false: "False"},
+    units: {m: "min", h: "h", d: "d"},
+  },
+  hi: {
+    intro: "हर ख़बर उन सभी स्रोतों से लिखी गई है जिन्होंने उसे कवर किया। रंग बताता है कि हर वाक्य कितना पुष्ट है।",
+    sources: n => `${n} स्वतंत्र स्रोत`,
+    updated: "अपडेट", ago: a => `${a} पहले`, back: "सभी ख़बरें",
+    k_established: "स्थापित", k_disputed: "विवादित", k_unverified: "केवल एक पक्ष", k_false: "असत्य सिद्ध",
+    plain: "सादा पाठ", sourcesTitle: "स्रोत", wording: "किस पक्ष ने किन शब्दों में कहा", fact: "कथन",
+    detail: "हर कथन, और किसने बताया", perspectives: "दृष्टिकोण",
+    localNote: "केवल इसी ख़बर के आधार पर समूह; स्थायी दृष्टिकोणों के लिए अभी और इतिहास चाहिए।",
+    reported: "किसने बताया", denied: "किसने खंडन किया",
+    unsettled: "इस ख़बर की किसी भी बात की अभी स्वतंत्र स्रोतों से पुष्टि नहीं हुई है।",
+    empty: "अभी कोई ख़बर नहीं। ख़बर तब दिखती है जब कम से कम दो दृष्टिकोणों के स्रोत उसे कवर करें।",
+    error: "ख़बरें लोड नहीं हो सकीं। इंटरनेट जाँचें और पेज दोबारा खोलें।",
+    missing: "यह ख़बर अब प्रकाशित नहीं है।",
+    foot: "निष्पक्ष हर घंटे अंग्रेज़ी और हिंदी के भारतीय समाचार स्रोत पढ़ता है। वाक्य हरा तभी होता है जब अलग-अलग दृष्टिकोणों के स्वतंत्र स्रोत सहमत हों और कोई खंडन न करे; धूसर जब केवल एक पक्ष बताए; नारंगी जब स्रोत एक-दूसरे का खंडन करें; लाल जब प्राथमिक साक्ष्य (FIR, अदालती रिकॉर्ड, सरकारी आँकड़े, वीडियो) उसे असत्य दिखाए।",
+    tags: {corroborated: "स्थापित", confirmed: "प्रमाणित", disputed: "विवादित", unverified: "केवल एक पक्ष", pending: "केवल एक पक्ष", false: "असत्य"},
+    units: {m: "मिनट", h: "घंटे", d: "दिन"},
+  },
+};
+const VCOLOR = {established: "var(--v-established)", disputed: "var(--v-disputed)",
+                unverified: "var(--v-unverified)", false: "var(--v-false)"};
+const TAGCOLOR = {corroborated: "#1d6a45", confirmed: "#1d6a45", disputed: "#a0560b", unverified: "#6b7075",
+                  pending: "#6b7075", false: "#b2251c"};
+
+const params = new URLSearchParams(location.search);
+let lang = params.get("lang") || safeGet("np-lang") || "en";
+if (!T[lang]) lang = "en";
+let plain = safeGet("np-plain") === "1";
+const main = document.getElementById("main");
+
+function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function safeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function ago(ts) {
+  const t = T[lang], then = new Date(ts.endsWith("Z") ? ts : ts + "Z");
+  const mins = Math.max(1, Math.round((Date.now() - then) / 60000));
+  if (mins < 60) return t.ago(`${mins} ${t.units.m}`);
+  const h = Math.round(mins / 60);
+  return h < 48 ? t.ago(`${h} ${t.units.h}`) : t.ago(`${Math.round(h / 24)} ${t.units.d}`);
+}
+
+async function api(path) {
+  if (window.NP_DEMO) return window.NP_DEMO(path);
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`,
+                        {headers: {apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`}});
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+function setLang(l) {
+  lang = l; safeSet("np-lang", l);
+  document.documentElement.lang = l;
+  document.body.classList.toggle("hi", l === "hi");
+  const u = new URL(location); u.searchParams.set("lang", l); history.replaceState(null, "", u);
+  document.querySelectorAll(".lang button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === l)));
+  document.getElementById("foot").textContent = T[l].foot;
+  route();
+}
+document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
+/* ---------- front page ---------- */
+async function front() {
+  const t = T[lang];
+  document.title = "Nishpaksh · निष्पक्ष";
+  main.innerHTML = "";
+  let rows;
+  try {
+    rows = await api("published?select=story_id,updated_at,headline_en,headline_hi," +
+      "counts:payload_en->counts,lead_en:payload_en->narrative->paragraphs->0," +
+      "lead_hi:payload_hi->narrative->paragraphs->0&order=updated_at.desc&limit=60");
+  } catch (e) { main.innerHTML = `<p class="error">${esc(t.error)}</p>`; return; }
+  rows = rows.filter(r => r.lead_en);  // pages awaiting their first essay are skipped
+  if (!rows.length) { main.innerHTML = `<p class="empty">${esc(t.empty)}</p>`; return; }
+  const items = rows.map(r => {
+    const head = lang === "hi" && r.headline_hi ? r.headline_hi : r.headline_en;
+    const lead = (lang === "hi" && r.lead_hi ? r.lead_hi : r.lead_en) || [];
+    const first = lead.length ? lead[0].text : "";
+    const n = (r.counts || {}).independent_sources || 0;
+    return `<a class="item" href="#/story/${r.story_id}">
+        <h2>${esc(head)}</h2>${first ? `<p>${esc(first)}</p>` : ""}
+        <div class="meta">${esc(t.sources(n))}, ${esc(t.updated)} ${esc(ago(r.updated_at))}</div></a>`;
+  }).join("");
+  main.innerHTML = `<section class="front"><p class="intro">${esc(t.intro)}</p>${items}</section>`;
+}
+
+/* ---------- story ---------- */
+function essayHtml(nar) {
+  const names = Object.fromEntries(nar.sources.map(s => [s.n, s.outlet]));
+  return nar.paragraphs.map(para => "<p>" + para.map(x => {
+    const nums = x.sources || [];
+    const sup = nums.slice(0, 4).map(n => `<a href="#src-${n}" title="${esc(names[n] || "")}" data-src="${n}">${n}</a>`).join(",")
+              + (nums.length > 4 ? `,+${nums.length - 4}` : "");
+    const who = [...new Set(nums.map(n => names[n]).filter(Boolean))].join(", ");
+    return `<span class="s ${esc(x.class)}" title="${esc(who)}">${esc(x.text)}</span><sup>${sup}</sup>`;
+  }).join(" ") + "</p>").join("");
+}
+
+function keyHtml(t, present) {
+  const order = ["established", "disputed", "unverified", "false"].filter(k => present.has(k));
+  return `<div class="key">${order.map(k => `<span><i style="background:${VCOLOR[k]}"></i>${esc(t["k_" + k])}</span>`).join("")}
+    <label><input type="checkbox" id="plain" ${plain ? "checked" : ""}> ${esc(t.plain)}</label></div>`;
+}
+
+function detailHtml(p, t) {
+  const all = [...p.timeline.flat(), ...p.undated, ...p.established, ...p.contested];
+  const line = i => {
+    const sup = [...new Set(i.sources.filter(s => s.stance !== "denies").map(s => s.outlet))];
+    const den = [...new Set(i.sources.filter(s => s.stance === "denies").map(s => s.outlet))];
+    return `<div class="stmt"><span class="tag" style="background:${TAGCOLOR[i.verdict] || "#6b7075"}">${esc(t.tags[i.verdict] || i.verdict)}</span>${esc(i.text)}
+      <div class="note">${sup.length ? `${esc(t.reported)}: ${esc(sup.join(", "))}` : ""}${den.length ? `; ${esc(t.denied)}: ${esc(den.join(", "))}` : ""}</div></div>`;
+  };
+  return all.map(line).join("");
+}
+
+async function story(id) {
+  const t = T[lang];
+  main.innerHTML = "";
+  let rows;
+  try { rows = await api(`published?story_id=eq.${encodeURIComponent(id)}&select=*`); }
+  catch (e) { main.innerHTML = `<p class="error">${esc(t.error)}</p>`; return; }
+  if (!rows.length) { main.innerHTML = `<p class="empty">${esc(t.missing)} <a href="#/">${esc(t.back)}</a></p>`; return; }
+  const row = rows[0];
+  const p = lang === "hi" && row.payload_hi ? row.payload_hi : row.payload_en;
+  const nar = p.narrative || {};
+  document.title = `${p.headline} · Nishpaksh`;
+  const n = (p.counts || {}).independent_sources || 0;
+  const paragraphs = nar.paragraphs || [];
+  const present = new Set(paragraphs.flat().map(x => x.class));
+
+  const framing = (p.framing || []).length ? (() => {
+    const persp = [...new Set(p.framing.flatMap(f => Object.keys(f.words)))].sort();
+    return `<h3>${esc(t.wording)}</h3><table><thead><tr><th>${esc(t.fact)}</th>${persp.map(k => `<th>${esc(k)}</th>`).join("")}</tr></thead>
+      <tbody>${p.framing.map(f => `<tr><td>${esc(f.text)}</td>${persp.map(k => `<td>${esc((f.words[k] || []).join(", "))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  })() : "";
+
+  const sources = (nar.sources || []).map(s =>
+    `<li id="src-${s.n}"><b>${s.n}</b><span><span class="outlet">${esc(s.outlet)}</span>, <a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a></span></li>`).join("");
+
+  const persp = Object.entries(p.perspectives || {}).map(([k, v]) => `<b>${esc(k)}</b> ${esc(v.join(", "))}`).join("<br>");
+
+  main.innerHTML = `<article>
+    <a class="back" href="#/">${esc(t.back)}</a>
+    <h1>${esc(p.headline)}</h1>
+    <div class="meta">${esc(t.sources(n))}, ${esc(t.updated)} ${esc(ago(row.updated_at))}</div>
+    <div class="story ${plain ? "plain" : ""}" id="story">${essayHtml(nar)}</div>
+    ${keyHtml(t, present)}
+    <div class="after">
+      ${p.has_established ? "" : `<p class="note">${esc(t.unsettled)}</p>`}
+      <h3>${esc(t.sourcesTitle)}</h3><ol class="sources">${sources}</ol>
+      ${framing}
+      ${persp ? `<h3>${esc(t.perspectives)}</h3><p>${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</p>` : ""}
+      <details><summary>${esc(t.detail)}</summary>${detailHtml(p, t)}</details>
+    </div>
+  </article>`;
+  // source numbers scroll to the source list without leaving the story (the hash is the route)
+  main.querySelectorAll("a[data-src]").forEach(a => a.addEventListener("click", e => {
+    e.preventDefault();
+    const li = document.getElementById(`src-${a.dataset.src}`);
+    if (!li) return;
+    main.querySelectorAll(".sources li.hit").forEach(x => x.classList.remove("hit"));
+    li.classList.add("hit");
+    li.scrollIntoView({block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+  }));
+  document.getElementById("plain").addEventListener("change", e => {
+    plain = e.target.checked; safeSet("np-plain", plain ? "1" : "0");
+    document.getElementById("story").classList.toggle("plain", plain);
+  });
+  window.scrollTo(0, 0);
+}
+
+function route() {
+  const m = location.hash.match(/^#\/story\/(\d+)/);
+  if (m) story(m[1]); else front();
+}
+window.addEventListener("hashchange", route);
+// links from the old app looked like ?story=123
+if (params.get("story") && !location.hash) location.hash = `#/story/${params.get("story")}`;
+setLang(lang);
+</script>
+</body>
+</html>
