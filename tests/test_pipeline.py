@@ -313,22 +313,23 @@ def test_narrative_is_checked_and_coloured(store):
     run(store=store, backend=FakeBackend(), ingest_news=False, verify_budget=VB)
     p = store.rows(select(published))[0]
     nar = p["payload_en"]["narrative"]
-    keys = [sec["key"] for sec in nar["sections"]]
-    assert keys[0] == "happened"
-    sents = [x for sec in nar["sections"] for x in sec["sentences"]]
+    paras = nar["paragraphs"]
+    sents = [x for para in paras for x in para]
     text = " ".join(x["text"] for x in sents)
     assert "shoddy" not in text.lower() and "5 people" not in text     # both bad sentences rejected
-    # rejected: the loaded word, the invented number, and the red sentence that never said "false"
+    # rejected: loaded word, invented number, and the red sentence that never said "false"
     assert nar["rejected"] == 3
-    happened = nar["sections"][0]["sentences"]
-    assert all(x["class"] == "established" for x in happened)
+    assert all(x["class"] == "established" for x in paras[0])            # essay opens with what is settled
     false_s = [x for x in sents if x["class"] == "false"]
     assert false_s and "substandard" in false_s[0]["text"] and "false" in false_s[0]["text"]
-    assert all(x["sources"] for x in sents)                            # every sentence cites sources
+    assert all(x["sources"] for x in sents)                              # every sentence cites sources
+    # every statement in the story appears somewhere in the essay, minor ones included
+    payload = p["payload_en"]
+    all_ids = {i["id"] for i in payload["contested"] + payload["established"] + payload["undated"]}
+    all_ids |= {i["id"] for tier in payload["timeline"] for i in tier}
+    assert all_ids <= {x for s in sents for x in s["ids"]}
     assert [s["n"] for s in nar["sources"]] == list(range(1, len(nar["sources"]) + 1))
-    hi = p["payload_hi"]["narrative"]["sections"][0]["sentences"][0]["text"]
-    assert hi.startswith("[हिं]")
-
+    assert p["payload_hi"]["narrative"]["paragraphs"][0][0]["text"].startswith("[हिं]")
 
 def test_gate_spaces_runs(store):
     from nishpaksh.db import runs
@@ -349,3 +350,18 @@ def test_story_stage_respects_deadline_and_isolates_failures():
         if x == 2:
             raise RuntimeError("boom")
     assert sorted(_parallel([1, 2, 3], flaky, _t.time() + 5, 2)) == [1, 3]  # one failure does not stop others
+
+
+def test_duplicate_embeddings_are_rejected_not_copied():
+    """The bug that put a farming article into a protest story: one vector for a whole batch."""
+    from nishpaksh.router import embeddings_look_valid
+    assert embeddings_look_valid(["a", "b"], [[1.0, 0.0], [0.0, 1.0]])
+    assert not embeddings_look_valid(["a", "b"], [[1.0, 0.0]])                 # one vector for two texts
+    assert not embeddings_look_valid(["a", "b"], [[1.0, 0.0], [1.0, 0.0]])     # copied vector
+    assert embeddings_look_valid(["same", "same"], [[1.0, 0.0], [1.0, 0.0]])   # identical text is fine
+
+    class OneVector:
+        def list_models(self): return ["e"]
+        def embed(self, model, texts): return [[0.5, 0.5]] * len(texts)
+    r = Router({"embed": [dict(id="e", rpm=100, tpm=10**6, rpd=100)]}, OneVector())
+    assert r.embed(["farming tips", "protest detention"]) is None

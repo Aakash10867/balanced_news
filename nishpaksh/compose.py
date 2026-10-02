@@ -33,6 +33,18 @@ Established facts:
 
 Reply with JSON only: {{"headline": "..."}}"""
 
+HEADLINE_UNSETTLED_PROMPT = """Nothing in this story is yet confirmed by independent sources. Write one neutral news
+headline of at most 12 words that says what is being REPORTED without asserting it as fact
+(for example "Reports say ...", "Accounts differ on ...", "... , reports say").
+No judging adjectives, no motives, no blame.
+
+Statements reported:
+{facts}
+
+Reply with JSON only: {{"headline": "..."}}"""
+
+HEDGES = ("report", "say", "said", "claim", "alleg", "accounts", "differ", "dispute", "according")
+
 TRANSLATE_PROMPT = """Translate each value of this JSON object into Hindi (Devanagari script).
 Translate literally and neutrally: do not add, soften or strengthen anything. Keep names of people,
 places and organisations, and all numbers, as they are. Return a JSON object with exactly the same keys.
@@ -48,18 +60,23 @@ def _interval(rows: list[dict]) -> dict:
             "when_text": whens.most_common(1)[0][0] if whens else ""}
 
 
-def _headline(router: Router | None, facts: list[str], banned: set[str], fallback: str) -> str:
-    if router is None or not facts:
+def _headline(router: Router | None, facts: list[str], banned: set[str], fallback: str,
+              unsettled: list[str] | None = None) -> str:
+    """Headline from established facts; if there are none, a hedged one from what is reported."""
+    if router is None or not (facts or unsettled):
         return fallback
+    prompt = (HEADLINE_PROMPT.format(facts="\n".join(f"- {f}" for f in facts[:8])) if facts else
+              HEADLINE_UNSETTLED_PROMPT.format(facts="\n".join(f"- {f}" for f in (unsettled or [])[:8])))
     try:
-        res = router.call("light", HEADLINE_PROMPT.format(facts="\n".join(f"- {f}" for f in facts[:8])),
-                          json_out=True, max_output_tokens=200)
-        h = str((res.data or {}).get("headline") or "").strip().strip('"')
+        res = router.call("light", prompt, json_out=True, max_output_tokens=200)
+        h = str((res.data or {}).get("headline") or "").strip().strip('"').rstrip(".")
     except (QuotaExhausted, Exception) as e:  # noqa: BLE001
         log.info("headline fallback: %s", e)
         return fallback
     low = h.lower()
-    if not h or len(h.split()) > 20 or any(w in low for w in banned):
+    if not h or len(h.split()) > 16 or any(w in low for w in banned):
+        return fallback
+    if not facts and not any(m in low for m in HEDGES):  # unsettled stories must not assert
         return fallback
     return h
 
@@ -139,8 +156,10 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
 
     banned = {w.lower() for i in items.values() for ws in i["framing"].values() for w in ws if len(w) >= 4}
     facts = [items[n]["text"] for tier in tl["tiers"] for n in tier] + [i["text"] for i in established]
-    fallback = facts[0] if facts else story["signature"]
-    headline = _headline(router, facts, banned, fallback)
+    unsettled = [i["text"] for i in contested if not i["minor"]][:8] or [i["text"] for i in contested][:8]
+    short_sig = " ".join((story["signature"] or "").rstrip(".").split()[:12])
+    fallback = facts[0].rstrip(".") if facts else f"Reports on: {short_sig}"
+    headline = _headline(router, facts, banned, fallback, unsettled)
 
     analysis = story["analysis"] or {}
     persp = defaultdict(set)
@@ -185,8 +204,8 @@ def _collect_strings(payload: dict) -> list[str]:
                 out.append(i["time"]["when_text"])
     for f in payload["framing"]:
         out.append(f["text"])
-    for sec in (payload.get("narrative") or {}).get("sections", []):
-        out += [x["text"] for x in sec["sentences"]]
+    for para in (payload.get("narrative") or {}).get("paragraphs", []):
+        out += [x["text"] for x in para]
     return [s for s in dict.fromkeys(out) if s]
 
 
@@ -231,8 +250,8 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
                 i["time"]["when_text"] = tr(i["time"]["when_text"])
     for f in hi["framing"]:
         f["text"] = tr(f["text"])
-    for sec in (hi.get("narrative") or {}).get("sections", []):
-        for x in sec["sentences"]:
+    for para in (hi.get("narrative") or {}).get("paragraphs", []):
+        for x in para:
             x["text"] = tr(x["text"])
     hi["translation_complete"] = all(_key(s) in cache for s in strings)
     return hi
@@ -248,7 +267,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     prev = store.one(select(published).where(published.c.story_id == story_id))
     from .narrative import input_hash, sections_from_payload, write_narrative
     old = ((prev or {}).get("payload_en") or {}).get("narrative")
-    if old and old.get("hash") == input_hash(sections_from_payload(payload)) and not old.get("rejected"):
+    if (old and old.get("paragraphs") and old.get("hash") == input_hash(sections_from_payload(payload))
+            and not old.get("rejected")):
         payload["narrative"] = old  # same statements, same verdicts: keep the story as written
     else:
         payload["narrative"] = write_narrative(router, payload, set(payload["loaded_words"]))

@@ -52,7 +52,7 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
     released = _release_singletons(store, since)
     arts = store.rows(
         select(articles.c.id, articles.c.title, articles.c.text, articles.c.embedding, articles.c.story_id,
-               articles.c.published_at)
+               articles.c.published_at, articles.c.extracted_at)
         .where(articles.c.text.is_not(None), articles.c.published_at >= since)
         .order_by(articles.c.published_at)
     )
@@ -141,6 +141,11 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
             c.execute(update(claims).where(claims.c.article_id == bindparam("aid")).values(story_id=bindparam("sid")),
                       new_assign)
             c.execute(update(stories).where(stories.c.id.in_(sorted(touched))).values(updated_at=utcnow()))
+            # an article that was already read joining a story changes that story's analysis
+            read = sorted({a["story_id"] for a in arts if a.get("extracted_at") and a["id"] in
+                           {y["aid"] for y in new_assign}})
+            if read:
+                c.execute(update(stories).where(stories.c.id.in_(read)).values(dirty=True))
     # stories become "dirty" (need re-analysis) only when an article in them is read
     log.info("stories: %d articles grouped (%s mode), %d stories touched, %d lone articles re-grouped",
              len(new_assign), mode, len(touched), released)

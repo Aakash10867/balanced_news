@@ -119,23 +119,21 @@ class FakeBackend:
                 label = "same" if len(wa & wb) / len(wa | wb) >= 0.5 else "different"
                 res.append({"n": int(n), "label": label})
             return json.dumps({"results": res}), [], 200
-        if "You are writing a short, readable news story" in prompt:
-            out = []
-            for key, body in re.findall(r"\[(\w+)\][^\n]*\n((?:#.*\n?)+)", prompt):
-                stmts = re.findall(r'#(\d+) (\w+) \| "(.*?)"(?: \| reported by: ([^|\n]*))?', body)
-                sents = []
-                for n, (sid, status, text, by) in enumerate(stmts):
-                    if status == "ESTABLISHED":
-                        sents.append({"text": text + ".", "ids": [int(sid)]})
-                    else:
-                        sents.append({"text": f"According to {by.strip()}, {text[0].lower() + text[1:]}.",
-                                      "ids": [int(sid)]})
-                if key == "contested":
-                    # two bad sentences the validator must reject
-                    sents.append({"text": "The shoddy work was obvious.", "ids": [int(stmts[0][0])]})
-                    sents.append({"text": "Officials say 5 people were hurt.", "ids": [int(stmts[0][0])]})
-                out.append({"key": key, "sentences": sents})
-            return json.dumps({"sections": out}), [], 400
+        if "Write the story below as ONE coherent" in prompt:
+            stmts = re.findall(r'#(\d+) ([\w-]+) \| "(.*?)"(?: \| reported by: ([^|\n]*))?', prompt)
+            first, rest = [], []
+            for sid, status, text, by in stmts:
+                if status == "ESTABLISHED":
+                    first.append({"text": text + ".", "ids": [int(sid)]})
+                else:
+                    rest.append({"text": f"According to {by.strip()}, {text[0].lower() + text[1:]}.",
+                                 "ids": [int(sid)]})
+            bad_target = next(int(sid) for sid, status, *_ in stmts if status != "ESTABLISHED")
+            rest += [{"text": "The shoddy work was obvious.", "ids": [bad_target]},        # loaded word
+                     {"text": "Officials say 5 people were hurt.", "ids": [bad_target]}]  # invented number
+            return json.dumps({"paragraphs": [first, rest]}), [], 400
+        if "Nothing in this story is yet confirmed" in prompt:
+            return json.dumps({"headline": "Accounts differ on what happened, reports say"}), [], 50
         if "Write one news headline" in prompt:
             return json.dumps({"headline": "Section of Kesarganj flyover collapses; two dead, engineer arrested"}), [], 50
         if "Translate each value" in prompt:
@@ -156,12 +154,16 @@ class FakeBackend:
 
     def embed(self, model, texts):
         # stand-in for a multilingual embedding: same event -> same direction, any language
+        import hashlib
         out = []
         for t in texts:
             if "Kesarganj" in t or "केसरगंज" in t:
-                out.append([1.0, 0.05, 0.0])
+                base = [1.0, 0.05, 0.0]
             elif "assembly" in t.lower() or "Lucknow" in t:
-                out.append([0.0, 1.0, 0.05])
+                base = [0.0, 1.0, 0.05]
             else:
-                out.append([0.05, 0.0, 1.0])
+                base = [0.05, 0.0, 1.0]
+            # like a real model: similar texts get similar, never identical, vectors
+            h = hashlib.md5(t.encode()).digest()
+            out.append([b + (h[i] / 255 - 0.5) * 0.02 for i, b in enumerate(base)])
         return out

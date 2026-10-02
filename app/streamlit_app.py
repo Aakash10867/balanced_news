@@ -38,6 +38,9 @@ T = {
         "translation_partial": "Part of this page is still in English; the translation quota ran out.",
         "sec_happened": "What happened", "sec_contested": "Where accounts differ",
         "sec_one_side": "Reported by one side only",
+        "k_established": "established", "k_disputed": "disputed", "k_unverified": "reported by one side only",
+        "k_false": "shown false by evidence", "k_sup": "sources",
+        "persp_title": "Perspectives", "unsettled": "Nothing in this story is confirmed by independent sources yet.",
         "legend_title": "How to read this story",
         "lg_established": "Established: reported by independent sources across perspectives, denied by none",
         "lg_disputed": "Disputed: some sources say it, others deny or contradict it",
@@ -74,6 +77,9 @@ T = {
         "translation_partial": "अनुवाद कोटा ख़त्म होने से इस पेज का कुछ हिस्सा अभी अंग्रेज़ी में है।",
         "sec_happened": "क्या हुआ", "sec_contested": "जहाँ ख़बरें अलग-अलग हैं",
         "sec_one_side": "जो केवल एक पक्ष बता रहा है",
+        "k_established": "स्थापित", "k_disputed": "विवादित", "k_unverified": "केवल एक पक्ष ने बताया",
+        "k_false": "साक्ष्य से असत्य", "k_sup": "स्रोत",
+        "persp_title": "दृष्टिकोण", "unsettled": "इस ख़बर की अभी किसी भी बात की स्वतंत्र स्रोतों से पुष्टि नहीं हुई है।",
         "legend_title": "इस ख़बर को कैसे पढ़ें",
         "lg_established": "स्थापित: अलग-अलग दृष्टिकोणों के स्वतंत्र स्रोतों ने बताया, किसी ने खंडन नहीं किया",
         "lg_disputed": "विवादित: कुछ स्रोत कहते हैं, कुछ खंडन करते हैं",
@@ -102,63 +108,65 @@ VERDICT = {
 }
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Noto+Serif+Devanagari:wght@400;600&display=swap');
-.np-story { font-family: 'Source Serif 4', 'Noto Serif Devanagari', Georgia, serif; font-size: 1.12rem;
-            line-height: 1.8; }
-.np-story h4 { font-family: inherit; font-size: 0.8rem; letter-spacing: .08em; text-transform: uppercase;
-               opacity: .65; margin: 1.6rem 0 .3rem; font-weight: 600; }
-.np-story p { margin: 0 0 .9rem; }
-.np-s.established { color: #1f9254; }
-.np-s.disputed    { color: #c66a00; }
-.np-s.unverified  { color: #7d8590; }
-.np-s.false       { color: #d0342c; }
-.np-story sup { font-size: .62em; margin-left: 1px; font-family: system-ui, sans-serif; }
-.np-story sup a { color: inherit; text-decoration: none; opacity: .85; }
-.np-legend { font-family: system-ui, sans-serif; font-size: .85rem; line-height: 1.6; padding: .75rem 1rem;
-             border: 1px solid rgba(128,128,128,.25); border-radius: 10px; margin: .5rem 0 1.25rem; }
-.np-legend b { font-weight: 600; }
-.np-dot { display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: .45em;
-          vertical-align: baseline; }
-.np-sources { font-family: system-ui, sans-serif; font-size: .85rem; line-height: 1.7; }
-.np-sources a { text-decoration: none; }
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Noto+Serif+Devanagari:wght@400;600&display=swap');
+.np-head { font-family: 'Source Serif 4', 'Noto Serif Devanagari', Georgia, serif; font-weight: 700;
+           font-size: 2.1rem; line-height: 1.22; margin: .4rem 0 .5rem; letter-spacing: -.01em; }
+.np-meta { font-family: system-ui, sans-serif; font-size: .82rem; opacity: .6; margin-bottom: 1.8rem; }
+.np-story { font-family: 'Source Serif 4', 'Noto Serif Devanagari', Georgia, serif; font-size: 1.16rem;
+            line-height: 1.85; max-width: 40rem; }
+.np-story p { margin: 0 0 1.15rem; }
+.np-s.established { color: #2e9e62; }
+.np-s.disputed    { color: #d9821e; }
+.np-s.unverified  { color: inherit; opacity: .62; }
+.np-s.false       { color: #e0524a; }
+.np-story sup { font-size: .58em; margin-left: 1px; font-family: system-ui, sans-serif; opacity: .75;
+                vertical-align: super; line-height: 0; }
+.np-story sup a { color: inherit; text-decoration: none; }
+.np-key { font-family: system-ui, sans-serif; font-size: .78rem; opacity: .75; margin: 2.2rem 0 .3rem;
+          padding-top: .9rem; border-top: 1px solid rgba(128,128,128,.25); line-height: 1.9; }
+.np-key span.k { margin-right: 1rem; white-space: nowrap; }
+.np-dot { display: inline-block; width: .6em; height: .6em; border-radius: 50%; margin-right: .35em; }
+.np-small { font-family: system-ui, sans-serif; font-size: .8rem; opacity: .7; line-height: 1.7; }
+.np-small h5 { font-size: .74rem; letter-spacing: .08em; text-transform: uppercase; opacity: .8;
+               margin: 1.6rem 0 .4rem; font-weight: 600; }
+.np-small a { color: inherit; text-decoration: underline; text-decoration-color: rgba(128,128,128,.45); text-underline-offset: 2px; }
 </style>
 """
-DOT = {"established": "#1f9254", "disputed": "#c66a00", "unverified": "#7d8590", "false": "#d0342c"}
+DOT = {"established": "#2e9e62", "disputed": "#d9821e", "unverified": "#8b949e", "false": "#e0524a"}
 
 
-def legend_html(t: dict, present: set[str]) -> str:
-    rows = [f'<div><span class="np-dot" style="background:{DOT[k]}"></span>{html.escape(t["lg_" + k])}</div>'
-            for k in ("established", "disputed", "unverified", "false") if k in present]
-    rows.append(f'<div style="margin-top:.35rem;opacity:.8">{html.escape(t["lg_sup"])}</div>')
-    return f'<div class="np-legend"><b>{html.escape(t["legend_title"])}</b>{"".join(rows)}</div>'
+def key_html(t: dict, present: set[str]) -> str:
+    """One quiet line under the story: what the colours and numbers mean."""
+    keys = "".join(f'<span class="k"><span class="np-dot" style="background:{DOT[k]}"></span>'
+                   f'{html.escape(t["k_" + k])}</span>'
+                   for k in ("established", "disputed", "unverified", "false") if k in present)
+    return f'<div class="np-key">{keys}<span class="k">¹²³ {html.escape(t["k_sup"])}</span></div>'
 
 
-def narrative_html(nar: dict, t: dict) -> str:
+def essay_html(nar: dict) -> str:
     names = {s["n"]: s["outlet"] for s in nar["sources"]}
-    parts = ['<div class="np-story">']
-    for sec in nar["sections"]:
-        parts.append(f'<h4>{html.escape(t["sec_" + sec["key"]])}</h4><p>')
-        for x in sec["sentences"]:
+    out = ['<div class="np-story">']
+    for para in nar["paragraphs"]:
+        out.append("<p>")
+        for x in para:
             nums = x["sources"]
-            shown = nums[:4]
-            sup = ",".join(f'<a href="#src-{n}" title="{html.escape(names.get(n, ""))}">{n}</a>' for n in shown)
+            sup = ",".join(f'<a href="#src-{n}" title="{html.escape(names.get(n, ""))}">{n}</a>' for n in nums[:4])
             if len(nums) > 4:
                 sup += f",+{len(nums) - 4}"
             tip = html.escape(", ".join(sorted({names.get(n, "") for n in nums})))
-            parts.append(f'<span class="np-s {x["class"]}" title="{tip}">{html.escape(x["text"])}</span>'
-                         f'<sup>{sup}</sup> ')
-        parts.append("</p>")
-    parts.append("</div>")
-    return "".join(parts)
+            out.append(f'<span class="np-s {x["class"]}" title="{tip}">{html.escape(x["text"])}</span>'
+                       f'<sup>{sup}</sup> ')
+        out.append("</p>")
+    out.append("</div>")
+    return "".join(out)
 
 
-def sources_html(nar: dict) -> str:
+def sources_html(nar: dict, t: dict) -> str:
     rows = []
     for s in nar["sources"]:
-        persp = f' · {html.escape(s["perspective"])}' if s.get("perspective") and s["perspective"] != "–" else ""
-        rows.append(f'<div id="src-{s["n"]}"><b>{s["n"]}.</b> <a href="{html.escape(s["url"])}" target="_blank">'
-                    f'{html.escape(s["outlet"])}: {html.escape(s["title"] or "")}</a>{persp}</div>')
-    return '<div class="np-sources">' + "".join(rows) + "</div>"
+        rows.append(f'<div id="src-{s["n"]}">{s["n"]}. <a href="{html.escape(s["url"])}" target="_blank">'
+                    f'{html.escape(s["outlet"])}: {html.escape(s["title"] or "")}</a></div>')
+    return f'<div class="np-small"><h5>{html.escape(t["numbered_sources"])}</h5>{"".join(rows)}</div>'
 
 
 STANCE = {"en": {"asserts": "states", "attributes": "reports a claim", "denies": "denies"},
@@ -282,38 +290,38 @@ def story_view(sid: int, lang: str, t: dict) -> None:
         return
     p = (row["payload_hi"] if lang == "hi" and row["payload_hi"] else row["payload_en"])
     st.markdown(CSS, unsafe_allow_html=True)
-    st.header(p["headline"])
     c = p.get("counts", {})
-    st.caption(f"{c.get('independent_sources', 0)} {t['sources']} · {c.get('articles', 0)} {t['articles']} · "
-               f"{t['updated']} {ago(row['updated_at'], lang)}")
+    meta = (f"{c.get('independent_sources', 0)} {t['sources']} · {c.get('articles', 0)} {t['articles']} · "
+            f"{t['updated']} {ago(row['updated_at'], lang)}")
+    st.markdown(f'<div class="np-head">{html.escape(p["headline"])}</div><div class="np-meta">{meta}</div>',
+                unsafe_allow_html=True)
     if lang == "hi" and not p.get("translation_complete", True):
-        st.info(t["translation_partial"])
-    if not p.get("has_established"):
-        st.info(t["no_est"])
+        st.caption(t["translation_partial"])
 
-    nar = p.get("narrative")
-    if nar and nar.get("sections"):
-        present = {x["class"] for sec in nar["sections"] for x in sec["sentences"]}
-        st.markdown(legend_html(t, present), unsafe_allow_html=True)
-        st.markdown(narrative_html(nar, t), unsafe_allow_html=True)
+    nar = p.get("narrative") or {}
+    if nar.get("paragraphs"):
+        present = {x["class"] for para in nar["paragraphs"] for x in para}
+        st.markdown(essay_html(nar), unsafe_allow_html=True)
+        st.markdown(key_html(t, present), unsafe_allow_html=True)
+        if not p.get("has_established"):
+            st.markdown(f'<div class="np-small">{html.escape(t["unsettled"])}</div>', unsafe_allow_html=True)
         if p["framing"]:
-            st.subheader(t["framing"])
+            st.markdown(f'<div class="np-small"><h5>{html.escape(t["framing"])}</h5></div>', unsafe_allow_html=True)
             persp = sorted({k for f in p["framing"] for k in f["words"]})
             rows = [{t["fact"]: f["text"], **{k: ", ".join(f["words"].get(k, [])) for k in persp}}
                     for f in p["framing"]]
             st.dataframe(rows, hide_index=True, use_container_width=True)
-        st.subheader(t["numbered_sources"])
-        st.markdown(sources_html(nar), unsafe_allow_html=True)
-        st.caption(" · ".join(f"**{label}**: {', '.join(outlets)}" for label, outlets in p["perspectives"].items()))
-        if p.get("perspective_mode") == "story":
-            st.caption(t["local_note"])
+        st.markdown(sources_html(nar, t), unsafe_allow_html=True)
+        persp_line = " · ".join(f"<b>{html.escape(label)}</b> {html.escape(', '.join(outlets))}"
+                                for label, outlets in p["perspectives"].items())
+        note = f"<br>{html.escape(t['local_note'])}" if p.get("perspective_mode") == "story" else ""
+        st.markdown(f'<div class="np-small"><h5>{html.escape(t["persp_title"])}</h5>{persp_line}{note}</div>',
+                    unsafe_allow_html=True)
+        st.write("")
         with st.expander(t["details"]):
             _details(p, lang, t)
-    else:  # pages published before the narrative existed
+    else:  # pages published before the essay existed
         _details(p, lang, t)
-        with st.expander(t["all_sources"]):
-            for s in p["sources"]:
-                st.markdown(f"- **{s['perspective']}** · [{s['outlet']}: {s['title']}]({s['url']})")
     with st.expander(t["method"]):
         st.markdown(t["method_text"])
 

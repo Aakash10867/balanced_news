@@ -37,13 +37,14 @@ def test_app_renders_list_and_story_in_both_languages(tmp_path, monkeypatch):
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
     assert 'class="np-s false"' in text and "substandard" in text      # red sentence in the story
-    assert 'class="np-legend"' in text and 'id="src-1"' in text         # legend and numbered sources
+    assert text.index('class="np-story"') < text.index('class="np-key"')  # colour key comes after the story
+    assert 'id="src-1"' in text
 
     at = AppTest.from_file(APP, default_timeout=30)
     at.query_params["story"] = str(sid)
     at.query_params["lang"] = "hi"
     at.run()
     assert not at.exception
-    assert any("[हिं]" in h.value for h in at.header)
+    assert any("[हिं]" in m.value and "np-head" in m.value for m in at.markdown)
     text = " ".join(m.value for m in at.markdown)
-    assert "इस ख़बर को कैसे पढ़ें" in text and "जहाँ ख़बरें अलग-अलग हैं" in text
+    assert "साक्ष्य से असत्य" in text and "[हिं]" in text

@@ -132,12 +132,35 @@ class GeminiBackend:
         return (r.text or ""), sources, tokens
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
+        """One vector per text, verified. A plain list of strings can be read by some embedding
+        models as ONE multi-part input (one vector back, which was then copied to 487 articles),
+        so each text is sent as its own Content, and the reply is checked: exactly one vector per
+        text, and no two different texts with an identical vector. Otherwise one call per text."""
         from google.genai import types
-        # 256 dimensions instead of the default 3072: same-event matching barely changes and each
-        # stored vector shrinks from ~60 KB to ~2.5 KB
-        r = self.client.models.embed_content(
-            model=model, contents=texts, config=types.EmbedContentConfig(output_dimensionality=EMBED_DIMS))
-        return [[round(float(x), 5) for x in e.values] for e in r.embeddings]
+        cfg = types.EmbedContentConfig(output_dimensionality=EMBED_DIMS)
+        contents = [types.Content(parts=[types.Part(text=t)]) for t in texts]
+        r = self.client.models.embed_content(model=model, contents=contents, config=cfg)
+        vecs = [[round(float(x), 5) for x in e.values] for e in (r.embeddings or [])]
+        if not embeddings_look_valid(texts, vecs):
+            vecs = []
+            for t in texts:
+                one = self.client.models.embed_content(model=model, contents=t, config=cfg)
+                vecs.append([round(float(x), 5) for x in one.embeddings[0].values])
+            if not embeddings_look_valid(texts, vecs):
+                raise ValueError("embedding service returned duplicate vectors for different texts")
+        return vecs
+
+
+def embeddings_look_valid(texts: list[str], vecs: list[list[float]]) -> bool:
+    if len(vecs) != len(texts) or any(not v for v in vecs):
+        return False
+    seen: dict[tuple, str] = {}
+    for t, v in zip(texts, vecs):
+        key = tuple(v[:16])
+        if key in seen and seen[key] != t:
+            return False
+        seen[key] = t
+    return True
 
 
 def _norm(model_id: str) -> str:
@@ -331,6 +354,9 @@ class Router:
                     self._record(slot, 0)
                     continue
                 self._record(slot, est)
+                if not embeddings_look_valid(chunk, vecs):
+                    log.warning("embedding batch from %s failed validation; discarded", slot.id)
+                    return None
                 out.extend(vecs)
                 done = True
                 break
