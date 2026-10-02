@@ -104,7 +104,8 @@ class FakeBackend:
 
     def list_models(self):
         return ["gemma-4-31b-it", "gemma-4-26b-a4b-it", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
-                "gemini-3.8-flash", "gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+                "gemini-3.8-flash", "gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite",
+                "gemini-embedding-2"]
 
     def generate(self, model, prompt, json_mode, grounded):
         self.calls.append((model, prompt[:40]))
@@ -137,4 +138,13 @@ class FakeBackend:
         raise AssertionError(f"unexpected prompt: {prompt[:80]}")
 
     def embed(self, model, texts):
-        raise RuntimeError("404 model not found")  # forces the TF-IDF path
+        # stand-in for a multilingual embedding: same event -> same direction, any language
+        out = []
+        for t in texts:
+            if "Kesarganj" in t or "केसरगंज" in t:
+                out.append([1.0, 0.05, 0.0])
+            elif "assembly" in t.lower() or "Lucknow" in t:
+                out.append([0.0, 1.0, 0.05])
+            else:
+                out.append([0.05, 0.0, 1.0])
+        return out

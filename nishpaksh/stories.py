@@ -1,13 +1,17 @@
-"""Stage 4: group articles about the same event into stories.
+"""Stage 3: group articles about the same event into stories, BEFORE reading them with an LLM.
 
-Runs on the English signatures written at extraction, so Hindi and English
-articles about one event land in the same story. Uses Gemini embeddings when
-quota allows, TF-IDF otherwise (one mode per run so similarities are comparable).
+Uses multilingual Gemini embeddings of title + opening paragraph, so Hindi and
+English articles about one event land together. Grouping first means the scarce
+LLM quota is spent only on stories that several outlets cover: a story one outlet
+alone reports can never be published, and adds nothing to the agreement data.
+Falls back to TF-IDF (same-language only) when embedding quota is gone; one mode
+per run so similarities stay comparable.
 """
 from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -19,29 +23,22 @@ from .router import Router
 log = logging.getLogger(__name__)
 
 
-def _story_text(a: dict, events: dict[int, list[str]]) -> str:
-    return " ".join([a["signature"] or ""] + events.get(a["id"], [])[:3])
+def _story_text(a: dict) -> str:
+    lead = re.sub(r"\s+", " ", (a["text"] or "")[:600])
+    return f"{a['title'] or ''}. {lead}"
 
 
 def group_stories(store: Store, router: Router | None) -> int:
     since = utcnow() - dt.timedelta(hours=SETTINGS.story_window_hours)
     arts = store.rows(
-        select(articles.c.id, articles.c.signature, articles.c.embedding, articles.c.story_id,
+        select(articles.c.id, articles.c.title, articles.c.text, articles.c.embedding, articles.c.story_id,
                articles.c.published_at)
-        .where(articles.c.extracted_at.is_not(None), articles.c.published_at >= since)
+        .where(articles.c.text.is_not(None), articles.c.published_at >= since)
         .order_by(articles.c.published_at)
     )
     if not any(a["story_id"] is None for a in arts):
         return 0
-
-    events: dict[int, list[str]] = {}
-    ids = [a["id"] for a in arts]
-    for i in range(0, len(ids), 500):
-        for r in store.rows(select(claims.c.article_id, claims.c.text)
-                            .where(claims.c.article_id.in_(ids[i:i + 500]), claims.c.kind == "event")
-                            .order_by(claims.c.id)):
-            events.setdefault(r["article_id"], []).append(r["text"])
-    texts = [_story_text(a, events) for a in arts]
+    texts = [_story_text(a) for a in arts]
 
     # embeddings where possible
     missing = [i for i, a in enumerate(arts) if not a["embedding"]]
@@ -60,7 +57,7 @@ def group_stories(store: Store, router: Router | None) -> int:
         dim = X.shape[1]
     else:
         mode = "tfidf"
-        vec = TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True, stop_words="english", min_df=1)
+        vec = TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True, min_df=1)
         X = vec.fit_transform(texts)  # rows are L2-normalised
         threshold = SETTINGS.story_join_cosine_tfidf
         row = lambda i: X[i].toarray().ravel()  # noqa: E731
@@ -88,7 +85,7 @@ def group_stories(store: Store, router: Router | None) -> int:
             sid = best
         else:
             sid = store.insert_returning_id(stories, dict(
-                created_at=utcnow(), updated_at=utcnow(), signature=a["signature"], dirty=True, qualifies=False))
+                created_at=utcnow(), updated_at=utcnow(), signature=a["title"], dirty=False, qualifies=False))
             sums[sid] = np.zeros(dim, dtype=np.float32)
         sums[sid] += x
         a["story_id"] = sid
@@ -97,6 +94,7 @@ def group_stories(store: Store, router: Router | None) -> int:
         store.exec(update(claims).where(claims.c.article_id == a["id"]).values(story_id=sid))
         assigned += 1
     for sid in touched:
-        store.exec(update(stories).where(stories.c.id == sid).values(updated_at=utcnow(), dirty=True))
+        store.exec(update(stories).where(stories.c.id == sid).values(updated_at=utcnow()))
+    # stories become "dirty" (need re-analysis) only when an article in them is read
     log.info("stories: %d articles grouped (%s mode), %d stories touched", assigned, mode, len(touched))
     return assigned

@@ -36,9 +36,9 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         ingest.sync_feeds(store)
         stats["ingested"] = ingest.ingest(store)
     stats["wire_assigned"] = wire.assign_wire_groups(store)
+    stats["grouped"] = story_mod.group_stories(store, router)
     # leave ~10 minutes of the budget for the analysis stages
     stats["extracted"] = extract.extract_pending(store, router, deadline - 10 * 60)
-    stats["grouped"] = story_mod.group_stories(store, router)
 
     dirty = [s["id"] for s in store.rows(select(stories.c.id).where(stories.c.dirty.is_(True))
                                          .order_by(stories.c.updated_at.desc()))]

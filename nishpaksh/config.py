@@ -42,6 +42,7 @@ class Settings:
     # ingestion
     max_article_age_hours: int = 48
     max_new_articles_per_run: int = 400
+    max_new_per_feed: int = 30           # so a few prolific feeds cannot crowd out the rest
     max_article_chars: int = 7000
     min_full_text_chars: int = 400
     feed_disable_after_failures: int = 24
@@ -53,8 +54,11 @@ class Settings:
 
     # story grouping
     story_window_hours: int = 72
-    story_join_cosine_embed: float = 0.82
+    story_join_cosine_embed: float = 0.80
     story_join_cosine_tfidf: float = 0.30
+
+    # extraction: only stories covered by >= 2 independent sources; at most this many articles each
+    max_extract_per_story: int = 8
 
     # claim matching (TF-IDF within a story; the middle band goes to an LLM)
     claim_same_cosine: float = 0.75

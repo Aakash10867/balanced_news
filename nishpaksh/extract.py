@@ -12,7 +12,7 @@ import time
 from zoneinfo import ZoneInfo
 
 from .config import SETTINGS
-from .db import Store, articles, claims, delete, insert, select, update, utcnow
+from .db import Store, articles, claims, delete, insert, select, stories, update, utcnow
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -183,21 +183,67 @@ def _extract_one(store: Store, router: Router, a: dict) -> str:
         store.exec(update(articles).where(articles.c.id == a["id"])
                    .values(extract_failures=(a["extract_failures"] or 0) + 1))
         return "failed"
-    store_extraction(store, a["id"], None, ex)
+    store_extraction(store, a["id"], a.get("story_id"), ex)
     store.exec(update(articles).where(articles.c.id == a["id"]).values(
         extraction={"model": res.model}, extracted_at=utcnow(), signature=ex["signature"]))
+    if a.get("story_id"):
+        story = store.one(select(stories.c.signature).where(stories.c.id == a["story_id"]))
+        values = {"dirty": True, "updated_at": utcnow()}
+        if story and (not story["signature"] or story["signature"] == a["title"]):
+            values["signature"] = ex["signature"]  # neutral English one-liner beats a headline
+        store.exec(update(stories).where(stories.c.id == a["story_id"]).values(**values))
     return "done"
 
 
-def extract_pending(store: Store, router: Router, deadline: float, workers: int = 6) -> int:
-    """Read pending articles, several at a time: free-tier Gemma can take a minute or two per
-    article, so calls run in parallel while the router keeps every model inside its limits."""
-    pending = store.rows(
-        select(articles.c.id, articles.c.outlet, articles.c.title, articles.c.text, articles.c.published_at,
-               articles.c.extract_failures)
-        .where(articles.c.extracted_at.is_(None), articles.c.text.is_not(None), articles.c.extract_failures < 3)
-        .order_by(articles.c.published_at.desc())
+def select_for_extraction(store: Store) -> list[dict]:
+    """Which articles are worth an LLM call. A story only one source covers can never be
+    published and teaches the perspective model nothing, so it waits until a second
+    independent source appears. Within a story only one article per independent source is
+    read (a wire copy repeats its original), up to `max_extract_per_story` sources."""
+    from .wire import independence_groups
+    rows = store.rows(
+        select(articles.c.id, articles.c.outlet, articles.c.agency, articles.c.wire_group, articles.c.story_id,
+               articles.c.title, articles.c.text, articles.c.published_at, articles.c.extract_failures,
+               articles.c.extracted_at)
+        .where(articles.c.story_id.is_not(None), articles.c.text.is_not(None))
     )
+    by_story: dict[int, list[dict]] = {}
+    for r in rows:
+        by_story.setdefault(r["story_id"], []).append(r)
+    ranked = []
+    for sid, arts in by_story.items():
+        groups = independence_groups(arts)
+        if len(set(groups.values())) < 2:
+            continue
+        done = [a for a in arts if a["extracted_at"]]
+        room = SETTINGS.max_extract_per_story - len(done)
+        if room <= 0:
+            continue
+        seen_groups = {groups[a["id"]] for a in done}
+        # one article per independent source: a wire copy or a second piece from the same outlet
+        # would only repeat what that source already said
+        todo = [a for a in arts if not a["extracted_at"] and (a["extract_failures"] or 0) < 3
+                and groups[a["id"]] not in seen_groups]
+        todo.sort(key=lambda a: (-(a["published_at"].timestamp()), -len(a["text"] or "")))
+        picked = []
+        for a in todo:
+            if len(picked) >= room:
+                break
+            if groups[a["id"]] in seen_groups:
+                continue
+            picked.append(a)
+            seen_groups.add(groups[a["id"]])
+        if picked:
+            newest = max(a["published_at"] for a in arts)
+            ranked.append((len(set(groups.values())), newest, picked))
+    ranked.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return [a for _, _, picked in ranked for a in picked]
+
+
+def extract_pending(store: Store, router: Router, deadline: float, workers: int = 6) -> int:
+    """Read the selected articles, several at a time, while the router keeps every model inside
+    its limits."""
+    pending = select_for_extraction(store)
     if not pending:
         return 0
     stop = threading.Event()

@@ -139,6 +139,7 @@ def ingest(store: Store) -> int:
     oldest = now - dt.timedelta(hours=SETTINGS.max_article_age_hours)
     candidates: list[tuple[dict, dict]] = []
     seen: set[str] = set()
+    diag: dict[str, dict] = {}
 
     for feed in store.rows(select(feeds).where(feeds.c.disabled.is_(False))):
         try:
@@ -150,14 +151,17 @@ def ingest(store: Store) -> int:
             store.exec(update(feeds).where(feeds.c.id == feed["id"]).values(fail_count=fails, disabled=disabled))
             log.warning("feed %s failed (%d)%s: %s", feed["name"], fails, " -> DISABLED" if disabled else "", e)
             continue
+        diag[feed["name"]] = {"entries": len(entries), "fresh": 0, "added": 0, "too_short": 0}
         for en in entries:
             pub = en["published_at"] or now
             if pub < oldest or en["url"] in seen:
                 continue
             seen.add(en["url"])
             candidates.append((feed, en))
+            diag[feed["name"]]["fresh"] += 1
 
     if not candidates:
+        log.info("ingest: no fresh links; per feed %s", diag)
         return 0
     known = set()
     urls = [en["url"] for _, en in candidates]
@@ -165,7 +169,13 @@ def ingest(store: Store) -> int:
         known |= {r["url"] for r in store.rows(select(articles.c.url).where(articles.c.url.in_(urls[i:i + 500])))}
     todo = [(f, en) for f, en in candidates if en["url"] not in known]
     todo.sort(key=lambda fe: fe[1]["published_at"] or now, reverse=True)
-    todo = todo[: SETTINGS.max_new_articles_per_run]
+    per_feed: dict[int, int] = {}
+    fair = []
+    for f, en in todo:
+        if per_feed.get(f["id"], 0) < SETTINGS.max_new_per_feed:
+            per_feed[f["id"]] = per_feed.get(f["id"], 0) + 1
+            fair.append((f, en))
+    todo = fair[: SETTINGS.max_new_articles_per_run]
     log.info("ingest: %d new links across %d feeds", len(todo), len({f['id'] for f, _ in todo}))
 
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -175,8 +185,10 @@ def ingest(store: Store) -> int:
     for (feed, en), page in zip(todo, pages):
         text, source = (page or {}).get("text") or "", "full"
         if len(text) < SETTINGS.min_full_text_chars:
-            text, source = (en["summary"] or text), "summary"
-        if len(text) < 80:
+            # page blocked or unreadable: fall back to what the feed itself says
+            text, source = ". ".join(x for x in (en["title"], en["summary"]) if x), "summary"
+        if len(text) < 60:
+            diag[feed["name"]]["too_short"] += 1
             continue
         author = (page or {}).get("author") or en["author"]
         values = dict(
@@ -188,6 +200,10 @@ def ingest(store: Store) -> int:
         try:
             store.exec(insert(articles).values(**values))
             added += 1
+            diag[feed["name"]]["added"] += 1
         except Exception as e:  # unique race etc.
             log.debug("insert skipped %s: %s", en["url"], e)
+    quiet = {k: v for k, v in diag.items() if v["added"] == 0}
+    if quiet:
+        log.info("feeds that added nothing this run: %s", quiet)
     return added

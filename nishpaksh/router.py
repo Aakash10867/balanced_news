@@ -140,15 +140,28 @@ def _norm(model_id: str) -> str:
 
 
 class Router:
-    def __init__(self, tiers_cfg: dict, backend, store=None, max_wait: float = 75.0):
+    def __init__(self, tiers_cfg: dict, backend, store=None, max_wait: float = 180.0):
         self.backend = backend
         self.store = store
         self.max_wait = max_wait
         self.day = quota_day()
         self._lock = threading.Lock()
-        self.tiers: dict[str, list[ModelSlot]] = {
-            name: [ModelSlot(**m) for m in models] for name, models in tiers_cfg.items()
-        }
+        # One slot per model, shared by every tier that lists it, so a model used by two
+        # tiers is never counted against two separate quotas. `keep` lets a tier stop using a
+        # model while that many requests remain today, leaving them for the other tiers.
+        self.slots: dict[str, ModelSlot] = {}
+        self.tiers: dict[str, list[ModelSlot]] = {}
+        self.keep: dict[tuple[str, int], int] = {}
+        for name, models in tiers_cfg.items():
+            self.tiers[name] = []
+            for m in models:
+                m = dict(m)
+                keep = int(m.pop("keep", 0))
+                if m["id"] not in self.slots:
+                    self.slots[m["id"]] = ModelSlot(**m)
+                slot = self.slots[m["id"]]
+                self.tiers[name].append(slot)
+                self.keep[(name, id(slot))] = keep
         usage = store.quota_load(self.day) if store else {}
         for slot in self.all_slots():
             if slot.id in usage:
@@ -203,7 +216,8 @@ class Router:
 
     # budgets -------------------------------------------------------------------
     def remaining_today(self, tier: str) -> int:
-        return sum(max(0, s.rpd - s.used_today) for s in self.tiers.get(tier, []) if not s.disabled)
+        return sum(max(0, s.rpd - s.used_today - self.keep.get((tier, id(s)), 0))
+                   for s in self.tiers.get(tier, []) if not s.disabled)
 
     def per_run_budget(self, tier: str) -> int:
         """Spread what is left of today's quota over the hourly runs left today."""
@@ -217,6 +231,8 @@ class Router:
         best = None
         now = time.time()
         for s in self.tiers.get(tier, []):
+            if s.rpd - s.used_today <= self.keep.get((tier, id(s)), 0):
+                continue
             w = s.wait_time(est, now)
             if w is not None and (best is None or w < best[0]):
                 best = (w, s)
@@ -240,8 +256,9 @@ class Router:
                 slot.cooldown_until = time.time() + 60
         elif "404" in msg or "not found" in low or "not supported" in low or "invalid model" in low:
             slot.disabled = True
-        elif any(x in msg for x in ("500", "502", "503", "504")) or "unavailable" in low or "timeout" in low:
-            slot.cooldown_until = time.time() + 20
+        elif any(x in msg for x in ("500", "502", "503", "504")) or "unavailable" in low or "deadline" in low \
+                or "timeout" in low or "timed out" in low:
+            slot.cooldown_until = time.time() + 45  # overloaded: let the other models in the tier work
         else:
             slot.cooldown_until = time.time() + 30
         log.warning("model %s error: %s", slot.id, msg[:200])

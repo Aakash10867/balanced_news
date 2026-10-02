@@ -19,10 +19,11 @@ A story is published only if at least two perspectives cover it. One-sided stori
 ## How it works
 
 ```
-RSS feeds (35 outlets, English + Hindi)          plain HTTP, no AI
+RSS feeds (English + Hindi)                       plain HTTP, no AI
   → wire-copy detection (MinHash + agency bylines) code
-  → extraction: events, claims, times, loaded words  Gemma 4 31B / 26B
-  → group into stories                             Gemini Embedding, TF-IDF fallback
+  → group into stories (title + lead)              multilingual Gemini Embedding, TF-IDF fallback
+  → pick what to read: stories with ≥2 independent sources, one article per source, ≤8 per story
+  → extraction: events, claims, times, loaded words  Flash-Lite; Gemma 4 as overflow
   → match statements across articles               code; ambiguous pairs → Flash-Lite
   → perspectives from agreement                    code (signed graph + spectral clustering)
   → verdicts                                       code; contested ones → search grounding
@@ -43,13 +44,14 @@ Design rules worth knowing before you change anything:
 
 | Tier | Models | Requests/day | Used for |
 |---|---|---|---|
-| bulk | Gemma 4 31B, 26B | 28,800 (TPM-bound to roughly 8,000 articles) | reading every article; second opinion on verdicts |
-| light | 3.5 & 3.1 Flash-Lite | 1,000 | matching, headlines, translation |
+| bulk | 3.5 & 3.1 Flash-Lite (700/day after reserve), then Gemma 4 31B, 26B | ~700 reliable + Gemma when it responds | reading articles |
+| second | Gemma 4 31B, 26B | 28,800 | independent second opinion on verdicts |
+| light | 3.5 & 3.1 Flash-Lite (shared quota, 300/day reserved) | 300 | matching, headlines, translation |
 | judge | 3, 3.5, 3.6, 3.7, 3.8 Flash, Robotics ER 2 | 120 | verdicts on contested claims |
 | grounded | 2.5 Flash, 2.5 Flash-Lite | 40 | web search for primary evidence |
 | embed | Gemini Embedding 2, 1 | 2,000 | story grouping |
 
-The router spreads each day's remaining quota over the hourly runs left, falls back across models in a tier, and remembers usage in the database. Quotas reset at midnight Pacific (12:30 pm IST).
+Free-tier Gemma 4 was mostly returning 500/504 errors in the first real runs, which is why Flash-Lite reads articles first. A model listed in two tiers shares one quota. The router spreads each day's remaining quota over the hourly runs left, falls back across models in a tier, and remembers usage in the database. Quotas reset at midnight Pacific (12:30 pm IST).
 
 ## Setup (about 20 minutes)
 

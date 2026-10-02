@@ -163,7 +163,7 @@ def verify_story(store: Store, router: Router, story_id: int, budget: dict) -> i
         prompt = JUDGE_PROMPT.format(signature=story["signature"], text=text,
                                      reports=_reports(cid, canon, members, arts), evidence=evidence)
         opinions = []
-        for tier in ("judge", "bulk"):  # two model families must agree independently
+        for tier in ("judge", "second"):  # two model families must agree independently
             try:
                 res = router.call(tier, prompt, json_out=True, max_output_tokens=600)
                 d = res.data if isinstance(res.data, dict) else {}

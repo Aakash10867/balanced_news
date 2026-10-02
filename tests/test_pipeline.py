@@ -135,7 +135,8 @@ def test_end_to_end(store):
     _seed(store)
     backend = FakeBackend()
     stats = run(store=store, backend=backend, time_budget_min=30, ingest_news=False)
-    assert stats["extracted"] == len(ARTICLES)
+    # the second PTI copy is the same source as the first, so it is never sent to a model
+    assert stats["extracted"] == len(ARTICLES) - 1
 
     sts = store.rows(select(stories))
     assert len(sts) == 2                                         # Hindi + English grouped together
