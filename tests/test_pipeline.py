@@ -365,3 +365,20 @@ def test_duplicate_embeddings_are_rejected_not_copied():
         def embed(self, model, texts): return [[0.5, 0.5]] * len(texts)
     r = Router({"embed": [dict(id="e", rpm=100, tpm=10**6, rpd=100)]}, OneVector())
     assert r.embed(["farming tips", "protest detention"]) is None
+
+
+def test_copied_vectors_are_healed(store):
+    from nishpaksh.db import stories
+    from nishpaksh.stories import _heal_copied_vectors
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, signature="x", dirty=False))
+    same = [0.1] * 256
+    for i, title in enumerate(["Farming tips", "Protest detention", "Protest detention"]):
+        store.exec(insert(articles).values(url=f"u{i}", outlet="X", lang="en", title=title, text="t",
+                                           published_at=NOW, extract_failures=0, embedding=same, story_id=sid))
+    store.exec(insert(articles).values(url="u9", outlet="Y", lang="en", title="Other", text="t",
+                                       published_at=NOW, extract_failures=0, embedding=[0.2] * 256, story_id=sid))
+    assert _heal_copied_vectors(store, NOW - dt.timedelta(days=1)) == 3
+    left = {r["url"]: r for r in store.rows(select(articles))}
+    assert left["u0"]["embedding"] is None and left["u0"]["story_id"] is None
+    assert left["u9"]["embedding"] == [0.2] * 256                         # untouched
+    assert store.one(select(stories).where(stories.c.id == sid))["dirty"] is True

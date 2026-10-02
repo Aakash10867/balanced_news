@@ -47,8 +47,32 @@ def _release_singletons(store: Store, since: dt.datetime) -> int:
     return len(lonely)
 
 
+def _heal_copied_vectors(store: Store, since: dt.datetime) -> int:
+    """Self-repair: different articles must not share an identical vector. If they do (an
+    embedding batch was misread), detach them from their stories and re-embed them."""
+    rows = store.rows(select(articles.c.id, articles.c.title, articles.c.embedding, articles.c.story_id)
+                      .where(articles.c.embedding.is_not(None), articles.c.published_at >= since))
+    by_vec: dict[tuple, list[dict]] = {}
+    for r in rows:
+        by_vec.setdefault(tuple(r["embedding"][:16]), []).append(r)
+    bad = [r for group in by_vec.values() if len({g["title"] for g in group}) > 1 for r in group]
+    if not bad:
+        return 0
+    ids = [r["id"] for r in bad]
+    old_stories = sorted({r["story_id"] for r in bad if r["story_id"] is not None})
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        store.exec(update(articles).where(articles.c.id.in_(chunk)).values(embedding=None, story_id=None))
+        store.exec(update(claims).where(claims.c.article_id.in_(chunk)).values(story_id=None, canonical_id=None))
+    for i in range(0, len(old_stories), 500):
+        store.exec(update(stories).where(stories.c.id.in_(old_stories[i:i + 500])).values(dirty=True))
+    log.warning("stories: %d articles shared a copied vector; detached and queued for re-embedding", len(ids))
+    return len(ids)
+
+
 def group_stories(store: Store, router: Router | None, embed_seconds: float = 360) -> int:
     since = utcnow() - dt.timedelta(hours=SETTINGS.story_window_hours)
+    healed = _heal_copied_vectors(store, since)
     released = _release_singletons(store, since)
     arts = store.rows(
         select(articles.c.id, articles.c.title, articles.c.text, articles.c.embedding, articles.c.story_id,
@@ -147,6 +171,6 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
             if read:
                 c.execute(update(stories).where(stories.c.id.in_(read)).values(dirty=True))
     # stories become "dirty" (need re-analysis) only when an article in them is read
-    log.info("stories: %d articles grouped (%s mode), %d stories touched, %d lone articles re-grouped",
-             len(new_assign), mode, len(touched), released)
+    log.info("stories: %d articles grouped (%s mode), %d stories touched, %d lone articles re-grouped, "
+             "%d copied vectors repaired", len(new_assign), mode, len(touched), released, healed)
     return len(new_assign)
