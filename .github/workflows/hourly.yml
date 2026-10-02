@@ -1,16 +1,44 @@
 name: hourly-pipeline
 
+# GitHub runs scheduled workflows on a best-effort basis: at busy times they are delayed by
+# hours or dropped, and the top of the hour is the busiest. So this is triggered four times
+# an hour, at quiet minutes, and the gate lets a trigger through only if no run has started
+# in the last 50 minutes. Result: roughly one run an hour even when most triggers are lost.
+# "Run workflow" (manual) always goes ahead.
 on:
   schedule:
-    - cron: "7 * * * *"
+    - cron: "3,18,33,48 * * * *"
   workflow_dispatch: {}
 
 concurrency:
   group: nishpaksh-pipeline
-  cancel-in-progress: false
+  cancel-in-progress: false   # never run two pipelines on the same database at once
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q "sqlalchemy>=2.0" "psycopg2-binary>=2.9" "pyyaml>=6.0"
+      - id: check
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"; echo "manual run: going ahead"
+          else
+            python -m nishpaksh.gate --min-gap 50 | tee -a "$GITHUB_OUTPUT"
+          fi
+
   run:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
@@ -24,4 +52,5 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RUN_TRIGGER: ${{ github.event_name }}
         run: python -m nishpaksh.run --time-budget 45

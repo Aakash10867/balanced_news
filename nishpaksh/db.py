@@ -120,6 +120,15 @@ translations = Table(
     Column("text", Text),
 )
 
+runs = Table(  # one row per pipeline run; the scheduler gate reads it
+    "runs", md,
+    Column("id", Integer, primary_key=True),
+    Column("started_at", DateTime, nullable=False, index=True),
+    Column("finished_at", DateTime),
+    Column("trigger", String(30)),
+    Column("stats", JSON),
+)
+
 quota_usage = Table(
     "quota_usage", md,
     Column("model", String(100), primary_key=True),
@@ -195,5 +204,5 @@ class Store:
 
 __all__ = [
     "Store", "utcnow", "feeds", "articles", "stories", "claims", "canonical", "story_pairs",
-    "source_clusters", "published", "translations", "quota_usage", "select", "insert", "update", "delete",
+    "source_clusters", "published", "translations", "quota_usage", "runs", "select", "insert", "update", "delete",
 ]

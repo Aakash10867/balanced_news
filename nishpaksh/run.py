@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import time
 
 from .config import SETTINGS, database_url, gemini_api_key, load_yaml
@@ -29,6 +30,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         if not key:
             raise SystemExit("GEMINI_API_KEY is not set")
         backend = GeminiBackend(key)
+    from .db import insert as _insert, runs as _runs, utcnow as _now
+    run_id = store.insert_returning_id(_runs, dict(started_at=_now(), trigger=os.environ.get("RUN_TRIGGER", "manual")))
     router = Router(load_yaml("models.yaml")["tiers"], backend, store)
     router.resolve()
     stats: dict = {}
@@ -70,6 +73,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     stats.update(stories_processed=len(dirty), claims_checked=checked, published=published,
                  storage=retention.enforce(store), seconds=round(time.time() - t0))
     stats["quota_left"] = {t: router.remaining_today(t) for t in router.tiers}
+    store.exec(update(_runs).where(_runs.c.id == run_id).values(finished_at=_now(), stats=stats))
     log.info("run complete: %s", stats)
     return stats
 

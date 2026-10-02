@@ -328,3 +328,12 @@ def test_narrative_is_checked_and_coloured(store):
     assert [s["n"] for s in nar["sources"]] == list(range(1, len(nar["sources"]) + 1))
     hi = p["payload_hi"]["narrative"]["sections"][0]["sentences"][0]["text"]
     assert hi.startswith("[हिं]")
+
+
+def test_gate_spaces_runs(store):
+    from nishpaksh.db import runs
+    from nishpaksh.gate import should_run
+    assert should_run(store, 50)[0] is True                          # nothing has run yet
+    store.exec(insert(runs).values(started_at=NOW - dt.timedelta(minutes=20)))
+    assert should_run(store, 50, now=NOW)[0] is False                # too soon
+    assert should_run(store, 50, now=NOW + dt.timedelta(minutes=31))[0] is True
