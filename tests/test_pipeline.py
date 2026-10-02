@@ -11,6 +11,9 @@ from nishpaksh.wire import independence_groups, jaccard, minhash
 from .fixtures import ARTICLES, NOW, FakeBackend
 
 
+VB = {"grounded": 5, "judge": 5}  # fixed so tests do not depend on the hour
+
+
 @pytest.fixture
 def store(tmp_path):
     s = Store(f"sqlite:///{tmp_path / 't.db'}")
@@ -134,7 +137,7 @@ def test_end_to_end(store):
     from nishpaksh.run import run
     _seed(store)
     backend = FakeBackend()
-    stats = run(store=store, backend=backend, time_budget_min=30, ingest_news=False)
+    stats = run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB)
     # the second PTI copy is the same source as the first, so it is never sent to a model
     assert stats["extracted"] == len(ARTICLES) - 1
 
@@ -167,7 +170,8 @@ def test_end_to_end(store):
     rain = next(i for t, i in cont.items() if "rain" in t.lower() and i["kind"] == "event")
     assert rain["verdict"] == "unverified"
     rel = next(i for i in en["contested"] if i["kind"] == "relation")
-    assert "because of" in rel["text"] and rel["verdict"] == "unverified"
+    assert rel["text"] == ("A section of the Kesarganj flyover collapsed because heavy rain fell in Kesarganj."
+                           ) and rel["verdict"] == "unverified"
 
     framing = {f["text"]: f["words"] for f in en["framing"]}
     words = framing["The contractor used substandard material"]
@@ -178,7 +182,7 @@ def test_end_to_end(store):
     assert hi["headline"].startswith("[हिं]") and hi["translation_complete"]
 
     # second run with nothing new: no reprocessing, no new version
-    run(store=store, backend=backend, time_budget_min=30, ingest_news=False)
+    run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB)
     assert store.one(select(published).where(published.c.story_id == contested["id"]))["version"] == 1
 
 
@@ -191,7 +195,7 @@ def test_headline_with_loaded_word_is_rejected(store):
                 return '{"headline": "Shoddy flyover collapses in Kesarganj"}', [], 10
             return super().generate(model, prompt, json_mode, grounded)
     _seed(store)
-    run(store=store, backend=Loaded(), time_budget_min=30, ingest_news=False)
+    run(store=store, backend=Loaded(), time_budget_min=30, ingest_news=False, verify_budget=VB)
     pub = store.rows(select(published))[0]
     assert "shoddy" not in pub["headline_en"].lower()
 
@@ -204,7 +208,7 @@ def test_quota_exhaustion_degrades_safely(store):
         def list_models(self):
             return [m for m in super().list_models() if "3.8" not in m and "3.7" not in m]
     _seed(store)
-    run(store=store, backend=NoJudge(), time_budget_min=30, ingest_news=False)
+    run(store=store, backend=NoJudge(), time_budget_min=30, ingest_news=False, verify_budget=VB)
     verdicts = {r["verdict"] for r in store.rows(select(canonical))}
     assert "false" not in verdicts and "confirmed" not in verdicts
 
@@ -276,7 +280,7 @@ def test_archive_has_everything_but_article_bodies(store, tmp_path):
     from nishpaksh.archive import export_day
     from nishpaksh.run import run
     _seed(store)
-    run(store=store, backend=FakeBackend(), ingest_news=False)
+    run(store=store, backend=FakeBackend(), ingest_news=False, verify_budget=VB)
     lines = []
     for d in {(NOW - dt.timedelta(hours=h)).date() for h in range(0, 12)}:
         with gzip.open(export_day(store, d, tmp_path), "rt", encoding="utf-8") as f:
@@ -299,5 +303,28 @@ def test_two_sources_disagreeing_is_not_two_perspectives(store):
     store.exec(_del(articles).where(articles.c.outlet.not_in(keep)))
     store.exec(_del(articles).where(articles.c.title.like("%monsoon%") | articles.c.title.like("%Assembly%")))
     store.exec(_del(articles).where(articles.c.outlet == "Daily Alpha"))
-    run(store=store, backend=FakeBackend(), ingest_news=False)
+    run(store=store, backend=FakeBackend(), ingest_news=False, verify_budget=VB)
     assert store.rows(select(published)) == []
+
+
+def test_narrative_is_checked_and_coloured(store):
+    from nishpaksh.run import run
+    _seed(store)
+    run(store=store, backend=FakeBackend(), ingest_news=False, verify_budget=VB)
+    p = store.rows(select(published))[0]
+    nar = p["payload_en"]["narrative"]
+    keys = [sec["key"] for sec in nar["sections"]]
+    assert keys[0] == "happened"
+    sents = [x for sec in nar["sections"] for x in sec["sentences"]]
+    text = " ".join(x["text"] for x in sents)
+    assert "shoddy" not in text.lower() and "5 people" not in text     # both bad sentences rejected
+    # rejected: the loaded word, the invented number, and the red sentence that never said "false"
+    assert nar["rejected"] == 3
+    happened = nar["sections"][0]["sentences"]
+    assert all(x["class"] == "established" for x in happened)
+    false_s = [x for x in sents if x["class"] == "false"]
+    assert false_s and "substandard" in false_s[0]["text"] and "false" in false_s[0]["text"]
+    assert all(x["sources"] for x in sents)                            # every sentence cites sources
+    assert [s["n"] for s in nar["sources"]] == list(range(1, len(nar["sources"]) + 1))
+    hi = p["payload_hi"]["narrative"]["sections"][0]["sentences"][0]["text"]
+    assert hi.startswith("[हिं]")

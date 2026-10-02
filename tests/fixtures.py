@@ -119,6 +119,23 @@ class FakeBackend:
                 label = "same" if len(wa & wb) / len(wa | wb) >= 0.5 else "different"
                 res.append({"n": int(n), "label": label})
             return json.dumps({"results": res}), [], 200
+        if "You are writing a short, readable news story" in prompt:
+            out = []
+            for key, body in re.findall(r"\[(\w+)\][^\n]*\n((?:#.*\n?)+)", prompt):
+                stmts = re.findall(r'#(\d+) (\w+) \| "(.*?)"(?: \| reported by: ([^|\n]*))?', body)
+                sents = []
+                for n, (sid, status, text, by) in enumerate(stmts):
+                    if status == "ESTABLISHED":
+                        sents.append({"text": text + ".", "ids": [int(sid)]})
+                    else:
+                        sents.append({"text": f"According to {by.strip()}, {text[0].lower() + text[1:]}.",
+                                      "ids": [int(sid)]})
+                if key == "contested":
+                    # two bad sentences the validator must reject
+                    sents.append({"text": "The shoddy work was obvious.", "ids": [int(stmts[0][0])]})
+                    sents.append({"text": "Officials say 5 people were hurt.", "ids": [int(stmts[0][0])]})
+                out.append({"key": key, "sentences": sents})
+            return json.dumps({"sections": out}), [], 400
         if "Write one news headline" in prompt:
             return json.dumps({"headline": "Section of Kesarganj flyover collapses; two dead, engineer arrested"}), [], 50
         if "Translate each value" in prompt:

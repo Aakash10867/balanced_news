@@ -10,13 +10,14 @@ import logging
 import time
 
 from .config import SETTINGS, database_url, gemini_api_key, load_yaml
-from .db import Store, select, stories
+from .db import Store, select, stories, update
 from .router import GeminiBackend, Router
 
 log = logging.getLogger("nishpaksh")
 
 
-def run(store: Store | None = None, backend=None, time_budget_min: float = 40, ingest_news: bool = True) -> dict:
+def run(store: Store | None = None, backend=None, time_budget_min: float = 40, ingest_news: bool = True,
+        verify_budget: dict | None = None) -> dict:
     from . import compose, extract, ingest, match, perspectives, stories as story_mod, verify, wire
 
     t0 = time.time()
@@ -40,6 +41,11 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     # leave ~10 minutes of the budget for the analysis stages
     stats["extracted"] = extract.extract_pending(store, router, deadline - 10 * 60)
 
+    # pages published before the readable story existed get rewritten once
+    from .db import published as _published
+    for row in store.rows(select(_published.c.story_id, _published.c.payload_en)):
+        if not (row["payload_en"] or {}).get("narrative"):
+            store.exec(update(stories).where(stories.c.id == row["story_id"]).values(dirty=True))
     dirty = [s["id"] for s in store.rows(select(stories.c.id).where(stories.c.dirty.is_(True))
                                          .order_by(stories.c.updated_at.desc()))]
     for sid in dirty:
@@ -50,7 +56,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         for sid in dirty:  # labels may have changed
             perspectives.analyze_story(store, sid)
 
-    budget = {"grounded": router.per_run_budget("grounded"), "judge": router.per_run_budget("judge")}
+    budget = dict(verify_budget) if verify_budget else {
+        "grounded": router.per_run_budget("grounded"), "judge": router.per_run_budget("judge")}
     stats["verify_budget"] = dict(budget)
     checked = published = 0
     for sid in dirty:

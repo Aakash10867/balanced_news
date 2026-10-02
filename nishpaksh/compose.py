@@ -162,6 +162,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         "contested": contested,
         "framing": framing,
         "sources": sources,
+        "loaded_words": sorted(banned),
         "counts": {"articles": len(full_arts), "independent_sources": len(analysis.get("groups") or {})},
     }
 
@@ -184,6 +185,8 @@ def _collect_strings(payload: dict) -> list[str]:
                 out.append(i["time"]["when_text"])
     for f in payload["framing"]:
         out.append(f["text"])
+    for sec in (payload.get("narrative") or {}).get("sections", []):
+        out += [x["text"] for x in sec["sentences"]]
     return [s for s in dict.fromkeys(out) if s]
 
 
@@ -228,6 +231,9 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
                 i["time"]["when_text"] = tr(i["time"]["when_text"])
     for f in hi["framing"]:
         f["text"] = tr(f["text"])
+    for sec in (hi.get("narrative") or {}).get("sections", []):
+        for x in sec["sentences"]:
+            x["text"] = tr(x["text"])
     hi["translation_complete"] = all(_key(s) in cache for s in strings)
     return hi
 
@@ -237,8 +243,14 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     store.exec(update(stories).where(stories.c.id == story_id).values(dirty=False))
     if payload is None:
         return False
-    hi = translate_payload(store, router, payload)
     prev = store.one(select(published).where(published.c.story_id == story_id))
+    from .narrative import input_hash, sections_from_payload, write_narrative
+    old = ((prev or {}).get("payload_en") or {}).get("narrative")
+    if old and old.get("hash") == input_hash(sections_from_payload(payload)) and not old.get("rejected"):
+        payload["narrative"] = old  # same statements, same verdicts: keep the story as written
+    else:
+        payload["narrative"] = write_narrative(router, payload, set(payload["loaded_words"]))
+    hi = translate_payload(store, router, payload)
     version = (prev["version"] if prev else 0) + 1
     payload["version"] = hi["version"] = version
     values = dict(version=version, updated_at=utcnow(), headline_en=payload["headline"],

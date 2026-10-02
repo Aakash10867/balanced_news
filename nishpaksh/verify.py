@@ -57,10 +57,12 @@ Reply with JSON only:
 
 
 def relation_text(rel: dict, texts: dict[int, str]) -> str:
-    a, b = texts.get(rel.get("from"), "?"), texts.get(rel.get("to"), "?")
+    a = texts.get(rel.get("from"), "?").rstrip(". ")
+    b = texts.get(rel.get("to"), "?").rstrip(". ")
+    lower = lambda x: x[:1].lower() + x[1:] if x and not x[:2].isupper() else x  # noqa: E731
     if rel.get("type") == "caused":
-        return f"“{b}” happened because of / in response to “{a}”."
-    return f"“{a}” happened before “{b}”."
+        return f"{b} because {lower(a)}."
+    return f"{a}, and after that {lower(b)}."
 
 
 def _story_context(store: Store, story_id: int):
