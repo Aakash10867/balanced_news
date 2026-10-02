@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 
 def _story_text(a: dict) -> str:
-    lead = re.sub(r"\s+", " ", (a["text"] or "")[:600])
+    lead = re.sub(r"\s+", " ", (a["text"] or "")[:400])
     return f"{a['title'] or ''}. {lead}"
 
 
