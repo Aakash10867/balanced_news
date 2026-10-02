@@ -337,3 +337,15 @@ def test_gate_spaces_runs(store):
     store.exec(insert(runs).values(started_at=NOW - dt.timedelta(minutes=20)))
     assert should_run(store, 50, now=NOW)[0] is False                # too soon
     assert should_run(store, 50, now=NOW + dt.timedelta(minutes=31))[0] is True
+
+
+def test_story_stage_respects_deadline_and_isolates_failures():
+    import time as _t
+
+    from nishpaksh.run import _parallel
+    assert _parallel([1, 2, 3], lambda x: None, _t.time() - 1, 4) == []     # past deadline: nothing starts
+
+    def flaky(x):
+        if x == 2:
+            raise RuntimeError("boom")
+    assert sorted(_parallel([1, 2, 3], flaky, _t.time() + 5, 2)) == [1, 3]  # one failure does not stop others

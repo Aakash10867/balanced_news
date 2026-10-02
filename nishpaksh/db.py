@@ -197,9 +197,14 @@ class Store:
             return
         with self.engine.begin() as c:
             existing = {r[0] for r in c.execute(select(translations.c.key).where(translations.c.key.in_(list(items))))}
-            new = [{"key": k, "text": v} for k, v in items.items() if k not in existing]
-            if new:
-                c.execute(insert(translations), new)
+        for k, v in items.items():
+            if k in existing:
+                continue
+            try:  # stories are published in parallel and may cache the same sentence at once
+                with self.engine.begin() as c:
+                    c.execute(insert(translations).values(key=k, text=v))
+            except Exception:  # noqa: BLE001  (duplicate key: already cached by another story)
+                pass
 
 
 __all__ = [
