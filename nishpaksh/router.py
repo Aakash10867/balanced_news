@@ -180,6 +180,7 @@ class Router:
         self.max_wait = max_wait
         self.day = quota_day()
         self._lock = threading.Lock()
+        self.bad_keys: set[int] = set()
         # One slot per (key, model), shared by every tier that lists the model, so a model used by
         # two tiers is never counted against two separate quotas. `keep` lets a tier stop using a
         # model while that many requests remain today, leaving them for the other tiers.
@@ -288,6 +289,15 @@ class Router:
     def _handle_error(self, slot: ModelSlot, e: Exception) -> None:
         msg = str(e)
         low = msg.lower()
+        if ("api key not valid" in low or "api_key_invalid" in low or "permission_denied" in low
+                or "api key expired" in low or "unauthenticated" in low):
+            # a bad key is bad for every model: stop using it for this run instead of retrying
+            for s in self.all_slots():
+                if s.key == slot.key:
+                    s.disabled = True
+            self.bad_keys.add(slot.key)
+            log.error("API key %d rejected (%s); all its models disabled for this run", slot.key + 1, msg[:120])
+            return
         if "429" in msg or "resource_exhausted" in low or "quota" in low:
             if "perday" in low.replace(" ", "") or "per_day" in low or "daily" in low:
                 slot.used_today = slot.rpd

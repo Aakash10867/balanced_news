@@ -143,8 +143,15 @@ def probe_embedcmp(store: Store, router: Router) -> dict:
     arts = {r._mapping["id"]: dict(r._mapping) for r in _q(store, sql(
         "select id, title, text, lang from articles where id = any(:ids)").bindparams(ids=ids))}
     pairs = [p for p in pairs if p[0] in arts and p[1] in arts]
-    backend = router.backends[-1]          # the key with the most quota left today
-    models = [s.id for s in router.tiers["embed"] if s.key == len(router.backends) - 1 and not s.disabled]
+    key = 0
+    for k, b in enumerate(router.backends):
+        try:
+            b.list_models()
+            key = k
+        except Exception as e:  # noqa: BLE001
+            log.warning("key %d unusable: %s", k + 1, str(e)[:120])
+    backend = router.backends[key]
+    models = [s.id for s in router.tiers["embed"] if s.key == key and not s.disabled]
     forms = {"title": lambda a: a["title"] or "",
              "title_lead400": lambda a: f"{a['title'] or ''}. {_lead(a, 400)}",
              "lead600": lambda a: _lead(a, 600) or (a["title"] or "")}
