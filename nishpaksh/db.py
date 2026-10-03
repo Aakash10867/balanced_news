@@ -177,7 +177,8 @@ class Store:
             md.create_all(self.engine)
         except Exception as e:  # noqa: BLE001
             from sqlalchemy import inspect
-            missing = sorted(set(md.tables) - set(inspect(self.engine).get_table_names()))
+            insp = inspect(self.engine)
+            missing = sorted(set(md.tables) - set(insp.get_table_names()) - set(insp.get_view_names()))
             if missing:
                 raise RuntimeError(f"tables missing and cannot be created by this role: {missing}. "
                                    "Apply supabase/migrations.") from e
