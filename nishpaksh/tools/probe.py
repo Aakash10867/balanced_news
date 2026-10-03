@@ -46,6 +46,12 @@ Language does not matter: a Hindi and an English item can be "same".
 Reply with JSON only: {{"results": [{{"n": 1, "label": "same"}}, ...]}}"""
 
 
+def _q(store: Store, stmt):
+    """Run a read query and close the connection (an open transaction blocks schema changes)."""
+    with store.engine.connect() as c:
+        return list(c.execute(stmt))
+
+
 def _lead(a: dict, n: int = 160) -> str:
     return re.sub(r"\s+", " ", (a.get("text") or "")[:n])
 
@@ -57,7 +63,7 @@ def _label_pairs(router: Router, pairs: list[tuple[dict, dict]]) -> list[str | N
         lines = "\n".join(f'{k + 1}. A: "{a["title"]} — {_lead(a)}" | B: "{b["title"]} — {_lead(b)}"'
                           for k, (a, b) in enumerate(chunk))
         labels: list[str | None] = [None] * len(chunk)
-        for tier in ("second", "light"):
+        for tier in ("light", "second"):
             try:
                 res = router.call(tier, PAIR_PROMPT.format(pairs=lines), json_out=True, max_output_tokens=1200)
                 for r in (res.data or {}).get("results", []):
@@ -72,7 +78,7 @@ def _label_pairs(router: Router, pairs: list[tuple[dict, dict]]) -> list[str | N
 
 
 def probe_grouping(store: Store, router: Router, per_band: int = 24) -> dict:
-    rows = [dict(r._mapping) for r in store.engine.connect().execute(sql(
+    rows = [dict(r._mapping) for r in _q(store, sql(
         "select id, title, text, lang, outlet, story_id, embedding, text_source, published_at "
         "from articles where embedding is not null and published_at > now() - interval '96 hours'"))]
     rows = [r for r in rows if r["embedding"] and len(r["embedding"]) == 256]
@@ -171,10 +177,10 @@ def _tavily(path: str, body: dict) -> dict:
 
 def probe_fetch(store: Store, extra_urls: list[str]) -> dict:
     from ..ingest import fetch_article
-    rows = [dict(r._mapping) for r in store.engine.connect().execute(sql(
+    rows = [dict(r._mapping) for r in _q(store, sql(
         "select distinct on (outlet) outlet, url from articles where text_source = 'summary' "
         "and published_at > now() - interval '48 hours' order by outlet, published_at desc"))]
-    more = [dict(r._mapping) for r in store.engine.connect().execute(sql(
+    more = [dict(r._mapping) for r in _q(store, sql(
         "select outlet, url from (select outlet, url, row_number() over (partition by outlet order by published_at desc) k "
         "from articles where text_source = 'summary' and published_at > now() - interval '48 hours') t where k = 2"))]
     targets = [(r["outlet"], r["url"]) for r in rows + more] + [("search:" + urlsplit(u).netloc, u) for u in extra_urls]
@@ -223,7 +229,7 @@ def _bing(query: str) -> list[dict]:
 
 
 def probe_search(store: Store) -> tuple[dict, list[str]]:
-    stories = [dict(r._mapping) for r in store.engine.connect().execute(sql(
+    stories = [dict(r._mapping) for r in _q(store, sql(
         "select s.id, s.signature, count(distinct a.outlet) o from stories s join articles a on a.story_id = s.id "
         "where a.published_at > now() - interval '36 hours' and a.extracted_at is not null "
         "group by s.id, s.signature having count(distinct a.outlet) between 2 and 6 order by random() limit 4"))]
@@ -290,12 +296,13 @@ def probe_search(store: Store) -> tuple[dict, list[str]]:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--parts", default="grouping,search,fetch")
+    p.add_argument("--parts", default="search,fetch,grouping")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store = Store(database_url())
     # the diagnostics table is created by a migration (the app role cannot create tables)
-    router = Router(load_yaml("models.yaml")["tiers"], GeminiBackend(gemini_api_key()), store)
+    from ..config import gemini_api_keys
+    router = Router(load_yaml("models.yaml")["tiers"], [GeminiBackend(k, timeout_s=60) for k in gemini_api_keys()], store)
     router.resolve()
     parts = a.parts.split(",")
     extra: list[str] = []

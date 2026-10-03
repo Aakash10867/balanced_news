@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       parts:
-        default: "grouping,search,fetch"
+        default: "search,fetch,grouping"
 permissions:
   contents: write
 jobs:
@@ -28,7 +28,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -o pipefail
-          python -m nishpaksh.tools.probe --parts "${{ github.event.inputs.parts || 'grouping,search,fetch' }}" 2>&1 | tee probe.log
+          python -m nishpaksh.tools.probe --parts "${{ github.event.inputs.parts || 'search,fetch,grouping' }}" 2>&1 | tee probe.log
       # the log is pushed to the probe-logs branch so it can be read without a GitHub login
       - if: always()
         run: |
