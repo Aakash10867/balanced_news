@@ -8,6 +8,8 @@ on:
     inputs:
       parts:
         default: "grouping,search,fetch"
+permissions:
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -24,4 +26,15 @@ jobs:
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python -m nishpaksh.tools.probe --parts "${{ github.event.inputs.parts || 'grouping,search,fetch' }}"
+        run: |
+          set -o pipefail
+          python -m nishpaksh.tools.probe --parts "${{ github.event.inputs.parts || 'grouping,search,fetch' }}" 2>&1 | tee probe.log
+      # the log is pushed to the probe-logs branch so it can be read without a GitHub login
+      - if: always()
+        run: |
+          git config user.name "probe-bot"; git config user.email "probe-bot@users.noreply.github.com"
+          mkdir -p /tmp/l && cp probe.log /tmp/l/ 2>/dev/null || echo "no log" > /tmp/l/probe.log
+          git fetch origin probe-logs || true
+          git checkout --orphan probe-logs-tmp && git rm -rfq . && cp /tmp/l/probe.log "log-${{ github.run_id }}.txt"
+          git add "log-${{ github.run_id }}.txt" && git commit -qm "probe log ${{ github.run_id }}"
+          git push -f origin HEAD:probe-logs
