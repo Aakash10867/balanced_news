@@ -229,69 +229,45 @@ def _bing(query: str) -> list[dict]:
 
 
 def probe_search(store: Store) -> tuple[dict, list[str]]:
+    """Exercise the production search code (discover.py) on real stories, without storing anything."""
+    from ..discover import bing, gnews, query_from, resolve
+    from ..ownership import canonical_outlet, owner_of
     stories = [dict(r._mapping) for r in _q(store, sql(
         "select s.id, s.signature, count(distinct a.outlet) o from stories s join articles a on a.story_id = s.id "
         "where a.published_at > now() - interval '36 hours' and a.extracted_at is not null "
-        "group by s.id, s.signature having count(distinct a.outlet) between 2 and 6 order by random() limit 4"))]
+        "group by s.id, s.signature having count(distinct a.outlet) between 1 and 5 order by random() limit 6"))]
     report = {"queries": []}
-    blocked_hosts = ("indianexpress", "theprint", "thewire", "scroll", "firstpost", "ndtv", "organiser",
-                     "panchjanya", "thequint", "newslaundry", "swarajya")
+    decoded_ok = decoded_n = 0
     to_read: list[str] = []
-    decode_ok = decode_n = 0
-    try:
-        from googlenewsdecoder import gnewsdecoder
-    except Exception:  # noqa: BLE001
-        gnewsdecoder = None
     for s in stories:
-        q = re.sub(r"[^\w\s]", " ", s["signature"] or "")
-        q = " ".join(q.split()[:12])
-        entry = {"story": s["id"], "query": q, "have_outlets": s["o"]}
+        q = query_from(s["signature"] or "")
+        entry = {"story": s["id"], "signature": (s["signature"] or "")[:140], "query": q, "have_outlets": s["o"]}
         try:
-            g = _gnews(q, "en")
+            g = gnews(q)
             entry["gnews_n"] = len(g)
-            entry["gnews_sources"] = sorted({x["source"] for x in g if x["source"]})[:25]
-            decoded = []
-            for x in g[:6]:
-                if gnewsdecoder is None:
-                    break
-                decode_n += 1
-                try:
-                    d = gnewsdecoder(x["link"], interval=1)
-                    if d.get("status"):
-                        decode_ok += 1
-                        decoded.append(d["decoded_url"])
-                except Exception as e:  # noqa: BLE001
-                    entry.setdefault("decode_errors", []).append(str(e)[:100])
-            entry["decoded_sample"] = decoded[:3]
-            to_read += [u for u in decoded if any(h in u for h in blocked_hosts)]
+            entry["gnews_outlets"] = sorted({canonical_outlet(x["outlet"], x["site"]) for x in g})[:20]
+            entry["gnews_owners_new"] = len({owner_of(x["outlet"], x["site"]) for x in g})
+            sample = []
+            for x in g[:4]:
+                decoded_n += 1
+                u = resolve(x)
+                if u:
+                    decoded_ok += 1
+                sample.append({"title": x["title"][:90], "outlet": x["outlet"], "url": u})
+                time.sleep(1)
+            entry["gnews_sample"] = sample
+            to_read += [x["url"] for x in sample if x["url"]][:1]
         except Exception as e:  # noqa: BLE001
-            entry["gnews_error"] = str(e)[:200]
+            entry["gnews_error"] = repr(e)[:300]
         try:
-            g_hi = _gnews(q, "hi")
-            entry["gnews_hi_n"] = len(g_hi)
+            b = bing(q)
+            entry["bing"] = [{"title": x["title"][:80], "url": resolve(x)} for x in b[:5]]
         except Exception as e:  # noqa: BLE001
-            entry["gnews_hi_error"] = str(e)[:200]
-        try:
-            b = _bing(q)
-            entry["bing_n"] = len(b)
-            entry["bing_hosts"] = sorted({urlsplit(x["url"]).netloc for x in b})[:25]
-            to_read += [x["url"] for x in b if any(h in x["url"] for h in blocked_hosts)]
-        except Exception as e:  # noqa: BLE001
-            entry["bing_error"] = str(e)[:200]
+            entry["bing_error"] = repr(e)[:300]
         report["queries"].append(entry)
         time.sleep(2)
-    report["gnews_decode"] = {"ok": decode_ok, "tried": decode_n}
-    # one Tavily news search restricted to outlets we cannot read directly
-    if stories:
-        q = report["queries"][0]["query"]
-        t = _tavily("search", {"query": q, "topic": "news", "time_range": "week", "max_results": 10,
-                               "include_raw_content": "text", "include_usage": True,
-                               "include_domains": ["indianexpress.com", "theprint.in", "thewire.in", "scroll.in",
-                                                   "firstpost.com", "ndtv.com", "organiser.org", "panchjanya.com"]})
-        report["tavily_search"] = {"status": t.get("_status"), "usage": t.get("usage"), "error": t.get("detail"),
-                                   "results": [{"url": r.get("url"), "raw_chars": len(r.get("raw_content") or ""),
-                                                "date": r.get("published_date")} for r in t.get("results", [])]}
-    return report, list(dict.fromkeys(to_read))[:8]
+    report["gnews_decode"] = {"ok": decoded_ok, "tried": decoded_n}
+    return report, to_read[:6]
 
 
 def main() -> None:

@@ -84,7 +84,9 @@ def assign_wire_groups(store: Store) -> int:
 
 def independence_groups(arts: list[dict]) -> dict[int, str]:
     """Union articles that are not independent of each other: same wire text,
-    same agency byline, or same outlet. Returns article id -> group key."""
+    same agency byline, same outlet, or same owner. Returns article id -> group key."""
+    from .ownership import owner_of
+    arts = [dict(a, owner=owner_of(a.get("outlet"), a.get("url"))) for a in arts]
     parent = {a["id"]: a["id"] for a in arts}
 
     def find(x):
@@ -98,7 +100,7 @@ def independence_groups(arts: list[dict]) -> dict[int, str]:
         if rx != ry:
             parent[max(rx, ry)] = min(rx, ry)
 
-    for key in ("wire_group", "agency", "outlet"):
+    for key in ("wire_group", "agency", "outlet", "owner"):
         first: dict = {}
         for a in arts:
             v = a.get(key)

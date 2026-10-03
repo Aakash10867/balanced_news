@@ -1,0 +1,87 @@
+# Who owns which outlet. This is a public corporate fact, not a judgment about leaning:
+# outlets with one owner share newsrooms, wire desks and editors, so they count as ONE
+# independent source. Names must match the outlet names in feeds.yaml; `domains` lets
+# articles found by search (whose outlet name comes from the search engine) be matched too.
+# Any outlet not listed is its own owner group.
+groups:
+  Network18 (Reliance):
+    outlets: [News18, News18 Hindi, Firstpost, CNBC-TV18, Moneycontrol]
+    domains: [news18.com, firstpost.com, cnbctv18.com, moneycontrol.com]
+  HT Media:
+    outlets: [Hindustan Times, Live Hindustan, Mint, Hindustan]
+    domains: [hindustantimes.com, livehindustan.com, livemint.com]
+  Times Group (Bennett Coleman):
+    outlets: [Times of India, Economic Times, Navbharat Times, Mirror Now, Times Now]
+    domains: [timesofindia.indiatimes.com, economictimes.indiatimes.com, navbharattimes.indiatimes.com, timesnownews.com]
+  India Today Group (Living Media):
+    outlets: [India Today, Aaj Tak, Business Today, The Lallantop]
+    domains: [indiatoday.in, aajtak.in, businesstoday.in, thelallantop.com]
+  NDTV (AMG Media):
+    outlets: [NDTV, NDTV India, NDTV Profit]
+    domains: [ndtv.com, ndtv.in, ndtvprofit.com]
+  Zee Media:
+    outlets: [Zee News, Zee News Hindi, WION, DNA India]
+    domains: [zeenews.india.com, wionews.com, dnaindia.com]
+  ABP Group:
+    outlets: [ABP Live Hindi, ABP Live, ABP News, ABP Ananda]
+    domains: [abplive.com]
+  The Hindu Group:
+    outlets: [The Hindu, The Hindu BusinessLine, Frontline]
+    domains: [thehindu.com, thehindubusinessline.com, frontline.thehindu.com]
+  Indian Express Group:
+    outlets: [The Indian Express, Jansatta, Financial Express]
+    domains: [indianexpress.com, jansatta.com, financialexpress.com]
+  BBC:
+    outlets: [BBC Hindi, BBC News India, BBC News]
+    domains: [bbc.com, bbc.co.uk]
+  The Wire (Foundation for Independent Journalism):
+    outlets: [The Wire, The Wire Hindi]
+    domains: [thewire.in, thewirehindi.com]
+  OpIndia (Aadhyaasi Media):
+    outlets: [OpIndia, OpIndia Hindi]
+    domains: [opindia.com]
+  Bharat Prakashan:
+    outlets: [Organiser, Panchjanya]
+    domains: [organiser.org, panchjanya.com]
+  Associated Journals:
+    outlets: [National Herald, Navjivan]
+    domains: [nationalheraldindia.com, navjivanindia.com]
+  Amar Ujala:
+    outlets: [Amar Ujala]
+    domains: [amarujala.com]
+  Dainik Bhaskar Group:
+    outlets: [Dainik Bhaskar, Divya Bhaskar]
+    domains: [bhaskar.com, divyabhaskar.co.in]
+  Jagran Prakashan:
+    outlets: [Dainik Jagran, Jagran, Mid-Day]
+    domains: [jagran.com, mid-day.com]
+  ARG Outlier Media:
+    outlets: [Republic World, Republic Bharat]
+    domains: [republicworld.com]
+  Quintillion Media:
+    outlets: [The Quint]
+    domains: [thequint.com]
+  Kovai Media:
+    outlets: [Swarajya]
+    domains: [swarajyamag.com]
+  ThePrint:
+    outlets: [The Print]
+    domains: [theprint.in]
+  Scroll:
+    outlets: [Scroll]
+    domains: [scroll.in]
+  Newslaundry:
+    outlets: [Newslaundry]
+    domains: [newslaundry.com]
+  Satya Hindi:
+    outlets: [Satya Hindi]
+    domains: [satyahindi.com]
+  TV9 Network:
+    outlets: [TV9 Bharatvarsh, TV9 Hindi]
+    domains: [tv9hindi.com, tv9bharatvarsh.com]
+  # The government's own press office: everything it publishes is the Union government speaking,
+  # so it is one origin with every other Union government source (see origins.py).
+  Government of India (PIB):
+    outlets: [PIB, PIB Hindi]
+    domains: [pib.gov.in]
+    government: Union
