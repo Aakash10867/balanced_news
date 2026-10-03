@@ -54,7 +54,11 @@ tiers:
     - {id: gemini-2.5-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: false, grounding: true}
     - {id: gemini-2.5-flash-lite, rpm: 10, tpm: 250000, rpd: 20, json_mode: false, grounding: true}
 
-  # Story grouping (multilingual-safe because it runs on the English signatures).
+  # Story grouping. Exactly ONE model: vectors from two models are not comparable (mixing them
+  # made unrelated articles look 0.97 similar). Chosen on 216 real article pairs labelled
+  # same / related / different event (tools/probe.py embedcmp, Oct 2026), title + 400-char lead:
+  #   gemini-embedding-001  AUC same-vs-rest 0.931 (vs different 0.991)
+  #   gemini-embedding-2    AUC 0.911;  stored mixed vectors 0.731
+  # Google counts each text in a batch as one request: rpd/rpm here are texts.
   embed:
-    - {id: gemini-embedding-2, rpm: 100, tpm: 30000, rpd: 1000}
     - {id: gemini-embedding-001, rpm: 100, tpm: 30000, rpd: 1000}

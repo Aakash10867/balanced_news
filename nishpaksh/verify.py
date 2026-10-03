@@ -1,7 +1,8 @@
 """Stage 7: verdicts.
 
 Most verdicts are arithmetic over who says what (code):
-  corroborated - asserted by >= 2 independent sources from >= 2 perspectives, denied by none
+  corroborated - see established(): 3+ independent outlets, 2+ independent origins, a checkable
+                 fact, nobody denies it, standing 6+ hours (before that: developing)
   disputed     - someone asserts it and someone denies or contradicts it
   unverified   - only one source, or only one perspective, says it
 Two verdicts need outside evidence and two independent models agreeing:
@@ -13,6 +14,7 @@ than call a true claim false.
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from collections import defaultdict
 
@@ -97,24 +99,69 @@ def support_summary(cid: int, members, agroup, gpersp) -> dict:
     }
 
 
-def base_verdicts(store: Store, story_id: int) -> None:
+def meets_rule(c: dict, s: dict, mode: str | None) -> bool:
+    """Everything the established rule asks for except time. The caller has already checked that
+    nobody denies or contradicts the statement."""
+    o = c.get("origins") or {}
+    if not (o.get("outlets", 0) >= SETTINGS.established_min_outlets
+            and o.get("n_origins", 0) >= SETTINGS.established_min_origins
+            and c.get("checkable") is True):
+        return False
+    return not (mode == "global" and len(s["support_perspectives"]) < 2)
+
+
+def established(c: dict, s: dict, mode: str | None, now=None) -> str | None:
+    """'corroborated', 'developing', or None (not established). The rule, all of which must hold:
+    3+ independent outlets (owner groups, wire copies merged) that were actually read report it;
+    it traces to 2+ independent origins (origins.py; unattributed repetition never counts);
+    nobody denies or contradicts it (checked by the caller); it is a checkable fact, not a
+    characterisation; and once perspectives exist, it is reported across 2+ of them.
+    It must then STAND for 6 hours, counted from the moment all of that first held (not from the
+    first report): until then it is only 'developing'."""
+    if not meets_rule(c, s, mode):
+        return None
+    met = (c.get("origins") or {}).get("met_at")
+    now = now or utcnow()
+    try:
+        age_h = (now - dt.datetime.fromisoformat(met)).total_seconds() / 3600 if met else 0
+    except ValueError:
+        age_h = 0
+    return "corroborated" if age_h >= SETTINGS.established_after_hours else "developing"
+
+
+def base_verdicts(store: Store, story_id: int) -> int:
+    """Recompute the code verdicts; returns how many changed (the page is rebuilt if any did)."""
     story, agroup, gpersp, arts, canon, members = _story_context(store, story_id)
+    mode = (story["analysis"] or {}).get("mode")
+    now = utcnow()
+    changed = 0
     for cid, c in canon.items():
         s = support_summary(cid, members, agroup, gpersp)
         conflict_live = any(support_summary(o, members, agroup, gpersp)["support_groups"]
                             for o in (c["conflicts"] or []) if o in canon)
-        if s["deny_groups"] and s["support_groups"] or conflict_live:
+        contested = bool(s["deny_groups"] and s["support_groups"] or conflict_live)
+        # the 6-hour clock starts when the rule is first met, and restarts if it stops being met
+        o = dict(c.get("origins") or {})
+        meets = not contested and bool(s["support_groups"]) and meets_rule(c, s, mode)
+        if meets and not o.get("met_at"):
+            o["met_at"] = now.isoformat(timespec="minutes")
+        elif not meets and o.get("met_at"):
+            o.pop("met_at")
+        if o != (c.get("origins") or {}) and c.get("origins") is not None:
+            store.exec(update(canonical).where(canonical.c.id == cid).values(origins=o))
+            c = dict(c, origins=o)
+        if contested:
             v = "disputed"
         elif not s["support_groups"]:
             v = "unverified"  # only denials: the denial itself is the claim on record
-        elif len(s["support_groups"]) >= 2 and len(s["support_perspectives"]) >= 2:
-            v = "corroborated"
         else:
-            v = "unverified"
+            v = established(c, s, mode, now) or "unverified"
         keep = (c["verdict"] in ("false", "confirmed")
                 and abs((c["checked_members"] or 0) - s["n_articles"]) <= 2)
-        if not keep:
+        if not keep and v != c["verdict"]:
             store.exec(update(canonical).where(canonical.c.id == cid).values(verdict=v))
+            changed += 1
+    return changed
 
 
 def _reports(cid: int, canon, members, arts) -> str:

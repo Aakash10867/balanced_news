@@ -1,0 +1,37 @@
+name: shadow
+# A full pipeline run on a copy of the real data (schema "shadow", see supabase/tools/shadow_copy.sql).
+# It reads real feeds and spends real quota, but writes only to the copy: the site is untouched.
+on:
+  push:
+    branches: [shadow]
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NISHPAKSH_SCHEMA: shadow
+          RUN_TRIGGER: shadow
+        run: |
+          set -o pipefail
+          python -m nishpaksh.run --time-budget 45 2>&1 | tee shadow.log
+      - if: always()
+        run: |
+          git config user.name "probe-bot"; git config user.email "probe-bot@users.noreply.github.com"
+          mkdir -p /tmp/l && cp shadow.log /tmp/l/ 2>/dev/null || echo "no log" > /tmp/l/shadow.log
+          git checkout --orphan logs-tmp && git rm -rfq . && cp /tmp/l/shadow.log "shadow-${{ github.run_id }}.txt"
+          git add "shadow-${{ github.run_id }}.txt" && git commit -qm "shadow log ${{ github.run_id }}"
+          git push -f origin HEAD:shadow-logs

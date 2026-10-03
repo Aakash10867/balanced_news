@@ -52,6 +52,12 @@ AGENCY_PATTERNS = [
 ]
 
 
+def is_web_url(u: str | None) -> bool:
+    """Only http(s) links are ever stored: anything else (javascript:, data:) would be a link on the page."""
+    p = urlsplit((u or "").strip())
+    return p.scheme.lower() in ("http", "https") and bool(p.netloc)
+
+
 def canonical_url(u: str) -> str:
     p = urlsplit(u.strip())
     q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if not TRACKING.match(k.lower())]
@@ -107,7 +113,7 @@ def fetch_feed(feed: dict) -> list[dict]:
     out = []
     for e in parsed.entries:
         link = e.get("link")
-        if not link:
+        if not link or not is_web_url(link):
             continue
         out.append({
             "url": canonical_url(link),

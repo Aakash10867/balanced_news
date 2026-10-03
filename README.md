@@ -6,52 +6,72 @@ No outlet is labelled left or right by hand. Perspectives emerge from which sour
 
 ## What a story page shows
 
-| Section | What goes in it | Who decides |
-|---|---|---|
-| What happened | Events reported by ≥2 independent sources from ≥2 perspectives, in time order. Events whose order is not established share a tier. | Code |
-| Established facts | Non-event statements meeting the same bar | Code |
-| Contested and unverified | Everything else, each tagged **Disputed**, **Unverified**, **False** or **Confirmed**. Nothing is dropped; single-article details sit in a collapsible list. | Code; False/Confirmed need two AI models agreeing on primary evidence |
-| How each side worded it | The emotive words each perspective used for the same fact | Recorded by AI, grouped by code |
-| Sources | Every article read, with its perspective | Code |
+One readable essay, every sentence coloured by how well it is supported, with numbered sources.
 
-A story is published only if at least two perspectives cover it. One-sided stories are still read and stored, because they teach the system who agrees with whom.
+| Colour | Meaning | Who decides |
+|---|---|---|
+| Green: established | 3+ independent outlets (owners merged, wire copies merged) that were actually read report it; it traces to 2+ **independent origins**; nobody denies it; it is a checkable fact, not a characterisation; and it has stood 6 hours since all of that first held. Once perspectives exist, it must also be reported across 2+ of them. | Code |
+| Grey, dotted: developing | Meets the green rule but has not stood 6 hours yet | Code |
+| Grey: not yet cross-checked | Anything below the green bar, always written with attribution ("X reported that…") | Code |
+| Amber: sources disagree | Someone reports it and someone denies or contradicts it | Code; contradictions found by a model |
+| Red, tagged FALSE | Primary evidence (FIR, court record, official data, video) shows it is false | Two model families must agree; grounded search |
+
+**Independent origins** (nishpaksh/origins.py): who actually knew the fact by their own means.
+Ten outlets repeating one police statement have one origin, the police. Officials, ministries and
+police of one government are one origin. A wire copy's origin is the agency. An outlet's own voice
+counts only as original reporting (named reporter plus a dateline from the place, or details it
+reported first that nobody else has); otherwise it, and every "sources said", goes to a shared pool
+that never counts. Every uncertain case resolves toward fewer origins.
+
+**Publishing.** A story is published when two perspectives cover it, or (interim rule, until the
+system has learned perspectives) when 3+ independent outlets have been read and the story traces
+to 2+ independent origins. The page says so. Outlets we could find but not read are listed as
+"could not be read" and are never used for facts.
 
 ## How it works
 
 ```
-RSS feeds (English + Hindi)                       plain HTTP, no AI
-  → wire-copy detection (MinHash + agency bylines) code
-  → group into stories (title + lead)              multilingual Gemini Embedding, TF-IDF fallback
-  → pick what to read: stories with ≥2 independent sources, one article per source, ≤8 per story
+RSS feeds (English + Hindi)                          plain HTTP, no AI
+  → proactive search: who else covered our stories?  Google News / Bing (free), Tavily as fallback
+  → blocked pages read through Tavily                ≤31 credits a day, booked before each call
+  → wire-copy detection (MinHash + agency bylines)   code
+  → group into stories (title + lead)                one Gemini embedding model; borderline → Flash-Lite
+  → pick what to read: ≥2 independent sources, one article per owner, ≤8 per story
   → extraction: events, claims, times, loaded words  Flash-Lite; Gemma 4 as overflow
-  → match statements across articles               code; ambiguous pairs → Flash-Lite
-  → perspectives from agreement                    code (signed graph + spectral clustering)
-  → verdicts                                       code; contested ones → search grounding
-                                                   + Gemini Flash + Gemma must agree
-  → timeline (partial order over time intervals)   code
-  → headline, Hindi translation                    Flash-Lite
+  → match statements across articles                 code; ambiguous pairs → Flash-Lite
+  → perspectives from agreement                      code (signed graph + spectral clustering)
+  → independent origins, fact vs characterisation    code; source names merged by Flash-Lite
+  → verdicts                                         code; contested ones → search grounding
+                                                     + Gemini Flash + Gemma must agree
+  → timeline, essay, headline, Hindi                 code + Flash-Lite / Flash
 ```
 
 Design rules worth knowing before you change anything:
 
-- **The AI never decides structure.** Order, emphasis and section placement are computed. The models only transcribe, match, check and translate.
-- **Copies count once.** PTI/ANI/Bhasha copy and same-outlet articles form one independent source.
-- **"False" has a high bar.** It requires primary evidence (FIR, court record, official data, video) *and* two model families agreeing. Official statements alone never suffice. When quota runs out, claims stay "unverified" rather than being guessed. The design accepts missing a false claim in exchange for almost never calling a true claim false.
-- **Perspectives are emergent.** Per story, sources split only if they directly contradict each other on a fact. Across stories, the per-story agreements build a source-to-source matrix that is clustered into stable perspectives (A, B, C…). Until there is enough history, splits are per story and marked with `*`.
-- **The headline is checked.** It is generated from established facts only and rejected if it contains any loaded word any source used.
+- **The AI never decides structure.** Order, emphasis and verdicts are computed. The models only transcribe, match, check and translate.
+- **When unsure, keep apart and count less.** Two events wrongly merged into one story mix their facts, so grouping prefers splitting. Two sources wrongly counted as independent make a rumour look established, so origins prefer merging.
+- **Copies count once.** Wire copies, same outlet and same owner (config/ownership.yaml, public corporate facts) form one independent source.
+- **"False" has a high bar.** Primary evidence *and* two model families agreeing. Official statements alone never suffice.
+- **Perspectives are emergent.** Per story, sources split only if they directly contradict each other. Across stories, agreements build a source-to-source matrix clustered into stable perspectives (A, B, C…).
+- **One embedding model.** Vectors from two models are not comparable; every stored vector is tagged with its model and re-made if the model changes.
 
 ## Free-tier budget (per day)
 
-| Tier | Models | Requests/day | Used for |
-|---|---|---|---|
-| bulk | 3.5 & 3.1 Flash-Lite (700/day after reserve), then Gemma 4 31B, 26B | ~700 reliable + Gemma when it responds | reading articles |
-| second | Gemma 4 31B, 26B | 28,800 | independent second opinion on verdicts |
-| light | 3.5 & 3.1 Flash-Lite (shared quota, 300/day reserved) | 300 | matching, headlines, translation |
-| judge | 3, 3.5, 3.6, 3.7, 3.8 Flash, Robotics ER 2 | 120 | verdicts on contested claims |
-| grounded | 2.5 Flash, 2.5 Flash-Lite | 40 | web search for primary evidence |
-| embed | Gemini Embedding 2, 1 | 2,000 | story grouping |
+Every Gemini key (`GEMINI_API_KEY`, `GEMINI_API_KEY_2`, …) is a separate project with its own quota;
+the router treats each key and model pair as its own budget and drops a key Google rejects.
 
-Free-tier Gemma 4 was mostly returning 500/504 errors in the first real runs, which is why Flash-Lite reads articles first. A model listed in two tiers shares one quota. The router spreads each day's remaining quota over the hourly runs left, falls back across models in a tier, and remembers usage in the database. Quotas reset at midnight Pacific (12:30 pm IST).
+| Tier | Models | Used for |
+|---|---|---|
+| bulk | 3.5 & 3.1 Flash-Lite, then Gemma 4 | reading articles |
+| second | Gemma 4 31B, 26B | independent second opinion on verdicts |
+| light | 3.5 & 3.1 Flash-Lite | matching, same-event checks, source names, headlines, translation |
+| writer / judge | 3.x Flash | the essay; verdicts on contested claims |
+| grounded | 2.5 Flash, 2.5 Flash-Lite | web search for primary evidence (~40/day) |
+| embed | one Gemini embedding model | story grouping |
+
+Tavily: 1,000 credits a month, at most 31 a day (unspent credits roll forward within the month):
+about 5 blocked pages read per run (5 pages = 1 credit) and 1 search per run when the free searches
+find nothing. Quotas reset at midnight Pacific (12:30 pm IST).
 
 ## Setup (about 20 minutes)
 
@@ -62,11 +82,14 @@ Free-tier Gemma 4 was mostly returning 500/504 errors in the first real runs, wh
    ```
    Anything marked DISABLED is simply skipped. Fix its ID in `config/models.yaml` if you want it back.
 2. **Feeds.** `python -m nishpaksh.tools.check_feeds` lists which RSS URLs work. Fix or delete the failures in `config/feeds.yaml`. Feeds that fail for a full day are disabled automatically anyway.
-3. **Database.** Create a free Supabase project. Copy *Connect → Session pooler* connection string. Tables are created on the first run.
-4. **GitHub.** Push this folder to a **public** repo, since hourly runs are free only on public repos. Under *Settings → Secrets and variables → Actions*, add `GEMINI_API_KEY` and `DATABASE_URL`. Run *Actions → hourly-pipeline → Run workflow* once by hand to check.
-5. **Website.** On share.streamlit.io, deploy `app/streamlit_app.py` from the repo. Under *Secrets*, add `DATABASE_URL` (see `.streamlit/secrets.toml.example`).
-
-Share `…streamlit.app/?lang=hi` to open it in Hindi.
+3. **Database.** Create a free Supabase project and apply `supabase/migrations/*.sql` in order (the
+   pipeline's own role cannot change the schema). Copy *Connect → Session pooler* connection string.
+4. **GitHub.** Push this folder to a **public** repo. Under *Settings → Secrets and variables → Actions*,
+   add `GEMINI_API_KEY` (optionally `GEMINI_API_KEY_2`), `TAVILY_API_KEY` and `DATABASE_URL`.
+5. **Schedule.** GitHub's own schedule skips hours, so Supabase starts the run every hour at :05
+   (`pg_cron`, see the scheduler migration). Create a fine-grained GitHub token for this repo only with
+   *Actions: read and write* and store it in Supabase: `select vault.create_secret('<token>', 'github_dispatch_token');`
+6. **Website.** `site/index.html` is deployed to GitHub Pages by the `site` workflow. Add `?lang=hi` for Hindi.
 
 ## Archive
 
@@ -82,15 +105,18 @@ publishers. Each record keeps the article URL instead.
 ```bash
 pip install -r requirements.txt
 GEMINI_API_KEY=... python -m nishpaksh.run          # uses data/nishpaksh.db (SQLite)
-streamlit run app/streamlit_app.py
-python -m pytest -q                                 # 13 tests, no API key needed
+python -m pytest -q                                 # no API key needed
+python -m nishpaksh.tools.probe --parts search      # measurements on real data → diagnostics table
 ```
 
 ## Tuning
 
 All thresholds are in `nishpaksh/config.py`. Watch these first on real data:
 
-- `story_join_cosine_embed`: lower it if one event splits into several stories; raise it if separate events merge.
+- `story_join_cosine`, `story_core_cosine`, `story_ask_cosine`: calibrated on real article pairs labelled
+  same/related/different (`tools/probe.py --parts grouping,embedcmp`). Re-measure before changing them.
+- `established_*`: the green rule. Every run's record (`runs.stats.health`) reports any established
+  statement that does not meet it, the largest stories, and failed steps.
 - `claim_same_cosine` / `claim_candidate_cosine`: the auto-merge and send-to-LLM bands for statement matching.
 - `split_margin`: how much more sources must agree within a side than across sides.
 
@@ -98,5 +124,7 @@ All thresholds are in `nishpaksh/config.py`. Watch these first on real data:
 
 - The two verdict models are both from Google, so their training biases are correlated. Adding a model from another provider as the second opinion would make the check more independent.
 - Hindi articles are reduced to English statements internally, so the Hindi page is a translation of those statements, not the original Hindi wording. The loaded words are kept exactly as the original source wrote them.
-- Paywalled or JavaScript-only pages fall back to the RSS summary, which carries less detail.
+- Pages we cannot read even through Tavily are listed as coverage only; their facts are never used.
+- If no outlet reports a fact, we cannot know it exists: the site is bounded by what Indian media publishes.
+- Two outlets quietly relying on the same off-record source cannot be told apart from independent reporting.
 - Grounded search returns redirect URLs from Google. Displayed evidence links may pass through a Google redirect.

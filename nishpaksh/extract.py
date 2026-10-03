@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 import threading
 import time
 from zoneinfo import ZoneInfo
@@ -202,9 +203,9 @@ def select_for_extraction(store: Store) -> list[dict]:
     read (a wire copy repeats its original), up to `max_extract_per_story` sources."""
     from .wire import independence_groups
     rows = store.rows(
-        select(articles.c.id, articles.c.outlet, articles.c.agency, articles.c.wire_group, articles.c.story_id,
-               articles.c.title, articles.c.text, articles.c.published_at, articles.c.extract_failures,
-               articles.c.extracted_at)
+        select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
+               articles.c.story_id, articles.c.title, articles.c.text, articles.c.published_at,
+               articles.c.extract_failures, articles.c.extracted_at, articles.c.text_source)
         .where(articles.c.story_id.is_not(None), articles.c.text.is_not(None))
     )
     by_story: dict[int, list[dict]] = {}
@@ -222,8 +223,9 @@ def select_for_extraction(store: Store) -> list[dict]:
         seen_groups = {groups[a["id"]] for a in done}
         # one article per independent source: a wire copy or a second piece from the same outlet
         # would only repeat what that source already said
+        # option B: a page we could not read (headline and blurb only) is never read for facts
         todo = [a for a in arts if not a["extracted_at"] and (a["extract_failures"] or 0) < 3
-                and groups[a["id"]] not in seen_groups]
+                and groups[a["id"]] not in seen_groups and a["text_source"] != "summary"]
         todo.sort(key=lambda a: (-(a["published_at"].timestamp()), -len(a["text"] or "")))
         picked = []
         for a in todo:
@@ -238,6 +240,75 @@ def select_for_extraction(store: Store) -> list[dict]:
             ranked.append((len(set(groups.values())), newest, picked))
     ranked.sort(key=lambda t: (t[0], t[1]), reverse=True)
     return [a for _, _, picked in ranked for a in picked]
+
+
+def retract_unreadable(store: Store) -> int:
+    """Option B, applied to the past: articles read from a headline and blurb only (before this rule
+    existed) lose their extracted statements, and their stories are re-analysed without them."""
+    rows = store.rows(select(articles.c.id, articles.c.story_id)
+                      .where(articles.c.text_source == "summary", articles.c.extracted_at.is_not(None)))
+    if not rows:
+        return 0
+    ids = [r["id"] for r in rows]
+    sids = sorted({r["story_id"] for r in rows if r["story_id"] is not None})
+    for i in range(0, len(ids), 500):
+        store.exec(delete(claims).where(claims.c.article_id.in_(ids[i:i + 500])))
+        store.exec(update(articles).where(articles.c.id.in_(ids[i:i + 500])).values(extracted_at=None, extraction=None))
+    for i in range(0, len(sids), 500):
+        store.exec(update(stories).where(stories.c.id.in_(sids[i:i + 500])).values(dirty=True))
+    log.info("extract: retracted statements from %d unreadable (headline-only) articles in %d stories", len(ids), len(sids))
+    return len(ids)
+
+
+def read_blocked_pages(store: Store, tavily, max_pages: int = 5) -> int:
+    """Pages our fetcher could not read, in stories worth reading, fetched through Tavily: at most
+    one per independent source per story, stories closest to publishable first."""
+    if tavily is None or not tavily.enabled or max_pages <= 0:
+        return 0
+    from .wire import independence_groups
+    rows = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
+                             articles.c.story_id, articles.c.text_source, articles.c.extracted_at, articles.c.published_at,
+                             articles.c.extract_failures, articles.c.author)
+                      .where(articles.c.story_id.is_not(None), articles.c.published_at >= utcnow() - dt.timedelta(hours=48)))
+    by_story: dict[int, list[dict]] = {}
+    for r in rows:
+        by_story.setdefault(r["story_id"], []).append(r)
+    wanted: list[tuple[int, dt.datetime, dict]] = []
+    for sid, arts in by_story.items():
+        groups = independence_groups(arts)
+        if len(set(groups.values())) < 2:
+            continue
+        readable = {groups[a["id"]] for a in arts if a["text_source"] != "summary"}
+        tried = set()
+        for a in sorted(arts, key=lambda a: a["published_at"], reverse=True):
+            g = groups[a["id"]]
+            # (extract_failures marks a page Tavily also failed on: not retried)
+            if a["text_source"] == "summary" and g not in readable and g not in tried and not (a["extract_failures"] or 0):
+                tried.add(g)
+                wanted.append((len(readable), max(x["published_at"] for x in arts), a))
+    # a story that already has readable sources gains most from one more
+    wanted.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    pick = [a for _, _, a in wanted[:max_pages]]
+    if not pick:
+        return 0
+    got = tavily.extract([a["url"] for a in pick])
+    n = 0
+    for a in pick:
+        text = re.sub(r"\n{3,}", "\n\n", (got.get(a["url"]) or "")).strip()
+        if len(text) >= SETTINGS.min_full_text_chars:
+            from .ingest import detect_agency
+            from .wire import minhash
+            text = text[: SETTINGS.max_article_chars * 2]
+            # the wire fingerprint and agency were computed from the headline; recompute them from
+            # the real text, or a PTI copy read this way would pass as an independent outlet
+            store.exec(update(articles).where(articles.c.id == a["id"]).values(
+                text=text, text_source="tavily", agency=detect_agency(a.get("author"), text),
+                minhash=minhash(text), wire_group=None))
+            n += 1
+        else:
+            store.exec(update(articles).where(articles.c.id == a["id"]).values(extract_failures=1))
+    log.info("tavily: %d of %d blocked pages read", n, len(pick))
+    return n
 
 
 def extract_pending(store: Store, router: Router, deadline: float, workers: int = 6) -> int:

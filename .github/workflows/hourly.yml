@@ -1,14 +1,17 @@
 name: hourly-pipeline
 
-# GitHub runs scheduled workflows on a best-effort basis: at busy times they are delayed by
-# hours or dropped, and the top of the hour is the busiest. So this is triggered four times
-# an hour, at quiet minutes, and the gate lets a trigger through only if no run has started
-# in the last 50 minutes. Result: roughly one run an hour even when most triggers are lost.
-# "Run workflow" (manual) always goes ahead.
+# Started every hour at :05 by Supabase (pg_cron -> workflow_dispatch, see supabase/migrations),
+# because GitHub's own schedule is best-effort and skipped hours at a time. GitHub's schedule
+# stays as a backup. The gate lets an automatic trigger through only if no run has started
+# recently, so the two never double up. "Run workflow" (manual) always goes ahead.
 on:
   schedule:
-    - cron: "3,18,33,48 * * * *"
-  workflow_dispatch: {}
+    - cron: "23,53 * * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "who started this run"
+        default: "manual"
 
 concurrency:
   group: nishpaksh-pipeline
@@ -29,9 +32,13 @@ jobs:
       - id: check
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REASON: ${{ github.event.inputs.reason }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          reason="$REASON"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$reason" != "supabase-cron" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"; echo "manual run: going ahead"
+          elif [ "$reason" = "supabase-cron" ]; then
+            python -m nishpaksh.gate --min-gap 35 | tee -a "$GITHUB_OUTPUT"
           else
             python -m nishpaksh.gate --min-gap 50 | tee -a "$GITHUB_OUTPUT"
           fi
@@ -54,6 +61,8 @@ jobs:
       - name: Run pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          RUN_TRIGGER: ${{ github.event_name }}
+          RUN_TRIGGER: ${{ github.event.inputs.reason || github.event_name }}
         run: python -m nishpaksh.run --time-budget 45

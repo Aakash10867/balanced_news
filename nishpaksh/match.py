@@ -82,7 +82,28 @@ def _llm_pairs(router: Router | None, pairs: list[tuple[str, str]]) -> list[str]
     return labels
 
 
+def prune_orphans(store: Store, story_id: int) -> int:
+    """Statements no report supports any more (their articles were retracted or moved to another
+    story) are removed, along with references to them."""
+    used = {r["canonical_id"] for r in store.rows(select(claims.c.canonical_id).where(
+        claims.c.story_id == story_id, claims.c.canonical_id.is_not(None)))}
+    canon = store.rows(select(canonical.c.id, canonical.c.conflicts, canonical.c.rel).where(canonical.c.story_id == story_id))
+    dead = [c["id"] for c in canon if c["id"] not in used]
+    if not dead:
+        return 0
+    store.exec(delete(canonical).where(canonical.c.id.in_(dead)))
+    dead_set = set(dead)
+    for c in canon:
+        if c["id"] in dead_set:
+            continue
+        conf = [x for x in (c["conflicts"] or []) if x not in dead_set]
+        if conf != (c["conflicts"] or []):
+            store.exec(update(canonical).where(canonical.c.id == c["id"]).values(conflicts=conf))
+    return len(dead)
+
+
 def match_story(store: Store, router: Router | None, story_id: int) -> None:
+    prune_orphans(store, story_id)
     rows = store.rows(select(claims).where(claims.c.story_id == story_id).order_by(claims.c.id))
     facts = [r for r in rows if r["kind"] in ("event", "claim")]
     new = [r for r in facts if r["canonical_id"] is None]

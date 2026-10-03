@@ -18,7 +18,7 @@
     --brand: #8c1c13;
     /* verification inks, tuned for long reading on white */
     --v-established: #1d6a45;
-    --v-disputed: #a0560b;
+    --v-disputed: #8a6100;    /* amber-gold: far from the red of 'false' */
     --v-unverified: #6b7075;
     --v-false: #b2251c;
     --serif: "Source Serif 4", "Noto Serif Devanagari", Georgia, "Times New Roman", serif;
@@ -67,6 +67,11 @@
   .s.established { color: var(--v-established); }
   .s.disputed { color: var(--v-disputed); }
   .s.unverified { color: var(--v-unverified); }
+  .s.developing { color: var(--v-unverified); text-decoration: underline dotted #9aa0a6; text-underline-offset: 4px; }
+  .ftag { font-family: var(--sans); font-size: .62em; font-weight: 700; letter-spacing: .06em; color: #fff;
+          background: var(--v-false); border-radius: 3px; padding: .08em .38em; margin-right: .35em; vertical-align: .14em; }
+  .sources li.unread { color: var(--ink-soft); }
+  .sources .why { font-family: var(--sans); font-size: .75rem; margin-left: .35em; }
   .s.false { color: var(--v-false); }
   .plain .s { color: inherit; }
   sup { font-family: var(--sans); font-size: .58em; line-height: 0; margin-left: .1em; color: var(--ink-soft); }
@@ -134,41 +139,47 @@ const T = {
     intro: "Each story is written from every outlet that covered it. Colour shows how well each sentence is supported.",
     sources: n => `${n} independent source${n === 1 ? "" : "s"}`,
     updated: "updated", ago: a => `${a} ago`, back: "All stories",
-    k_established: "established", k_disputed: "disputed", k_unverified: "one side only", k_false: "shown false",
+    k_established: "established", k_developing: "developing (recent)", k_disputed: "sources disagree",
+    k_unverified: "not yet cross-checked", k_false: "shown false", falseTag: "FALSE",
+    unreadable: "could not be read", unread: "not read (same owner as another source, or reading limit)",
+    interim: "Which outlets form different perspectives is not yet known; this story is published because at least three independent outlets covered it.",
     plain: "Plain text", sourcesTitle: "Sources", wording: "How each side worded it", fact: "Statement",
     detail: "Every statement, with who reported it", perspectives: "Perspectives",
     localNote: "Grouped from this story alone; stable perspectives need more history.",
     reported: "reported by", denied: "denied by",
     unsettled: "Nothing in this story is confirmed by independent sources yet.",
-    empty: "No stories yet. A story appears once outlets from at least two perspectives have covered it.",
+    empty: "No stories yet. A story appears once at least three independent outlets have covered it.",
     error: "Stories could not be loaded. Check your connection and reload the page.",
     missing: "This story is no longer published.",
-    foot: "Nishpaksh reads Indian news outlets in English and Hindi every hour. A sentence is green only when independent sources from different perspectives agree and none deny it; grey when one side alone reports it; amber when sources contradict each other; red when primary evidence (FIR, court record, official data, video) shows it is false.",
-    tags: {corroborated: "Established", confirmed: "Confirmed", disputed: "Disputed", unverified: "One side only", pending: "One side only", false: "False"},
+    foot: "Nishpaksh reads Indian news outlets in English and Hindi every hour. A sentence is green only when at least three independent outlets report it, it traces to at least two independent origins (not one press release or unnamed sources repeated), nobody denies it, it is a checkable fact, and it has stood for six hours (until then it is underlined as developing). Grey means not yet cross-checked; amber means sources disagree; red, marked FALSE, means primary evidence (FIR, court record, official data, video) shows it is false.",
+    tags: {corroborated: "Established", confirmed: "Confirmed", developing: "Developing", disputed: "Sources disagree", unverified: "Not yet cross-checked", pending: "Not yet cross-checked", false: "FALSE"},
     units: {m: "min", h: "h", d: "d"},
   },
   hi: {
     intro: "हर ख़बर उन सभी स्रोतों से लिखी गई है जिन्होंने उसे कवर किया। रंग बताता है कि हर वाक्य कितना पुष्ट है।",
     sources: n => `${n} स्वतंत्र स्रोत`,
     updated: "अपडेट", ago: a => `${a} पहले`, back: "सभी ख़बरें",
-    k_established: "स्थापित", k_disputed: "विवादित", k_unverified: "केवल एक पक्ष", k_false: "असत्य सिद्ध",
+    k_established: "स्थापित", k_developing: "विकसित हो रही (ताज़ा)", k_disputed: "स्रोतों में मतभेद",
+    k_unverified: "अभी पुष्टि नहीं", k_false: "असत्य सिद्ध", falseTag: "असत्य",
+    unreadable: "पढ़ा नहीं जा सका", unread: "नहीं पढ़ा गया (दूसरे स्रोत का ही मालिक, या पढ़ने की सीमा)",
+    interim: "कौन-से स्रोत अलग-अलग दृष्टिकोण बनाते हैं, यह अभी पता नहीं है; यह ख़बर इसलिए प्रकाशित है क्योंकि कम से कम तीन स्वतंत्र स्रोतों ने इसे कवर किया।",
     plain: "सादा पाठ", sourcesTitle: "स्रोत", wording: "किस पक्ष ने किन शब्दों में कहा", fact: "कथन",
     detail: "हर कथन, और किसने बताया", perspectives: "दृष्टिकोण",
     localNote: "केवल इसी ख़बर के आधार पर समूह; स्थायी दृष्टिकोणों के लिए अभी और इतिहास चाहिए।",
     reported: "किसने बताया", denied: "किसने खंडन किया",
     unsettled: "इस ख़बर की किसी भी बात की अभी स्वतंत्र स्रोतों से पुष्टि नहीं हुई है।",
-    empty: "अभी कोई ख़बर नहीं। ख़बर तब दिखती है जब कम से कम दो दृष्टिकोणों के स्रोत उसे कवर करें।",
+    empty: "अभी कोई ख़बर नहीं। ख़बर तब दिखती है जब कम से कम तीन स्वतंत्र स्रोत उसे कवर करें।",
     error: "ख़बरें लोड नहीं हो सकीं। इंटरनेट जाँचें और पेज दोबारा खोलें।",
     missing: "यह ख़बर अब प्रकाशित नहीं है।",
-    foot: "निष्पक्ष हर घंटे अंग्रेज़ी और हिंदी के भारतीय समाचार स्रोत पढ़ता है। वाक्य हरा तभी होता है जब अलग-अलग दृष्टिकोणों के स्वतंत्र स्रोत सहमत हों और कोई खंडन न करे; धूसर जब केवल एक पक्ष बताए; नारंगी जब स्रोत एक-दूसरे का खंडन करें; लाल जब प्राथमिक साक्ष्य (FIR, अदालती रिकॉर्ड, सरकारी आँकड़े, वीडियो) उसे असत्य दिखाए।",
-    tags: {corroborated: "स्थापित", confirmed: "प्रमाणित", disputed: "विवादित", unverified: "केवल एक पक्ष", pending: "केवल एक पक्ष", false: "असत्य"},
+    foot: "निष्पक्ष हर घंटे अंग्रेज़ी और हिंदी के भारतीय समाचार स्रोत पढ़ता है। वाक्य हरा तभी होता है जब कम से कम तीन स्वतंत्र स्रोत उसे बताएँ, वह कम से कम दो स्वतंत्र मूल स्रोतों तक जाए (एक ही प्रेस विज्ञप्ति या बेनाम सूत्र नहीं), कोई उसका खंडन न करे, वह जाँचा जा सकने वाला तथ्य हो, और छह घंटे टिका रहे (तब तक उसके नीचे बिंदुदार रेखा रहती है)। धूसर का अर्थ है अभी पुष्टि नहीं; सुनहरा-पीला का अर्थ है स्रोतों में मतभेद; लाल, \"असत्य\" चिह्न के साथ, का अर्थ है प्राथमिक साक्ष्य (FIR, अदालती रिकॉर्ड, सरकारी आँकड़े, वीडियो) उसे असत्य दिखाते हैं।",
+    tags: {corroborated: "स्थापित", confirmed: "प्रमाणित", developing: "विकसित हो रही", disputed: "स्रोतों में मतभेद", unverified: "अभी पुष्टि नहीं", pending: "अभी पुष्टि नहीं", false: "असत्य"},
     units: {m: "मिनट", h: "घंटे", d: "दिन"},
   },
 };
-const VCOLOR = {established: "var(--v-established)", disputed: "var(--v-disputed)",
+const VCOLOR = {established: "var(--v-established)", developing: "var(--v-unverified)", disputed: "var(--v-disputed)",
                 unverified: "var(--v-unverified)", false: "var(--v-false)"};
-const TAGCOLOR = {corroborated: "#1d6a45", confirmed: "#1d6a45", disputed: "#a0560b", unverified: "#6b7075",
-                  pending: "#6b7075", false: "#b2251c"};
+const TAGCOLOR = {corroborated: "#1d6a45", confirmed: "#1d6a45", developing: "#6b7075", disputed: "#8a6100",
+                  unverified: "#6b7075", pending: "#6b7075", false: "#b2251c"};
 
 const params = new URLSearchParams(location.search);
 let lang = params.get("lang") || safeGet("np-lang") || "en";
@@ -233,20 +244,24 @@ async function front() {
 }
 
 /* ---------- story ---------- */
-function essayHtml(nar) {
+// links on the page only ever point to web pages (never javascript: or data:)
+function safeUrl(u) { try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:"; } catch (e) { return false; } }
+
+function essayHtml(nar, t) {
   const names = Object.fromEntries(nar.sources.map(s => [s.n, s.outlet]));
   return nar.paragraphs.map(para => "<p>" + para.map(x => {
     const nums = x.sources || [];
     const sup = nums.slice(0, 4).map(n => `<a href="#src-${n}" title="${esc(names[n] || "")}" data-src="${n}">${n}</a>`).join(",")
               + (nums.length > 4 ? `,+${nums.length - 4}` : "");
     const who = [...new Set(nums.map(n => names[n]).filter(Boolean))].join(", ");
-    return `<span class="s ${esc(x.class)}" title="${esc(who)}">${esc(x.text)}</span><sup>${sup}</sup>`;
+    const tag = x.class === "false" ? `<span class="ftag">${esc(t.falseTag)}</span>` : "";
+    return `${tag}<span class="s ${esc(x.class)}" title="${esc(who)}">${esc(x.text)}</span><sup>${sup}</sup>`;
   }).join(" ") + "</p>").join("");
 }
 
 function keyHtml(t, present) {
-  const order = ["established", "disputed", "unverified", "false"].filter(k => present.has(k));
-  return `<div class="key">${order.map(k => `<span><i style="background:${VCOLOR[k]}"></i>${esc(t["k_" + k])}</span>`).join("")}
+  const order = ["established", "developing", "disputed", "unverified", "false"].filter(k => present.has(k));
+  return `<div class="key">${order.map(k => `<span><i style="background:${VCOLOR[k]}${k === "developing" ? ";outline:1px dotted #9aa0a6;outline-offset:1px" : ""}"></i>${esc(t["k_" + k])}</span>`).join("")}
     <label><input type="checkbox" id="plain" ${plain ? "checked" : ""}> ${esc(t.plain)}</label></div>`;
 }
 
@@ -282,19 +297,26 @@ async function story(id) {
       <tbody>${p.framing.map(f => `<tr><td>${esc(f.text)}</td>${persp.map(k => `<td>${esc((f.words[k] || []).join(", "))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   })() : "";
 
-  const sources = (nar.sources || []).map(s =>
-    `<li id="src-${s.n}"><b>${s.n}</b><span><span class="outlet">${esc(s.outlet)}</span>, <a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a></span></li>`).join("");
+  // option B: every outlet that covered the story is listed; ones we could not read are marked
+  const sources = (nar.sources || []).map(s => {
+    const why = s.read === false ? `<span class="why">(${esc(s.readable === false ? t.unreadable : t.unread)})</span>` : "";
+    const link = safeUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title || s.url)}</a>` : esc(s.title || "");
+    return `<li id="src-${s.n}" class="${s.read === false ? "unread" : ""}"><b>${s.n}</b><span><span class="outlet">${esc(s.outlet)}</span>, ${link}${why}</span></li>`;
+  }).join("");
 
-  const persp = Object.entries(p.perspectives || {}).map(([k, v]) => `<b>${esc(k)}</b> ${esc(v.join(", "))}`).join("<br>");
+  // perspectives are shown only once the system has found some; until then the interim note explains
+  const persp = p.perspective_mode === "none" || !p.perspective_mode ? "" :
+    Object.entries(p.perspectives || {}).map(([k, v]) => `<b>${esc(k)}</b> ${esc(v.join(", "))}`).join("<br>");
 
   main.innerHTML = `<article>
     <a class="back" href="#/">${esc(t.back)}</a>
     <h1>${esc(p.headline)}</h1>
     <div class="meta">${esc(t.sources(n))}, ${esc(t.updated)} ${esc(ago(row.updated_at))}</div>
-    <div class="story ${plain ? "plain" : ""}" id="story">${essayHtml(nar)}</div>
+    <div class="story ${plain ? "plain" : ""}" id="story">${essayHtml(nar, t)}</div>
     ${keyHtml(t, present)}
     <div class="after">
       ${p.has_established ? "" : `<p class="note">${esc(t.unsettled)}</p>`}
+      ${p.qualified_by === "interim" && p.perspective_mode !== "global" ? `<p class="note">${esc(t.interim)}</p>` : ""}
       <h3>${esc(t.sourcesTitle)}</h3><ol class="sources">${sources}</ol>
       ${framing}
       ${persp ? `<h3>${esc(t.perspectives)}</h3><p>${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</p>` : ""}

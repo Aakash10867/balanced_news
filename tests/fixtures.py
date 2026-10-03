@@ -49,7 +49,8 @@ ARTICLES = [
                            evidence="unnamed_source")],
              "relations": []}),
     dict(outlet="Alpha Times", lang="en", title="Negligence behind Kesarganj flyover tragedy", author="R. Sharma",
-         text="Residents say the contractor cut corners on the Kesarganj flyover. " * 30,
+         # a dateline and a named reporter: original reporting from the place
+         text="KESARGANJ: " + "Residents say the contractor cut corners on the Kesarganj flyover. " * 30,
          ex={"signature": SIG1,
              "events": [ev("e1", "A part of the Kesarganj flyover collapsed", COLLAPSE, COLLAPSE, "exact",
                            words=["tragedy"]),
@@ -150,6 +151,23 @@ class FakeBackend:
                                    "evidence_urls": ["https://example.org/order"]}), [], 150
             return json.dumps({"verdict": "insufficient", "basis": "none", "reason": "No primary evidence.",
                                "evidence_urls": []}), [], 150
+        if "attribute statements to" in prompt:
+            known = {"police": {"name": "Kesarganj Police", "kind": "police", "government": "Uttar Pradesh"},
+                     "PWD minister": {"name": "PWD Minister", "kind": "government", "government": "Uttar Pradesh"},
+                     "residents": {"name": "residents", "kind": "witness", "government": None}}
+            items = re.findall(r"^(\d+)\. (.*)$", prompt, flags=re.M)
+            return json.dumps({"items": [dict(n=int(n), **known.get(r, {"name": r, "kind": "other", "government": None}))
+                                         for n, r in items]}), [], 100
+        if "decide its type" in prompt:
+            items = re.findall(r'^(\d+)\. "(.*)"$', prompt, flags=re.M)
+            return json.dumps({"items": [{"n": int(n), "type": "characterisation" if re.search(
+                r"conspiracy|negligen|blame", t, re.I) else "fact"} for n, t in items]}), [], 100
+        if "SAME specific event" in prompt:
+            res = []
+            for n, a, b in re.findall(r'(\d+)\. N: "(.*?)" \| S: "(.*?)"', prompt):
+                topic = lambda x: "k" if ("Kesarganj" in x or "केसरगंज" in x) else ("a" if "ssembly" in x else x)
+                res.append({"n": int(n), "same": topic(a) == topic(b)})
+            return json.dumps({"results": res}), [], 100
         raise AssertionError(f"unexpected prompt: {prompt[:80]}")
 
     def embed(self, model, texts):

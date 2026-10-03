@@ -81,7 +81,7 @@ def _direct_conflict(side, groups, M, conflicts) -> bool:
 
 
 def analyze_story(store: Store, story_id: int) -> dict:
-    arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.author, articles.c.agency,
+    arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.author, articles.c.agency,
                              articles.c.wire_group, articles.c.role).where(articles.c.story_id == story_id))
     by_id = {a["id"]: a for a in arts}
     gmap = independence_groups(arts)
@@ -192,7 +192,10 @@ def analyze_story(store: Store, story_id: int) -> dict:
             c.execute(insert(story_pairs), [dict(story_id=story_id, a=a, b=b, value=float(v))
                                             for (a, b), v in pair_rows.items()])
 
+    old = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     analysis = {
+        "attribution_map": old.get("attribution_map") or {},
+        "qualified_by": "perspectives" if qualifies else None,
         "mode": mode,
         "split": side is not None,
         "inter_agreement": round(inter, 3),
@@ -207,6 +210,15 @@ def analyze_story(store: Store, story_id: int) -> dict:
     }
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis, qualifies=qualifies))
     return analysis
+
+
+def mark_qualified(store: Store, story_id: int, rule: str) -> None:
+    story = store.one(select(stories.c.analysis, stories.c.qualifies).where(stories.c.id == story_id))
+    if not story or story["qualifies"]:
+        return  # already qualifies under the perspectives rule
+    analysis = dict((story or {}).get("analysis") or {})
+    analysis["qualified_by"] = rule
+    store.exec(update(stories).where(stories.c.id == story_id).values(qualifies=True, analysis=analysis))
 
 
 def recompute_global(store: Store) -> int:

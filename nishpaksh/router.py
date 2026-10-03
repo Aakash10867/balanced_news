@@ -76,14 +76,16 @@ class ModelSlot:
         """Name under which usage is stored: key 1 keeps the plain model id."""
         return self.id if self.key == 0 else f"{self.id}@k{self.key + 1}"
 
-    def wait_time(self, est_tokens: int, now: float) -> float | None:
-        """Seconds until this model can take the call; None if it cannot today."""
-        if self.disabled or self.used_today >= self.rpd or est_tokens > self.tpm:
+    def wait_time(self, est_tokens: int, now: float, units: int = 1) -> float | None:
+        """Seconds until this model can take the call; None if it cannot today. `units` is how many
+        requests Google counts for the call (an embedding batch counts one per text)."""
+        if self.disabled or self.used_today + units > self.rpd or est_tokens > self.tpm or units > self.rpm:
             return None
         self.window = [(t, k) for t, k in self.window if now - t < 60]
         wait = max(0.0, self.cooldown_until - now)
-        if len(self.window) >= self.rpm:
-            wait = max(wait, 60 - (now - self.window[0][0]) + 0.2)
+        over = len(self.window) + units - self.rpm
+        if over > 0:
+            wait = max(wait, 60 - (now - self.window[over - 1][0]) + 0.2)
         used = sum(k for _, k in self.window)
         if used + est_tokens > self.tpm:
             remaining = used
@@ -267,13 +269,13 @@ class Router:
         return 0 if left == 0 else max(1, left // runs_left)
 
     # calls -----------------------------------------------------------------------
-    def _pick(self, tier: str, est: int):
+    def _pick(self, tier: str, est: int, units: int = 1):
         best = None
         now = time.time()
         for s in self.tiers.get(tier, []):
-            if s.rpd - s.used_today <= self.keep.get((tier, id(s)), 0):
+            if s.rpd - s.used_today - units < self.keep.get((tier, id(s)), 0):
                 continue
-            w = s.wait_time(est, now)
+            w = s.wait_time(est, now, units)
             if w is not None and (best is None or w < best[0]):
                 best = (w, s)
         return best
@@ -289,8 +291,9 @@ class Router:
     def _handle_error(self, slot: ModelSlot, e: Exception) -> None:
         msg = str(e)
         low = msg.lower()
-        if ("api key not valid" in low or "api_key_invalid" in low or "permission_denied" in low
-                or "api key expired" in low or "unauthenticated" in low):
+        if ("api key not valid" in low or "api_key_invalid" in low or "api key expired" in low
+                or "unauthenticated" in low or "service_disabled" in low
+                or ("permission_denied" in low and "api key" in low)):
             # a bad key is bad for every model: stop using it for this run instead of retrying
             for s in self.all_slots():
                 if s.key == slot.key:
@@ -312,19 +315,21 @@ class Router:
             slot.cooldown_until = time.time() + 30
         log.warning("model %s (key %d) error: %s", slot.id, slot.key + 1, msg[:200])
 
-    def _reserve(self, tier: str, est: int) -> ModelSlot:
+    def _reserve(self, tier: str, est: int, units: int = 1) -> ModelSlot:
         """Block until some model in the tier can take the call, then book it. Thread-safe."""
         while True:
             with self._lock:
-                pick = self._pick(tier, est)
+                pick = self._pick(tier, est, units)
                 if not pick:
                     raise QuotaExhausted(tier)
                 wait, slot = pick
                 if wait > self.max_wait:
                     raise QuotaExhausted(f"{tier} (next slot in {wait:.0f}s)")
                 if wait <= 0:
-                    slot.window.append((time.time(), est))
-                    slot.used_today += 1
+                    t = time.time()
+                    slot.window.append((t, est))
+                    slot.window.extend((t, 0) for _ in range(units - 1))
+                    slot.used_today += units
                     return slot
             time.sleep(min(wait, 5.0))
 
@@ -357,11 +362,14 @@ class Router:
             return LLMResult(text, data, slot.id, sources, tokens)
         raise QuotaExhausted(tier)
 
-    def embed(self, texts: list[str], batch: int = 50, max_requests: int | None = None) -> list[list[float]] | None:
-        """Vectors for all texts, or None. Never spends more than `max_requests` requests: a batch
-        that fails validation is retried once in smaller pieces, never one text per request."""
+    def embed(self, texts: list[str], batch: int = 25, max_requests: int | None = None) -> list[list[float]] | None:
+        """Vectors for all texts, or None. Google counts every text in a batch as one request against
+        the daily and per-minute limits (seen on real data: 26 batches exhausted a 1,000/day quota),
+        so quota is booked per text. Never spends more than `max_requests` calls: a batch that fails
+        validation is retried once in smaller pieces, never one text per call."""
         out: list[list[float]] = []
         spent = 0
+        self.last_embed_spent = 0
         queue = [texts[i:i + batch] for i in range(0, len(texts), batch)]
         while queue:
             chunk = queue.pop(0)
@@ -369,10 +377,11 @@ class Router:
                 return None
             est = sum(estimate_tokens(t) for t in chunk)
             try:
-                slot = self._reserve("embed", est)
+                slot = self._reserve("embed", est, units=len(chunk))
             except QuotaExhausted:
                 return None
             spent += 1
+            self.last_embed_spent = spent
             try:
                 vecs = self.backends[slot.key].embed(slot.id, chunk)
                 if not embeddings_look_valid(chunk, vecs):

@@ -31,7 +31,7 @@ import requests
 
 from .config import SETTINGS
 from .db import Store, articles, insert, published, select, stories, update, utcnow
-from .ingest import HEADERS, canonical_url, detect_agency, fetch_article
+from .ingest import HEADERS, canonical_url, detect_agency, fetch_article, is_web_url
 from .ownership import canonical_outlet, owner_of
 from .wire import independence_groups, minhash
 
@@ -124,7 +124,7 @@ def resolve(item: dict, session=None) -> str | None:
         except Exception as e:  # noqa: BLE001
             log.debug("decode failed: %s", e)
             return None
-    if not url or any(s in urlsplit(url).netloc for s in SYNDICATORS):
+    if not url or not is_web_url(url) or any(s in urlsplit(url).netloc for s in SYNDICATORS):
         return None
     return url
 
@@ -188,14 +188,15 @@ def discover(store: Store, tavily=None, n_stories: int | None = None, until: flo
         s, members = t["story"], t["members"]
         have_owners = {owner_of(a["outlet"], a["url"]) for a in members}
         q = query_from(s["signature"])
+        q_hindi = len(re.findall(r"[\u0900-\u097F]", q)) > len(q) / 3   # signature not yet in English
         results: list[dict] = []
         for engine in engines:
             try:
-                results += engine(q)
+                results += engine(q, "hi") if (engine is gnews and q_hindi) else ([] if q_hindi else engine(q))
             except Exception as e:  # noqa: BLE001
                 log.info("search %s failed: %s", getattr(engine, "__name__", engine), str(e)[:150])
         hindi = [a for a in members if a["lang"] == "hi"]
-        if hindi and gnews in engines:
+        if hindi and gnews in engines and not q_hindi:
             try:
                 results += gnews(query_from(hindi[0]["title"]), "hi")
             except Exception as e:  # noqa: BLE001

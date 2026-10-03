@@ -6,7 +6,7 @@ from nishpaksh.db import Store, published, select
 from nishpaksh.run import run
 
 from .fixtures import FakeBackend
-from .test_pipeline import _seed
+from .test_pipeline import _run_twice, _seed
 
 VB = {"grounded": 5, "judge": 5}
 APP = os.path.join(os.path.dirname(__file__), "..", "app", "streamlit_app.py")
@@ -17,7 +17,7 @@ def _db(tmp_path):
     s = Store(url)
     s.init()
     _seed(s)
-    run(store=s, backend=FakeBackend(), ingest_news=False, verify_budget=VB)
+    _run_twice(s)
     return url, s
 
 

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
+import re
 
 from sqlalchemy import (
     JSON, Boolean, Column, DateTime, Float, Integer, MetaData, String, Table, Text,
@@ -44,7 +46,9 @@ articles = Table(
     Column("extract_failures", Integer, default=0),
     Column("signature", Text),                   # neutral English one-liner
     Column("embedding", JSON),
+    Column("embed_model", String(60)),           # vectors from different models are not comparable
     Column("story_id", Integer, index=True),
+    Column("found_by", String(10)),              # feed | search  (None = feed, before this existed)
 )
 
 stories = Table(
@@ -56,6 +60,7 @@ stories = Table(
     Column("dirty", Boolean, default=True),
     Column("qualifies", Boolean, default=False),
     Column("analysis", JSON),                    # perspectives, groups, split diagnostics
+    Column("last_searched_at", DateTime),        # proactive search for more coverage
 )
 
 claims = Table(
@@ -86,6 +91,8 @@ canonical = Table(
     Column("verdict", String(14), default="pending"),
     Column("detail", JSON),                      # verification record
     Column("checked_members", Integer, default=0),
+    Column("origins", JSON),                     # independent origins of the reports (origins.py)
+    Column("checkable", Boolean),                # fact (True) or characterisation (False); None = not yet asked
 )
 
 story_pairs = Table(  # per-story agreement between two sources; global affinity = average
@@ -148,9 +155,32 @@ class Store:
         if url.startswith("sqlite"):
             kw["connect_args"] = {"check_same_thread": False}
         self.engine = create_engine(url, **kw)
+        # NISHPAKSH_SCHEMA=shadow runs the whole pipeline against a copy of the data in another
+        # schema (a shadow run on real data that cannot touch what the site shows)
+        schema = os.environ.get("NISHPAKSH_SCHEMA", "").strip()
+        if schema and not url.startswith("sqlite"):
+            if not re.fullmatch(r"[a-z_][a-z0-9_]*", schema):
+                raise ValueError("bad schema name")
+            from sqlalchemy import event
+
+            @event.listens_for(self.engine, "connect")
+            def _set_path(dbapi_conn, _record):
+                cur = dbapi_conn.cursor()
+                cur.execute(f"set search_path to {schema}")
+                cur.close()
 
     def init(self) -> None:
-        md.create_all(self.engine)
+        """Create missing tables (local SQLite, tests). On Supabase the app role may not create
+        tables; there the schema comes from supabase/migrations, and a missing table is reported
+        here by name instead of failing later in some unrelated stage."""
+        try:
+            md.create_all(self.engine)
+        except Exception as e:  # noqa: BLE001
+            from sqlalchemy import inspect
+            missing = sorted(set(md.tables) - set(inspect(self.engine).get_table_names()))
+            if missing:
+                raise RuntimeError(f"tables missing and cannot be created by this role: {missing}. "
+                                   "Apply supabase/migrations.") from e
 
     # generic helpers ---------------------------------------------------------
     def rows(self, stmt) -> list[dict]:
@@ -174,6 +204,11 @@ class Store:
     def quota_load(self, day: str) -> dict[str, tuple[int, int]]:
         rs = self.rows(select(quota_usage).where(quota_usage.c.day == day))
         return {r["model"]: (r["requests"], r["tokens"]) for r in rs}
+
+    def quota_month(self, model: str, month: str) -> dict[str, int]:
+        """{day: requests} for one usage key over a calendar month ("YYYY-MM")."""
+        rs = self.rows(select(quota_usage).where(quota_usage.c.model == model, quota_usage.c.day.like(month + "-%")))
+        return {r["day"]: r["requests"] or 0 for r in rs}
 
     def quota_save(self, model: str, day: str, requests: int, tokens: int) -> None:
         with self.engine.begin() as c:

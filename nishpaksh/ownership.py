@@ -22,17 +22,41 @@ def _maps() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     return by_outlet, by_domain, gov
 
 
+def _registrable(host: str) -> str:
+    parts = host.split(".")
+    if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "gov", "nic", "ac") and len(parts[-1]) == 2:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
 def owner_of(outlet: str | None, url: str | None = None) -> str:
+    """Owner group: by outlet name, else by web domain, else the domain itself (two names on one
+    site are one owner), else the name."""
     by_outlet, by_domain, _ = _maps()
     if outlet and outlet.strip().lower() in by_outlet:
         return by_outlet[outlet.strip().lower()]
+    if outlet and _plain(outlet) in _plain_owner():
+        return _plain_owner()[_plain(outlet)]
     host = urlsplit(url or "").netloc.lower()
     host = host[4:] if host.startswith("www.") else host
-    while host:
-        if host in by_domain:
-            return by_domain[host]
-        host = host.partition(".")[2] if host.count(".") > 1 else ""
-    return (outlet or host or "unknown").strip()
+    h = host
+    while h:
+        if h in by_domain:
+            return by_domain[h]
+        h = h.partition(".")[2] if h.count(".") > 1 else ""
+    if host:
+        return _registrable(host)
+    return (outlet or "unknown").strip()
+
+
+@functools.lru_cache(maxsize=1)
+def _plain_owner() -> dict[str, str]:
+    by_outlet, _, _ = _maps()
+    return {_plain(o): g for o, g in by_outlet.items()}
+
+
+def is_known_outlet(name: str | None) -> bool:
+    return bool(name) and (_plain(name) in _known_names() or _plain(name) in _plain_owner())
 
 
 def government_of(owner: str) -> str | None:

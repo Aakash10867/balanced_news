@@ -3,7 +3,7 @@ import datetime as dt
 import numpy as np
 import pytest
 
-from nishpaksh.db import Store, articles, canonical, insert, published, select, source_clusters, stories, story_pairs
+from nishpaksh.db import Store, articles, canonical, insert, published, select, source_clusters, stories, story_pairs, update
 from nishpaksh.router import ModelSlot, Router, parse_json
 from nishpaksh.timeline import build_timeline
 from nishpaksh.wire import independence_groups, jaccard, minhash
@@ -124,10 +124,28 @@ def test_global_clusters_emerge_from_roll_call(store):
 
 # ---------------------------------------------------------------- end to end
 
+def _age_rules(store, hours=7):
+    """Pretend the established rule was first met `hours` ago (the 6-hour standing time)."""
+    for c in store.rows(select(canonical.c.id, canonical.c.origins)):
+        o = dict(c["origins"] or {})
+        if o.get("met_at"):
+            o["met_at"] = (dt.datetime.fromisoformat(o["met_at"]) - dt.timedelta(hours=hours)).isoformat(timespec="minutes")
+            store.exec(update(canonical).where(canonical.c.id == c["id"]).values(origins=o))
+
+
+def _run_twice(store, backend=None, **kw):
+    """One run, six hours pass, another run: what a reader sees once statements have stood."""
+    from nishpaksh.run import run
+    backend = backend or FakeBackend()
+    run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB, **kw)
+    _age_rules(store)
+    return run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB, **kw)
+
+
 def _seed(store):
     for i, a in enumerate(ARTICLES):
         store.exec(insert(articles).values(
-            url=f"https://example.com/{i}", feed_id=None, outlet=a["outlet"], lang=a["lang"], role="news",
+            url=f"https://outlet{abs(hash(a['outlet'])) % 10 ** 8}.in/{i}", feed_id=None, outlet=a["outlet"], lang=a["lang"], role="news",
             title=a["title"], author=a["author"], published_at=NOW - dt.timedelta(hours=2 + i), fetched_at=NOW,
             text=a["text"], text_source="full", agency="PTI" if a["author"] == "PTI" else None,
             minhash=minhash(a["text"]), extract_failures=0))
@@ -148,17 +166,30 @@ def test_end_to_end(store):
     assert contested["qualifies"] and contested["analysis"]["mode"] == "story"
     assert not consensus["qualifies"]                            # one perspective only: not published
 
+    # first run: the collapse meets the rule but has not stood 6 hours yet
     pub = store.one(select(published).where(published.c.story_id == contested["id"]))
+    first = next(i for tier in pub["payload_en"]["timeline"] for i in tier) if pub["payload_en"]["timeline"] else None
+    cont_first = {i["text"]: i for i in pub["payload_en"]["contested"]}
+    assert first is None and cont_first["A section of the Kesarganj flyover collapsed"]["verdict"] == "developing"
+    # six hours later, with nothing new: the page is re-checked and the collapse is established
+    _age_rules(store)
+    run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB)
+    pub = store.one(select(published).where(published.c.story_id == contested["id"]))
+    assert pub["version"] == 2
     en, hi = pub["payload_en"], pub["payload_hi"]
     # 5 articles; the two PTI copies count once -> 4 independent sources
     assert en["counts"] == {"articles": 5, "independent_sources": 4}
 
     timeline_text = [i["text"] for tier in en["timeline"] for i in tier]
     assert any("collapsed" in t for t in timeline_text)
-    assert any("arrested" in t for t in timeline_text)
     assert not any("rain" in t.lower() for t in timeline_text)   # one-sided: not in the timeline
-    order = [i["text"] for tier in en["timeline"] for i in tier]
-    assert order.index(next(t for t in order if "collapsed" in t)) < order.index(next(t for t in order if "arrested" in t))
+    # four outlets report the arrest, but every one of them got it from the police: one origin
+    # (the police and the PWD minister speak for the same state government), so not established
+    cont0 = {i["text"]: i for i in en["contested"]}
+    arrest = cont0["Police arrested the site engineer"]
+    assert arrest["verdict"] == "unverified" and arrest["origins"] == ["gov:uttar pradesh"]
+    collapse = next(i for tier in en["timeline"] for i in tier if "collapsed" in i["text"])
+    assert collapse["verdict"] == "corroborated" and collapse["n_origins"] >= 2 and collapse["n_outlets"] >= 3
 
     est = {i["text"]: i for i in en["established"]}
     assert any("died" in t or "killed" in t for t in est)        # paraphrases merged and corroborated
@@ -181,9 +212,9 @@ def test_end_to_end(store):
     assert en["headline"].startswith("Section of Kesarganj")
     assert hi["headline"].startswith("[हिं]") and hi["translation_complete"]
 
-    # second run with nothing new: no reprocessing, no new version
+    # another run with nothing new: no reprocessing, no new version
     run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB)
-    assert store.one(select(published).where(published.c.story_id == contested["id"]))["version"] == 1
+    assert store.one(select(published).where(published.c.story_id == contested["id"]))["version"] == 2
 
 
 def test_headline_with_loaded_word_is_rejected(store):
@@ -308,9 +339,8 @@ def test_two_sources_disagreeing_is_not_two_perspectives(store):
 
 
 def test_narrative_is_checked_and_coloured(store):
-    from nishpaksh.run import run
     _seed(store)
-    run(store=store, backend=FakeBackend(), ingest_news=False, verify_budget=VB)
+    _run_twice(store)
     p = store.rows(select(published))[0]
     nar = p["payload_en"]["narrative"]
     paras = nar["paragraphs"]
@@ -373,8 +403,10 @@ def test_copied_vectors_are_healed(store):
     sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, signature="x", dirty=False))
     same = [0.1] * 256
     for i, title in enumerate(["Farming tips", "Protest detention", "Protest detention"]):
+        # u1 had been read: its statements leave the story, so the story must be re-matched
         store.exec(insert(articles).values(url=f"u{i}", outlet="X", lang="en", title=title, text="t",
-                                           published_at=NOW, extract_failures=0, embedding=same, story_id=sid))
+                                           published_at=NOW, extract_failures=0, embedding=same, story_id=sid,
+                                           extracted_at=NOW if i == 1 else None))
     store.exec(insert(articles).values(url="u9", outlet="Y", lang="en", title="Other", text="t",
                                        published_at=NOW, extract_failures=0, embedding=[0.2] * 256, story_id=sid))
     from sqlalchemy import JSON, null
@@ -385,3 +417,389 @@ def test_copied_vectors_are_healed(store):
     assert left["u0"]["embedding"] is None and left["u0"]["story_id"] is None
     assert left["u9"]["embedding"] == [0.2] * 256                         # untouched
     assert store.one(select(stories).where(stories.c.id == sid))["dirty"] is True
+
+
+def test_two_keys_have_separate_quotas_and_usage_records(store):
+    """Each key is a separate project: exhausting a model on key 1 must move calls to key 2, and
+    usage must be stored separately so the next run does not think key 2 is also spent."""
+    class B:
+        def __init__(self, name, fail=False):
+            self.name, self.fail, self.calls = name, fail, 0
+        def list_models(self): return ["m1"]
+        def generate(self, model, prompt, json_mode, grounded):
+            self.calls += 1
+            if self.fail:
+                raise RuntimeError("429 RESOURCE_EXHAUSTED: GenerateRequestsPerDay")
+            return '{"key": "%s"}' % self.name, [], 5
+    k1, k2 = B("one", fail=True), B("two")
+    r = Router({"t": [dict(id="m1", rpm=10, tpm=10000, rpd=3)]}, [k1, k2], store)
+    r.resolve()
+    assert r.remaining_today("t") == 6                      # two projects, two quotas
+    assert r.call("t", "hi").data == {"key": "two"}
+    assert k1.calls == 1                                    # marked spent after one 429, not retried
+    usage = store.quota_load(r.day)
+    assert usage["m1"][0] == 3 and usage["m1@k2"][0] == 1   # stored per key
+    r2 = Router({"t": [dict(id="m1", rpm=10, tpm=10000, rpd=3)]}, [B("one"), B("two")], store)
+    assert [s.used_today for s in r2.tiers["t"]] == [3, 1]  # reloaded per key
+
+
+def test_duplicate_keys_are_counted_once(monkeypatch):
+    from nishpaksh.config import gemini_api_keys
+    monkeypatch.setenv("GEMINI_API_KEY", "abc")
+    monkeypatch.setenv("GEMINI_API_KEY_2", " abc ")
+    assert gemini_api_keys() == ["abc"]
+    monkeypatch.setenv("GEMINI_API_KEY_2", "xyz")
+    assert gemini_api_keys() == ["abc", "xyz"]
+
+
+def test_tavily_budget_never_overspends_and_rolls_forward(store):
+    from nishpaksh.tavily import Tavily
+    import datetime as _dt
+
+    class Resp:
+        def __init__(self, data): self.status_code, self._d, self.text = 200, data, ""
+        def json(self): return self._d
+
+    class Http:
+        def __init__(self): self.calls = []
+        def post(self, url, json, timeout, headers):
+            self.calls.append((url, json))
+            if url.endswith("extract"):
+                # half the pages fail, as blocked sites do
+                return Resp({"results": [{"url": u, "raw_content": "text " * 50} for u in json["urls"][::2]],
+                             "failed_results": [{"url": u} for u in json["urls"][1::2]]})
+            return Resp({"results": [{"url": "https://x.in/a", "title": "t"}]})
+
+    http = Http()
+    t = Tavily(store, key="k", daily_cap=3, session=http)
+    fixed = _dt.date(2026, 10, 30)  # 2 days left in the month
+    t._today = lambda: fixed
+    assert t.allowance_today() == 3                      # capped per day
+    got = t.extract([f"https://site.in/{i}" for i in range(10)])
+    assert len(got) == 5
+    assert t._used(fixed)[0] == 1                        # booked 2, refunded 1: 5 pages read = 1 credit
+    assert t.search("q") and t.search("q")
+    assert t._used(fixed)[0] == 3
+    assert t.search("q") == [] and len(http.calls) == 3  # out of today's credits: no call made
+    # most of the month already spent: allowance shrinks so the month cannot overrun
+    store.quota_save("tavily", "2026-10-15", 940, 0)
+    t2 = Tavily(store, key="k", daily_cap=40, session=http)
+    t2._today = lambda: _dt.date(2026, 10, 31)
+    assert t2.allowance_today() == 7                     # 1000 - 50 safety - 943 used = 7 left
+    assert Tavily(store, key="", session=http).extract(["u"]) == {}
+
+
+# ---------------------------------------------------------------- grouping: real failure modes
+
+def _vec(angle_deg: float, plane=(0, 1), jitter: int = 0) -> list[float]:
+    """Unit vector in 256 dims at an angle within a plane, plus a tiny unique component so no two
+    articles share an identical vector (as with a real embedding model)."""
+    import math
+    v = [0.0] * 256
+    a = math.radians(angle_deg)
+    v[plane[0]], v[plane[1]] = math.cos(a), math.sin(a)
+    v[10 + jitter % 200] += 0.01
+    return v
+
+
+def _put(store, title, vec, hours_ago=1.0, story_id=None, extracted=False, lang="en", outlet=None):
+    from nishpaksh.db import articles as A, insert as ins
+    return store.insert_returning_id(A, dict(
+        url=f"u/{title}", outlet=outlet or f"Outlet {title}", lang=lang, role="news", title=title,
+        published_at=NOW - dt.timedelta(hours=hours_ago), fetched_at=NOW, text=title + " text " * 50,
+        text_source="full", minhash=[1], embedding=vec, embed_model="gemini-embedding-2", story_id=story_id,
+        extracted_at=NOW if extracted else None, extract_failures=0))
+
+
+class _NoLLM(FakeBackend):
+    """Answers "different" to every same-event question unless the titles share an event tag."""
+    def generate(self, model, prompt, json_mode, grounded):
+        if "SAME specific event" in prompt:
+            import json as _j, re as _re
+            res = []
+            for n, a, b in _re.findall(r'(\d+)\. N: "(.*?)" \| S: "(.*?)"', prompt):
+                ta = _re.search(r"\[(\w+)\]", a)
+                tb = _re.search(r"\[(\w+)\]", b)
+                res.append({"n": int(n), "same": bool(ta and tb and ta.group(1) == tb.group(1))})
+            return _j.dumps({"results": res}), [], 50
+        return super().generate(model, prompt, json_mode, grounded)
+
+
+def _router(store, backend=None):
+    from nishpaksh.config import load_yaml
+    r = Router(load_yaml("models.yaml")["tiers"], backend or _NoLLM(), store)
+    r.resolve()
+    return r
+
+
+def test_same_topic_different_events_stay_apart(store):
+    """Two protests in the same row (cosine 0.83 apart: same topic, different events) must not
+    merge just because their vectors are close; the model is asked and says no."""
+    from nishpaksh.stories import group_stories
+    for k in range(4):
+        _put(store, f"[A] protest in Mumbai {k}", _vec(0 + k * 0.5, jitter=k), hours_ago=5 - k)
+    for k in range(4):
+        _put(store, f"[B] protest in Chennai {k}", _vec(34 + k * 0.5, jitter=10 + k), hours_ago=4 - k)
+    group_stories(store, _router(store))
+    sids = {r["title"][:3]: set() for r in store.rows(select(articles.c.title))}
+    for r in store.rows(select(articles.c.title, articles.c.story_id)):
+        sids[r["title"][:3]].add(r["story_id"])
+    assert len(sids["[A]"]) == 1 and len(sids["[B]"]) == 1
+    assert sids["[A]"] != sids["[B]"]
+
+
+def test_story_cannot_drift_by_chaining(store):
+    """Each article is 6 degrees from the previous one (cosine 0.995 to its neighbour), but the
+    chain walks 60 degrees away from where the story started. The old centroid rule absorbed the
+    whole chain; the core check must stop it."""
+    from nishpaksh.stories import group_stories
+    for k in range(11):
+        _put(store, f"[C{k}] chain step {k}", _vec(k * 6, jitter=k), hours_ago=12 - k)
+    group_stories(store, _router(store))
+    by_story = {}
+    for r in store.rows(select(articles.c.title, articles.c.story_id)):
+        by_story.setdefault(r["story_id"], []).append(r["title"])
+    assert max(len(v) for v in by_story.values()) < 11
+    first = next(sid for sid, v in by_story.items() if "[C0] chain step 0" in v)
+    assert "[C10] chain step 10" not in by_story[first]       # 60 degrees from the start
+
+
+def test_merged_story_is_split_and_reanalysed(store):
+    """A story that already holds two separate events (as story 2211 did) is split; read articles
+    keep their claims, which move with them and are re-matched."""
+    from nishpaksh.db import claims as Cl, insert as ins
+    from nishpaksh.stories import group_stories
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, signature="mixed",
+                                                 dirty=False, qualifies=True))
+    a_ids = [_put(store, f"[G] GST collections {k}", _vec(0, jitter=k), story_id=sid, extracted=True) for k in range(3)]
+    b_ids = [_put(store, f"[T] temple priest {k}", _vec(70, jitter=20 + k), story_id=sid, extracted=True) for k in range(3)]
+    cid = store.insert_returning_id(canonical, dict(story_id=sid, kind="claim", text="x", conflicts=[], verdict="corroborated"))
+    for aid in a_ids + b_ids:
+        store.exec(ins(Cl).values(story_id=sid, article_id=aid, kind="claim", text="x", stance="asserts",
+                                  attributed_to="article", evidence="none", canonical_id=cid))
+    group_stories(store, _router(store))
+    rows = {r["id"]: r["story_id"] for r in store.rows(select(articles.c.id, articles.c.story_id))}
+    assert len({rows[i] for i in a_ids}) == 1 and len({rows[i] for i in b_ids}) == 1
+    assert {rows[i] for i in a_ids} != {rows[i] for i in b_ids}
+    # the old mixed statements are gone; every claim is re-matched inside its new story
+    assert store.rows(select(canonical).where(canonical.c.id == cid)) == []
+    for r in store.rows(select(Cl)):
+        assert r["canonical_id"] is None and r["story_id"] == rows[r["article_id"]]
+    assert all(s["dirty"] for s in store.rows(select(stories)))
+
+
+def test_no_embedding_quota_means_waiting_not_word_matching(store):
+    """With the embedding quota spent, new articles wait for the next run; they are never grouped
+    by word overlap (which cannot match Hindi with English and built the giant stories)."""
+    from nishpaksh.stories import group_stories
+    for k in range(3):
+        _put(store, f"flyover collapse {k}", None, hours_ago=2)
+    r = _router(store)
+    for s in r.tiers["embed"]:
+        s.used_today = s.rpd
+    assert group_stories(store, r) == 0
+    assert all(x["story_id"] is None for x in store.rows(select(articles.c.story_id)))
+
+
+def test_embedding_never_falls_back_to_one_request_per_text(store):
+    class Dup(FakeBackend):
+        def __init__(self):
+            super().__init__()
+            self.embed_calls = 0
+        def embed(self, model, texts):
+            self.embed_calls += 1
+            return [[0.1] * 256 for _ in texts]          # every text the same vector: invalid
+    b = Dup()
+    r = Router({"embed": [dict(id="gemini-embedding-2", rpm=100, tpm=10 ** 6, rpd=1000)]}, b, store)
+    assert r.embed([f"text {i}" for i in range(50)], max_requests=10) is None
+    assert b.embed_calls <= 10                            # not 50
+
+
+def test_search_adds_only_new_owners_and_never_reads_headlines(store, monkeypatch):
+    """Search finds coverage; it adds one piece per owner we do not have, skips aggregators that
+    repost others, and an unreadable page enters as coverage only (never read for facts)."""
+    from nishpaksh import discover
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=False, qualifies=False,
+                                                 signature="Police fired at protesters in Imphal on Friday"))
+    for k, outlet in enumerate(["The Hindu", "Times of India"]):
+        _put(store, f"Imphal firing {k}", _vec(0, jitter=k), story_id=sid, outlet=outlet)
+    _put(store, "Imphal firing 2", _vec(0, jitter=3), story_id=sid, outlet="Times of India")
+
+    def engine(q, lang="en"):
+        assert "Imphal" in q and "the" not in q.split()
+        R = lambda o, u: {"title": f"Imphal firing ({o})", "link": u, "outlet": o, "site": None,
+                          "published_at": NOW, "lang": "en", "engine": "fake", "resolved": True}
+        return [R("Navbharat Times", "https://navbharattimes.indiatimes.com/a"),   # same owner as TOI: skip
+                R("MSN", "https://www.msn.com/en-in/news/x"),                       # aggregator: skip
+                R("The Indian Express", "https://indianexpress.com/article/x"),     # new owner
+                R("ThePrint", "https://theprint.in/x"),                             # new owner, unreadable
+                R("The Indian Express", "https://indianexpress.com/article/y")]     # same owner twice: once
+    pages = {"https://indianexpress.com/article/x": {"text": "Police fired. " * 60, "author": "A Reporter"}}
+    monkeypatch.setattr(discover, "fetch_article", lambda url: pages.get(url))
+    stats = discover.discover(store, None, n_stories=5, engines=(engine,))
+    found = {r["url"]: r for r in store.rows(select(articles).where(articles.c.found_by == "search"))}
+    assert set(found) == {"https://indianexpress.com/article/x", "https://theprint.in/x"}
+    assert found["https://indianexpress.com/article/x"]["text_source"] == "full"
+    assert found["https://indianexpress.com/article/x"]["outlet"] == "The Indian Express"
+    assert found["https://theprint.in/x"]["text_source"] == "summary"           # coverage only
+    assert found["https://theprint.in/x"]["outlet"] == "The Print"
+    assert all(r["story_id"] is None for r in found.values())                    # grouping decides membership
+    assert stats["new_articles"] == 2
+    # searched stories are not searched again within the interval
+    assert discover.discover(store, None, n_stories=5, engines=(engine,))["stories"] == 0
+
+
+def test_rejected_key_is_dropped_not_retried(store):
+    class Bad:
+        def __init__(self): self.calls = 0
+        def list_models(self): return ["m1"]
+        def generate(self, *a, **k):
+            self.calls += 1
+            raise RuntimeError("400 INVALID_ARGUMENT. API key not valid. Please pass a valid API key.")
+    class Good:
+        def list_models(self): return ["m1"]
+        def generate(self, *a, **k): return '{"ok": 1}', [], 5
+    bad = Bad()
+    r = Router({"t": [dict(id="m1", rpm=10, tpm=10000, rpd=100)]}, [bad, Good()], store)
+    for _ in range(5):
+        assert r.call("t", "x").data == {"ok": 1}
+    assert bad.calls == 1 and r.bad_keys == {0}
+
+
+# ---------------------------------------------------------------- origins: ways one source could pass as two
+
+class _AttribR:
+    """Stand-in model for the attribution question: names a police force with or without its government."""
+    def call(self, tier, prompt, **kw):
+        import re as _re
+        from nishpaksh.router import LLMResult
+        items = []
+        for m in _re.finditer(r"^(\d+)\. (.*)$", prompt, flags=_re.M):
+            name = m.group(2)
+            kind = "police" if "olice" in name else "other"
+            gov = "Delhi" if name == "Delhi Police spokesperson" else None
+            items.append({"n": int(m.group(1)), "name": name, "kind": kind, "government": gov})
+        return LLMResult("", {"items": items}, "m", [], 0)
+
+
+def _origin_story(store, reports, texts=None, authors=None):
+    """reports: [(outlet, agency, attributed_to or None)] -> (story id, statement id)."""
+    from nishpaksh.db import claims as Cl, insert as ins
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, signature="s", dirty=True, qualifies=False))
+    cid = store.insert_returning_id(canonical, dict(story_id=sid, kind="claim", text="x", conflicts=[]))
+    for k, (outlet, agency, att) in enumerate(reports):
+        aid = store.insert_returning_id(articles, dict(
+            url=f"https://site{k}.in/a{sid}", outlet=outlet, agency=agency, title="t",
+            text=(texts or {}).get(k, "body text"), text_source="full", published_at=NOW - dt.timedelta(hours=10 - k),
+            extracted_at=NOW, story_id=sid, wire_group=1000 + k + sid * 10, author=(authors or {}).get(k)))
+        store.exec(ins(Cl).values(story_id=sid, article_id=aid, kind="claim", text="x",
+                                  stance="attributes" if att else "asserts", attributed_to=att or "article",
+                                  evidence="none", canonical_id=cid))
+    return sid, cid
+
+
+def test_agency_copy_and_agency_attribution_are_one_origin(store):
+    from nishpaksh import origins
+    sid, cid = _origin_story(store, [("Outlet A", "PTI", None), ("Outlet B", None, "PTI"), ("Outlet C", None, None)])
+    assert origins.compute_origins(store, _AttribR(), sid)[cid]["n_origins"] < 2
+
+
+def test_police_named_two_ways_is_one_origin(store):
+    from nishpaksh import origins
+    sid, cid = _origin_story(store, [("Outlet A", None, "police"), ("Outlet B", None, "Delhi Police spokesperson"),
+                                     ("Outlet C", None, None)])
+    assert origins.compute_origins(store, _AttribR(), sid)[cid]["n_origins"] < 2
+
+
+def test_rewritten_press_notes_with_bylines_are_not_original(store):
+    """Three bylined outlets rewriting one press note in their own voice: 'Also Read:' is not a
+    dateline, and nobody reported a detail of their own, so this is one pool, not three origins."""
+    from nishpaksh import origins
+    texts = {k: "Also Read: the press note says two people died." for k in range(3)}
+    authors = {0: "Rahul Sharma", 1: "Priya Singh", 2: "Amit Verma"}
+    sid, cid = _origin_story(store, [("Outlet A", None, None), ("Outlet B", None, None), ("Outlet C", None, None)],
+                             texts, authors)
+    assert origins.compute_origins(store, _AttribR(), sid)[cid]["n_origins"] == 0
+
+
+def test_outlet_attribution_counts_only_if_that_outlet_reported_originally(store):
+    from nishpaksh import origins
+    sid, cid = _origin_story(store, [("Outlet A", None, "Times of India"), ("Outlet B", None, "Times of India"),
+                                     ("Outlet C", "PTI", None)])
+    info = origins.compute_origins(store, _AttribR(), sid)[cid]
+    assert info["origins"] == ["agency:pti", "pool"] and info["n_origins"] == 1
+
+
+def test_real_model_config_has_one_embedding_model(store):
+    """The embed tier must resolve to exactly one model even when the key serves several:
+    vectors from two models are not comparable (this crashed grouping before it reached production)."""
+    from nishpaksh.config import load_yaml
+    from nishpaksh.stories import embed_model
+
+    class All(FakeBackend):
+        def list_models(self):
+            return super().list_models() + ["gemini-embedding-001", "gemini-embedding-2"]
+    r = Router(load_yaml("models.yaml")["tiers"], All(), store)
+    r.resolve()
+    assert embed_model(r)
+
+
+def test_split_and_join_never_loop(store):
+    """An article that passes the join rule must not be split off again next run (each split wipes
+    the story's statements and verdicts)."""
+    from nishpaksh.stories import group_stories
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, signature="s", dirty=False, qualifies=True))
+    for k in range(2):
+        _put(store, f"A{k}", _vec(0, jitter=k), hours_ago=10 - k, story_id=sid, extracted=True)
+    for k in range(6):
+        _put(store, f"C{k}", _vec(20, jitter=5 + k), hours_ago=8 - k * 0.1, story_id=sid, extracted=True)
+    _put(store, "N", _vec(-28, jitter=50), hours_ago=1, extracted=True)
+    for _ in range(3):
+        cid = store.insert_returning_id(canonical, dict(story_id=sid, kind="claim", text="x", conflicts=[],
+                                                       verdict="corroborated"))
+        store.exec(update(stories).where(stories.c.id == sid).values(dirty=False))
+        group_stories(store, None)
+        assert store.one(select(canonical).where(canonical.c.id == cid)) is not None
+
+
+def test_lone_article_joins_its_later_siblings_and_its_empty_story_goes(store):
+    from nishpaksh.stories import group_stories
+    lone_sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, signature="lone", dirty=False))
+    first = _put(store, "[F] flood in Assam 0", _vec(0, jitter=1), hours_ago=6, story_id=lone_sid)
+    big = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, signature="big", dirty=False))
+    for k in range(3):
+        _put(store, f"[F] flood in Assam {k + 1}", _vec(0.5 * k, jitter=2 + k), hours_ago=3, story_id=big)
+    group_stories(store, _router(store))
+    assert store.one(select(articles.c.story_id).where(articles.c.id == first))["story_id"] == big
+    assert store.one(select(stories).where(stories.c.id == lone_sid)) is None
+
+
+def test_model_answer_is_remembered(store):
+    """A borderline article the model kept out of a story is not asked about again next run."""
+    from nishpaksh.stories import group_stories
+
+    class Count(_NoLLM):
+        asked = 0
+        def generate(self, model, prompt, json_mode, grounded):
+            if "SAME specific event" in prompt:
+                Count.asked += 1
+            return super().generate(model, prompt, json_mode, grounded)
+    for k in range(3):
+        _put(store, f"[A] rally {k}", _vec(0, jitter=k), hours_ago=5)
+    group_stories(store, _router(store, Count()))
+    _put(store, "[B] other rally", _vec(34, jitter=9), hours_ago=1)
+    group_stories(store, _router(store, Count()))
+    n = Count.asked
+    group_stories(store, _router(store, Count()))
+    group_stories(store, _router(store, Count()))
+    assert n == 1 and Count.asked == 1
+
+
+def test_embedding_quota_is_counted_per_text(store):
+    """Google counts each text in an embedding batch as a request (26 batches once exhausted a
+    1,000-a-day quota), so the router must book one unit per text and stop before the limit."""
+    r = Router({"embed": [dict(id="gemini-embedding-2", rpm=1000, tpm=10 ** 7, rpd=100)]}, FakeBackend(), store)
+    assert r.embed([f"text {i}" for i in range(60)]) is not None
+    assert r.tiers["embed"][0].used_today == 60
+    assert r.embed([f"more {i}" for i in range(60)]) is None or r.tiers["embed"][0].used_today <= 100
+    assert r.tiers["embed"][0].used_today <= 100

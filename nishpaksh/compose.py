@@ -88,7 +88,8 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         return None
     full_arts = {a["id"]: a for a in store.rows(
         select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.title, articles.c.lang,
-               articles.c.published_at, articles.c.role).where(articles.c.story_id == story_id))}
+               articles.c.published_at, articles.c.role, articles.c.extracted_at, articles.c.text_source,
+               articles.c.found_by).where(articles.c.story_id == story_id))}
     texts = {cid: c["text"] for cid, c in canon.items()}
 
     def item(cid: int) -> dict:
@@ -125,6 +126,9 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "framing": {k: sorted(v) for k, v in sorted(framing.items())},
             "sources": sorted(srcs, key=lambda x: (x["perspective"], x["outlet"])),
             "check": check, "minor": s["n_articles"] <= 1,
+            "origins": (c.get("origins") or {}).get("origins", []),
+            "n_origins": (c.get("origins") or {}).get("n_origins", 0),
+            "n_outlets": (c.get("origins") or {}).get("outlets", 0),
         }
 
     items = {cid: item(cid) for cid in canon if members.get(cid)}
@@ -171,6 +175,10 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         persp[info.get("perspective") or "–"].update(info.get("outlets", []))
     sources = sorted([{"outlet": a["outlet"], "title": a["title"], "url": a["url"], "lang": a["lang"],
                        "role": a["role"], "perspective": gpersp.get(agroup.get(a["id"])) or "–",
+                       # option B: an article we could not read is listed, never used for facts
+                       "read": bool(a["extracted_at"]) and a["text_source"] != "summary",
+                       "readable": a["text_source"] != "summary",
+                       "found_by": a["found_by"] or "feed",
                        "published_at": a["published_at"].isoformat(timespec="minutes") if a["published_at"] else None}
                       for a in full_arts.values()], key=lambda s: (s["perspective"], s["outlet"]))
     return {
@@ -178,6 +186,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         "headline": headline,
         "has_established": bool(facts),
         "perspective_mode": analysis.get("mode"),
+        "qualified_by": analysis.get("qualified_by"),
         "perspectives": {k: sorted(v) for k, v in sorted(persp.items())},
         "timeline": [[items[n] for n in tier] for tier in tl["tiers"]],
         "undated": [items[n] for n in tl["undated"]],

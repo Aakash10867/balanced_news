@@ -23,10 +23,11 @@ from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
 
-RANK = {"confirmed": 0, "corroborated": 0, "unverified": 1, "pending": 1, "disputed": 2, "false": 3}
-CLASS = {0: "established", 1: "unverified", 2: "disputed", 3: "false"}
-STATUS_LABEL = {"corroborated": "ESTABLISHED", "confirmed": "ESTABLISHED", "disputed": "DISPUTED",
-                "unverified": "ONE-SIDED", "pending": "ONE-SIDED", "false": "FALSE"}
+RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "disputed": 3, "false": 4}
+CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "disputed", 4: "false"}
+STATUS_LABEL = {"corroborated": "ESTABLISHED", "confirmed": "ESTABLISHED", "developing": "DEVELOPING",
+                "disputed": "DISPUTED", "unverified": "NOT CROSS-CHECKED", "pending": "NOT CROSS-CHECKED",
+                "false": "FALSE"}
 
 WRITER_PROMPT = """You are an experienced news editor. Write the story below as ONE coherent, readable news
 essay for ordinary readers, the way a good newspaper feature reads: clear paragraphs, natural flow,
@@ -43,8 +44,10 @@ How to write:
    statements. No conclusion, no commentary, no headings, no bullet points.
 4. By status:
    ESTABLISHED - state plainly as fact.
-   ONE-SIDED   - always attribute it to the outlets that report it ("Times of India reported that...",
-                 "according to India Today..."). Never state it as fact. Vary the wording of attribution.
+   DEVELOPING  - widely and independently reported but recent: attribute it ("several outlets reported
+                 that...", "according to early reports..."). Never state it as fact.
+   NOT CROSS-CHECKED - always attribute it to the outlets that report it ("Times of India reported
+                 that...", "according to India Today..."). Never state it as fact. Vary the wording.
    DISPUTED    - give both sides with attribution ("X reported ...; Y's account differs: ...").
    FALSE       - say who claimed it, and that the evidence shows it is false, citing the evidence given.
 5. Neutral words only. Never use any of these words: {banned}
@@ -128,7 +131,7 @@ def sections_from_payload(p: dict) -> dict[str, list[dict]]:  # kept for the cac
 
 
 def _statement_line(i: dict) -> str:
-    line = f'#{i["id"]} {STATUS_LABEL.get(i["verdict"], "ONE-SIDED")} | "{i["text"]}"'
+    line = f'#{i["id"]} {STATUS_LABEL.get(i["verdict"], "NOT CROSS-CHECKED")} | "{i["text"]}"'
     sup, den = _outlets(i, "asserts"), _outlets(i, "denies")
     if sup:
         line += f" | reported by: {', '.join(sup)}"
@@ -251,7 +254,9 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
     src_meta = {s["url"]: s for s in payload["sources"]}
     source_list = [{"n": n, "url": url, "outlet": src_meta.get(url, {}).get("outlet", ""),
                     "title": src_meta.get(url, {}).get("title", ""),
-                    "perspective": src_meta.get(url, {}).get("perspective", "–")}
+                    "perspective": src_meta.get(url, {}).get("perspective", "–"),
+                    "read": src_meta.get(url, {}).get("read", True),
+                    "readable": src_meta.get(url, {}).get("readable", True)}
                    for url, n in sorted(numbering.items(), key=lambda kv: kv[1])]
     if rejected:
         log.info("narrative: %d sentences failed checks and were replaced with plain wording", rejected)

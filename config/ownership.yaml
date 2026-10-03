@@ -8,11 +8,11 @@ groups:
     outlets: [News18, News18 Hindi, Firstpost, CNBC-TV18, Moneycontrol]
     domains: [news18.com, firstpost.com, cnbctv18.com, moneycontrol.com]
   HT Media:
-    outlets: [Hindustan Times, Live Hindustan, Mint, Hindustan]
+    outlets: [Hindustan Times, Live Hindustan, Mint, Livemint, Hindustan, HT Tech]
     domains: [hindustantimes.com, livehindustan.com, livemint.com]
   Times Group (Bennett Coleman):
-    outlets: [Times of India, Economic Times, Navbharat Times, Mirror Now, Times Now]
-    domains: [timesofindia.indiatimes.com, economictimes.indiatimes.com, navbharattimes.indiatimes.com, timesnownews.com]
+    outlets: [Times of India, Economic Times, Navbharat Times, Mirror Now, Times Now, Maharashtra Times, Ei Samay, Times Now Navbharat]
+    domains: [indiatimes.com, timesnownews.com, timesnowhindi.com]
   India Today Group (Living Media):
     outlets: [India Today, Aaj Tak, Business Today, The Lallantop]
     domains: [indiatoday.in, aajtak.in, businesstoday.in, thelallantop.com]
@@ -20,17 +20,17 @@ groups:
     outlets: [NDTV, NDTV India, NDTV Profit]
     domains: [ndtv.com, ndtv.in, ndtvprofit.com]
   Zee Media:
-    outlets: [Zee News, Zee News Hindi, WION, DNA India]
-    domains: [zeenews.india.com, wionews.com, dnaindia.com]
+    outlets: [Zee News, Zee News Hindi, WION, DNA India, India.com, Zee Business]
+    domains: [zeenews.india.com, wionews.com, dnaindia.com, india.com, zeebiz.com]
   ABP Group:
-    outlets: [ABP Live Hindi, ABP Live, ABP News, ABP Ananda]
-    domains: [abplive.com]
+    outlets: [ABP Live Hindi, ABP Live, ABP News, ABP Ananda, The Telegraph, Anandabazar Patrika]
+    domains: [abplive.com, telegraphindia.com, anandabazar.com]
   The Hindu Group:
     outlets: [The Hindu, The Hindu BusinessLine, Frontline]
     domains: [thehindu.com, thehindubusinessline.com, frontline.thehindu.com]
   Indian Express Group:
-    outlets: [The Indian Express, Jansatta, Financial Express]
-    domains: [indianexpress.com, jansatta.com, financialexpress.com]
+    outlets: [The Indian Express, Jansatta, Financial Express, Loksatta]
+    domains: [indianexpress.com, jansatta.com, financialexpress.com, loksatta.com]
   BBC:
     outlets: [BBC Hindi, BBC News India, BBC News]
     domains: [bbc.com, bbc.co.uk]
@@ -53,8 +53,8 @@ groups:
     outlets: [Dainik Bhaskar, Divya Bhaskar]
     domains: [bhaskar.com, divyabhaskar.co.in]
   Jagran Prakashan:
-    outlets: [Dainik Jagran, Jagran, Mid-Day]
-    domains: [jagran.com, mid-day.com]
+    outlets: [Dainik Jagran, Jagran, Mid-Day, Naidunia, Jagran English]
+    domains: [jagran.com, mid-day.com, naidunia.com]
   ARG Outlier Media:
     outlets: [Republic World, Republic Bharat]
     domains: [republicworld.com]

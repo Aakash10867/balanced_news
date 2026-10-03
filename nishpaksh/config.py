@@ -71,7 +71,7 @@ class Settings:
     search_new_per_story: int = 3        # new outlets added per story per search
     tavily_extract_pages_per_run: int = 5
     tavily_searches_per_run: int = 1     # only when the free searches found nothing
-    tavily_daily_cap: int = 33
+    tavily_daily_cap: int = 31          # 31 x 31 days < 1,000 even if Tavily's month is not the calendar month
 
     # wire-copy detection (MinHash Jaccard on 5-word shingles)
     wire_jaccard: float = 0.45
@@ -79,13 +79,17 @@ class Settings:
 
     # story grouping
     story_window_hours: int = 72
-    # thresholds calibrated on real article pairs labelled same/related/different (tools/probe.py)
-    story_join_cosine: float = 0.86      # mean similarity to the story's two closest articles: join
-    story_core_cosine: float = 0.80      # ...and at least this close to the story's core article
-    story_ask_cosine: float = 0.80       # between this and join: ask a model "same specific event?"
-    story_split_cosine: float = 0.78     # average-linkage cut when re-checking a story for separate events
+    # Calibrated on 216 real article pairs labelled same / related / different event
+    # (gemini-embedding-001, title + lead; tools/probe.py). "Different" pairs: 90% below 0.69.
+    # "Related" (same saga, different event) overlaps "same" up to ~0.90, so the whole band between
+    # goes to a model; only very close pairs (precision 0.94 at 0.92) join on similarity alone.
+    story_join_cosine: float = 0.92     # mean similarity to the story's two closest articles: join
+    story_core_cosine: float = 0.85     # ...and at least this close to the story's core article
+    story_ask_cosine: float = 0.75      # from here up to join: ask a model "same specific event?"
+    story_split_cosine: float = 0.72    # average-linkage cut when re-checking a story for separate events
     story_split_min_size: int = 4
     heal_per_run: int = 20
+    embed_min_texts_per_run: int = 60      # Google counts each text; ~1,000 texts a day per key
 
     # extraction: only stories covered by >= 2 independent sources; at most this many articles each
     max_extract_per_story: int = 8
