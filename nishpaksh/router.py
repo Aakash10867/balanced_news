@@ -69,6 +69,12 @@ class ModelSlot:
     window: list = field(default_factory=list)  # [(timestamp, tokens)] in the last 60 s
     cooldown_until: float = 0.0
     disabled: bool = False
+    key: int = 0          # which API key (Google Cloud project) this slot spends
+
+    @property
+    def usage_key(self) -> str:
+        """Name under which usage is stored: key 1 keeps the plain model id."""
+        return self.id if self.key == 0 else f"{self.id}@k{self.key + 1}"
 
     def wait_time(self, est_tokens: int, now: float) -> float | None:
         """Seconds until this model can take the call; None if it cannot today."""
@@ -133,21 +139,18 @@ class GeminiBackend:
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         """One vector per text, verified. A plain list of strings can be read by some embedding
-        models as ONE multi-part input (one vector back, which was then copied to 487 articles),
-        so each text is sent as its own Content, and the reply is checked: exactly one vector per
-        text, and no two different texts with an identical vector. Otherwise one call per text."""
+        models as ONE multi-part input (one vector back, which was once copied to 487 articles),
+        so each text is sent as its own Content and the reply is checked: exactly one vector per
+        text, and no two different texts with an identical vector. A bad reply raises; it is never
+        retried text by text here, because one call per text is what once spent a whole day's
+        embedding quota in a single run. The router retries with smaller batches instead."""
         from google.genai import types
         cfg = types.EmbedContentConfig(output_dimensionality=EMBED_DIMS)
         contents = [types.Content(parts=[types.Part(text=t)]) for t in texts]
         r = self.client.models.embed_content(model=model, contents=contents, config=cfg)
         vecs = [[round(float(x), 5) for x in e.values] for e in (r.embeddings or [])]
         if not embeddings_look_valid(texts, vecs):
-            vecs = []
-            for t in texts:
-                one = self.client.models.embed_content(model=model, contents=t, config=cfg)
-                vecs.append([round(float(x), 5) for x in one.embeddings[0].values])
-            if not embeddings_look_valid(texts, vecs):
-                raise ValueError("embedding service returned duplicate vectors for different texts")
+            raise ValueError(f"embedding reply failed validation ({len(vecs)} vectors for {len(texts)} texts)")
         return vecs
 
 
@@ -169,31 +172,35 @@ def _norm(model_id: str) -> str:
 
 class Router:
     def __init__(self, tiers_cfg: dict, backend, store=None, max_wait: float = 180.0):
-        self.backend = backend
+        # One backend per API key. Each key is a separate Google Cloud project with its own
+        # free-tier quota, so every (key, model) pair is its own slot with its own counters.
+        self.backends = list(backend) if isinstance(backend, (list, tuple)) else [backend]
+        self.backend = self.backends[0]
         self.store = store
         self.max_wait = max_wait
         self.day = quota_day()
         self._lock = threading.Lock()
-        # One slot per model, shared by every tier that lists it, so a model used by two
-        # tiers is never counted against two separate quotas. `keep` lets a tier stop using a
+        # One slot per (key, model), shared by every tier that lists the model, so a model used by
+        # two tiers is never counted against two separate quotas. `keep` lets a tier stop using a
         # model while that many requests remain today, leaving them for the other tiers.
-        self.slots: dict[str, ModelSlot] = {}
+        self.slots: dict[tuple[int, str], ModelSlot] = {}
         self.tiers: dict[str, list[ModelSlot]] = {}
         self.keep: dict[tuple[str, int], int] = {}
         for name, models in tiers_cfg.items():
             self.tiers[name] = []
-            for m in models:
-                m = dict(m)
-                keep = int(m.pop("keep", 0))
-                if m["id"] not in self.slots:
-                    self.slots[m["id"]] = ModelSlot(**m)
-                slot = self.slots[m["id"]]
-                self.tiers[name].append(slot)
-                self.keep[(name, id(slot))] = keep
+            for k in range(len(self.backends)):
+                for m in models:
+                    m = dict(m)
+                    keep = int(m.pop("keep", 0))
+                    if (k, m["id"]) not in self.slots:
+                        self.slots[(k, m["id"])] = ModelSlot(**m, key=k)
+                    slot = self.slots[(k, m["id"])]
+                    self.tiers[name].append(slot)
+                    self.keep[(name, id(slot))] = keep
         usage = store.quota_load(self.day) if store else {}
         for slot in self.all_slots():
-            if slot.id in usage:
-                slot.used_today, slot.tokens_today = usage[slot.id]
+            if slot.usage_key in usage:
+                slot.used_today, slot.tokens_today = usage[slot.usage_key]
 
     def all_slots(self):
         seen = set()
@@ -205,15 +212,19 @@ class Router:
 
     # model discovery -----------------------------------------------------------
     def resolve(self) -> None:
-        """Map configured IDs to the IDs this key actually serves; disable missing ones."""
-        try:
-            available = self.backend.list_models()
-        except Exception as e:  # listing failed: keep configured IDs and learn from 404s
-            log.warning("model listing failed (%s); using configured IDs", e)
-            return
+        """Map configured IDs to the IDs each key actually serves; disable missing ones."""
+        for k, backend in enumerate(self.backends):
+            try:
+                available = backend.list_models()
+            except Exception as e:  # listing failed: keep configured IDs and learn from 404s
+                log.warning("model listing failed for key %d (%s); using configured IDs", k + 1, e)
+                continue
+            self._resolve_key(k, available)
+
+    def _resolve_key(self, k: int, available: list[str]) -> None:
         avail_set = set(available)
         for slot in self.all_slots():
-            if slot.id in avail_set:
+            if slot.key != k or slot.id in avail_set:
                 continue
             target = _norm(slot.id)
             best = None
@@ -233,13 +244,13 @@ class Router:
                                > SequenceMatcher(None, best, slot.id).ratio())):
                     best = a
             if best:
-                log.info("model %s -> %s", slot.id, best)
-                usage = self.store.quota_load(self.day).get(best) if self.store else None
+                log.info("model %s -> %s (key %d)", slot.id, best, k + 1)
                 slot.id = best
+                usage = self.store.quota_load(self.day).get(slot.usage_key) if self.store else None
                 if usage:
                     slot.used_today, slot.tokens_today = usage
             else:
-                log.warning("model %s not available on this key; disabled", slot.id)
+                log.warning("model %s not available on key %d; disabled", slot.id, k + 1)
                 slot.disabled = True
 
     # budgets -------------------------------------------------------------------
@@ -270,7 +281,7 @@ class Router:
         slot.tokens_today += tokens
         if self.store:
             try:
-                self.store.quota_save(slot.id, self.day, slot.used_today, slot.tokens_today)
+                self.store.quota_save(slot.usage_key, self.day, slot.used_today, slot.tokens_today)
             except Exception as e:
                 log.warning("quota save failed: %s", e)
 
@@ -289,7 +300,7 @@ class Router:
             slot.cooldown_until = time.time() + 45  # overloaded: let the other models in the tier work
         else:
             slot.cooldown_until = time.time() + 30
-        log.warning("model %s error: %s", slot.id, msg[:200])
+        log.warning("model %s (key %d) error: %s", slot.id, slot.key + 1, msg[:200])
 
     def _reserve(self, tier: str, est: int) -> ModelSlot:
         """Block until some model in the tier can take the call, then book it. Thread-safe."""
@@ -315,7 +326,7 @@ class Router:
             slot = self._reserve(tier, est)
             booked = slot.window[-1] if slot.window else None
             try:
-                text, sources, tokens = self.backend.generate(
+                text, sources, tokens = self.backends[slot.key].generate(
                     slot.id, prompt, json_mode=json_out and slot.json_mode, grounded=grounded)
             except Exception as e:  # noqa: BLE001
                 with self._lock:
@@ -336,30 +347,38 @@ class Router:
             return LLMResult(text, data, slot.id, sources, tokens)
         raise QuotaExhausted(tier)
 
-    def embed(self, texts: list[str], batch: int = 50) -> list[list[float]] | None:
+    def embed(self, texts: list[str], batch: int = 50, max_requests: int | None = None) -> list[list[float]] | None:
+        """Vectors for all texts, or None. Never spends more than `max_requests` requests: a batch
+        that fails validation is retried once in smaller pieces, never one text per request."""
         out: list[list[float]] = []
-        for i in range(0, len(texts), batch):
-            chunk = texts[i:i + batch]
-            est = sum(estimate_tokens(t) for t in chunk)
-            done = False
-            for _ in range(4):
-                try:
-                    slot = self._reserve("embed", est)
-                except QuotaExhausted:
-                    return None
-                try:
-                    vecs = self.backend.embed(slot.id, chunk)
-                except Exception as e:  # noqa: BLE001
-                    self._handle_error(slot, e)
-                    self._record(slot, 0)
-                    continue
-                self._record(slot, est)
-                if not embeddings_look_valid(chunk, vecs):
-                    log.warning("embedding batch from %s failed validation; discarded", slot.id)
-                    return None
-                out.extend(vecs)
-                done = True
-                break
-            if not done:
+        spent = 0
+        queue = [texts[i:i + batch] for i in range(0, len(texts), batch)]
+        while queue:
+            chunk = queue.pop(0)
+            if max_requests is not None and spent >= max_requests:
                 return None
+            est = sum(estimate_tokens(t) for t in chunk)
+            try:
+                slot = self._reserve("embed", est)
+            except QuotaExhausted:
+                return None
+            spent += 1
+            try:
+                vecs = self.backends[slot.key].embed(slot.id, chunk)
+                if not embeddings_look_valid(chunk, vecs):
+                    raise ValueError("embedding reply failed validation")
+            except Exception as e:  # noqa: BLE001
+                with self._lock:
+                    if "validation" not in str(e):
+                        self._handle_error(slot, e)
+                    self._record(slot, 0)
+                log.warning("embedding batch of %d failed (%s)", len(chunk), str(e)[:150])
+                if len(chunk) > 10 and "validation" in str(e):
+                    step = max(10, len(chunk) // 4)  # smaller pieces, at most 4 more requests
+                    queue[:0] = [chunk[i:i + step] for i in range(0, len(chunk), step)]
+                    continue
+                return None
+            with self._lock:
+                self._record(slot, est)
+            out.extend(vecs)
         return out

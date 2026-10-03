@@ -37,6 +37,17 @@ def gemini_api_key() -> str:
     return os.environ.get("GEMINI_API_KEY", "").strip()
 
 
+def gemini_api_keys() -> list[str]:
+    """Every configured key, each from its own Google Cloud project (GEMINI_API_KEY, _2, _3...).
+    Duplicates are dropped: two copies of one key would double-count one quota."""
+    keys = [gemini_api_key()] + [os.environ.get(f"GEMINI_API_KEY_{i}", "").strip() for i in range(2, 6)]
+    return list(dict.fromkeys(k for k in keys if k))
+
+
+def tavily_api_key() -> str:
+    return os.environ.get("TAVILY_API_KEY", "").strip()
+
+
 @dataclass(frozen=True)
 class Settings:
     # ingestion
@@ -53,14 +64,28 @@ class Settings:
     story_retention_days: int = 90           # whole stories: claims, verdicts, published pages
     storage_soft_limit_mb: int = 350         # above this, retention halves until back under
 
+    # proactive search (discover.py) and Tavily (1,000 credits a month)
+    search_stories_per_run: int = 10
+    search_depth_share: float = 0.2      # share of searches spent on follow-ups to published stories
+    search_every_hours: int = 6          # a story is searched again at most this often
+    search_new_per_story: int = 3        # new outlets added per story per search
+    tavily_extract_pages_per_run: int = 5
+    tavily_searches_per_run: int = 1     # only when the free searches found nothing
+    tavily_daily_cap: int = 33
+
     # wire-copy detection (MinHash Jaccard on 5-word shingles)
     wire_jaccard: float = 0.45
     wire_window_hours: int = 72
 
     # story grouping
     story_window_hours: int = 72
-    story_join_cosine_embed: float = 0.80
-    story_join_cosine_tfidf: float = 0.30
+    # thresholds calibrated on real article pairs labelled same/related/different (tools/probe.py)
+    story_join_cosine: float = 0.86      # mean similarity to the story's two closest articles: join
+    story_core_cosine: float = 0.80      # ...and at least this close to the story's core article
+    story_ask_cosine: float = 0.80       # between this and join: ask a model "same specific event?"
+    story_split_cosine: float = 0.78     # average-linkage cut when re-checking a story for separate events
+    story_split_min_size: int = 4
+    heal_per_run: int = 20
 
     # extraction: only stories covered by >= 2 independent sources; at most this many articles each
     max_extract_per_story: int = 8
@@ -78,6 +103,13 @@ class Settings:
 
     # verdicts
     min_articles_to_verify: int = 2
+    established_min_outlets: int = 3     # independent outlets (owner groups) that were actually read
+    established_min_origins: int = 2     # independent origins (origins.py); the unattributed pool never counts
+    established_after_hours: float = 6   # before this, an otherwise established statement is "developing"
+    qualify_min_outlets: int = 3         # interim publishing rule while perspectives are unknown
+
+    # run health checks
+    health_max_story_articles: int = 80
 
 
 SETTINGS = Settings()
