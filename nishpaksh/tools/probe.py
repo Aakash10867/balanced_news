@@ -294,9 +294,7 @@ def main() -> None:
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store = Store(database_url())
-    with store.engine.begin() as c:
-        c.execute(sql("create table if not exists diagnostics (id serial primary key, created_at timestamp "
-                      "default now(), kind varchar(40), report json)"))
+    # the diagnostics table is created by a migration (the app role cannot create tables)
     router = Router(load_yaml("models.yaml")["tiers"], GeminiBackend(gemini_api_key()), store)
     router.resolve()
     parts = a.parts.split(",")
