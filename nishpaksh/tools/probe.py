@@ -166,11 +166,19 @@ def probe_embedcmp(store: Store, router: Router) -> dict:
             try:
                 vec = {}
                 order = list(arts)
-                for k in range(0, len(order), 50):
-                    chunk = order[k:k + 50]
-                    vs = backend.embed(m, [fn(arts[a]) for a in chunk])
+                for k in range(0, len(order), 25):
+                    chunk = order[k:k + 25]
+                    for attempt in range(4):
+                        try:
+                            vs = backend.embed(m, [fn(arts[a]) for a in chunk])
+                            break
+                        except Exception as e:  # noqa: BLE001
+                            log.warning("embed %s batch %d attempt %d: %s", m, k, attempt, str(e)[:1500])
+                            if attempt == 3:
+                                raise
+                            time.sleep(65)
                     vec.update(zip(chunk, vs))
-                    time.sleep(1)
+                    time.sleep(4)
                 V = {a: np.array(v, dtype=np.float32) / (np.linalg.norm(v) + 1e-9) for a, v in vec.items()}
                 sims = [(float(V[p[0]] @ V[p[1]]), p[3], arts[p[0]]["lang"] != arts[p[1]]["lang"]) for p in pairs]
                 same = [x for x, l, _ in sims if l == "same"]
