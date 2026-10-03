@@ -336,6 +336,15 @@ def main() -> None:
         try:
             if part == "grouping":
                 rep = probe_grouping(store, router)
+            elif part == "quota":
+                rep = {}
+                for k, b in enumerate(router.backends):
+                    for m in ("gemini-embedding-2", "gemini-embedding-001"):
+                        try:
+                            b.embed(m, ["one short test sentence"])
+                            rep[f"key{k + 1}|{m}"] = "ok"
+                        except Exception as e:  # noqa: BLE001
+                            rep[f"key{k + 1}|{m}"] = str(e)[:2500]
             elif part == "embedcmp":
                 rep = probe_embedcmp(store, router)
             elif part == "search":
