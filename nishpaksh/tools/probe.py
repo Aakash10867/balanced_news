@@ -126,38 +126,75 @@ def probe_grouping(store: Store, router: Router, per_band: int = 24) -> dict:
                            "a_src": rows[i]["text_source"], "b_src": rows[j]["text_source"]})
     report["bands"] = bands
     report["examples"] = detail
-
-    # does a title-only vector separate better than title + lead? same labelled pairs, re-embedded
-    lab = [(i, j, l) for (i, j, _), l in zip(sampled, labels) if l]
-    ids = sorted({i for i, _, _ in lab} | {j for _, j, _ in lab})
-    alt: dict[str, dict[int, np.ndarray]] = {}
-    for name, fn in (("title_only", lambda a: a["title"] or ""),
-                     ("title_lead400", lambda a: f"{a['title'] or ''}. {_lead(a, 400)}")):
-        vecs = router.embed([fn(rows[k]) for k in ids])
-        if vecs:
-            V = np.array(vecs, dtype=np.float32)
-            V /= np.linalg.norm(V, axis=1, keepdims=True) + 1e-9
-            alt[name] = dict(zip(ids, V))
-    def auc(scores_same, scores_other):
-        if not scores_same or not scores_other:
-            return None
-        wins = sum((s > o) + 0.5 * (s == o) for s in scores_same for o in scores_other)
-        return round(wins / (len(scores_same) * len(scores_other)), 3)
-    sep = {}
-    for name, vv in alt.items():
-        same = [float(vv[i] @ vv[j]) for i, j, l in lab if l == "same"]
-        other = [float(vv[i] @ vv[j]) for i, j, l in lab if l != "same"]
-        sep[name] = {"auc_same_vs_rest": auc(same, other),
-                     "same_p10": round(float(np.percentile(same, 10)), 3) if same else None,
-                     "other_p90": round(float(np.percentile(other, 90)), 3) if other else None}
-    stored_same = [float(S[i, j]) for i, j, l in lab if l == "same"]
-    stored_other = [float(S[i, j]) for i, j, l in lab if l != "same"]
-    sep["stored"] = {"auc_same_vs_rest": auc(stored_same, stored_other)}
-    report["representation"] = sep
-
-    # summary-only texts: are they the ones in the giant clusters?
-    report["summary_only_share"] = round(sum(r["text_source"] == "summary" for r in rows) / max(1, n), 3)
+    report["pairs"] = [[rows[i]["id"], rows[j]["id"], round(c, 4), l] for (i, j, c), l in zip(sampled, labels) if l]
     return report
+
+
+def probe_embedcmp(store: Store, router: Router) -> dict:
+    """Same labelled pairs, re-embedded by each embedding model and text form, one model at a time.
+    Tells whether the stored vectors are the problem (e.g. two models' vectors mixed) and which
+    model and text form separate same-event pairs from the rest best."""
+    row = _q(store, sql("select report from diagnostics where kind = 'grouping' and report::text like '%\"pairs\"%' "
+                        "order by id desc limit 1"))
+    if not row:
+        return {"error": "no labelled pairs yet"}
+    pairs = row[0][0]["pairs"]
+    ids = sorted({p[0] for p in pairs} | {p[1] for p in pairs})
+    arts = {r._mapping["id"]: dict(r._mapping) for r in _q(store, sql(
+        "select id, title, text, lang from articles where id = any(:ids)").bindparams(ids=ids))}
+    pairs = [p for p in pairs if p[0] in arts and p[1] in arts]
+    backend = router.backends[-1]          # the key with the most quota left today
+    models = [s.id for s in router.tiers["embed"] if s.key == len(router.backends) - 1 and not s.disabled]
+    forms = {"title": lambda a: a["title"] or "",
+             "title_lead400": lambda a: f"{a['title'] or ''}. {_lead(a, 400)}",
+             "lead600": lambda a: _lead(a, 600) or (a["title"] or "")}
+    out = {"n_pairs": len(pairs), "labels": {k: sum(1 for p in pairs if p[3] == k) for k in ("same", "related", "different")}}
+    def auc(a, b):
+        if not a or not b:
+            return None
+        return round(sum((x > y) + 0.5 * (x == y) for x in a for y in b) / (len(a) * len(b)), 3)
+    for m in models:
+        for fname, fn in forms.items():
+            key = f"{m}|{fname}"
+            try:
+                vec = {}
+                order = list(arts)
+                for k in range(0, len(order), 50):
+                    chunk = order[k:k + 50]
+                    vs = backend.embed(m, [fn(arts[a]) for a in chunk])
+                    vec.update(zip(chunk, vs))
+                    time.sleep(1)
+                V = {a: np.array(v, dtype=np.float32) / (np.linalg.norm(v) + 1e-9) for a, v in vec.items()}
+                sims = [(float(V[p[0]] @ V[p[1]]), p[3], arts[p[0]]["lang"] != arts[p[1]]["lang"]) for p in pairs]
+                same = [x for x, l, _ in sims if l == "same"]
+                rel = [x for x, l, _ in sims if l == "related"]
+                diff = [x for x, l, _ in sims if l == "different"]
+                res = {"auc_same_vs_rest": auc(same, rel + diff), "auc_same_vs_related": auc(same, rel),
+                       "auc_same_vs_different": auc(same, diff),
+                       "same_p10": round(float(np.percentile(same, 10)), 3) if same else None,
+                       "same_p25": round(float(np.percentile(same, 25)), 3) if same else None,
+                       "related_p90": round(float(np.percentile(rel, 90)), 3) if rel else None,
+                       "different_p90": round(float(np.percentile(diff, 90)), 3) if diff else None,
+                       "cross_lang_same_median": round(float(np.median([x for x, l, c in sims if l == "same" and c])), 3)
+                       if any(l == "same" and c for _, l, c in sims) else None}
+                # precision of "same" above thresholds
+                for t in (0.80, 0.83, 0.86, 0.88, 0.90, 0.92):
+                    above = [l for x, l, _ in sims if x >= t]
+                    res[f"prec@{t}"] = round(sum(1 for l in above if l == "same") / len(above), 2) if above else None
+                    res[f"recall@{t}"] = round(sum(1 for x in same if x >= t) / len(same), 2) if same else None
+                out[key] = res
+            except Exception as e:  # noqa: BLE001
+                out[key] = {"error": repr(e)[:300]}
+    stored = {r._mapping["id"]: r._mapping["embedding"] for r in _q(store, sql(
+        "select id, embedding from articles where id = any(:ids)").bindparams(ids=ids))}
+    sims = []
+    for p in pairs:
+        a, b = stored.get(p[0]), stored.get(p[1])
+        if a and b and len(a) == len(b):
+            va, vb = np.array(a), np.array(b)
+            sims.append((float(va @ vb / (np.linalg.norm(va) * np.linalg.norm(vb) + 1e-9)), p[3]))
+    out["stored"] = {"auc_same_vs_rest": auc([x for x, l in sims if l == "same"], [x for x, l in sims if l != "same"])}
+    return out
 
 
 # fetch -------------------------------------------------------------------------------------
@@ -292,6 +329,8 @@ def main() -> None:
         try:
             if part == "grouping":
                 rep = probe_grouping(store, router)
+            elif part == "embedcmp":
+                rep = probe_embedcmp(store, router)
             elif part == "search":
                 rep, extra = probe_search(store)
             elif part == "fetch":
