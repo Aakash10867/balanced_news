@@ -117,9 +117,10 @@ def _embed_missing(store: Store, router: Router | None, arts: list[dict]) -> int
     missing = [a for a in arts if not a["embedding"]]
     if not missing or router is None or not model:
         return 0
+    # articles already read come first (their stories cannot be published until regrouped), then
     # newest first: what is arriving now matters more than the backlog. The budget is in texts
     # (Google counts each text in a batch), spread over the day's remaining runs.
-    missing.sort(key=lambda a: a["published_at"], reverse=True)
+    missing.sort(key=lambda a: (a["extracted_at"] is None, -a["published_at"].timestamp()))
     budget = min(max(router.per_run_budget("embed"), SETTINGS.embed_min_texts_per_run), router.remaining_today("embed"))
     done = 0
     for start in range(0, len(missing), 25):
@@ -276,6 +277,16 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
     )
     model = embed_model(router)
     stale = {a["id"] for a in arts if a["embedding"] and model and a.get("embed_model") != model}
+    # an unread article whose vector came from another model sits in a story chosen on meaningless
+    # similarities: take it out now (cheap: it has no statements) and let it wait for a new vector
+    loose = [a["id"] for a in arts if model and a["story_id"] is not None and not a["extracted_at"]
+             and a.get("embed_model") != model]
+    if loose:
+        _detach(store, loose)
+        for a in arts:
+            if not a["extracted_at"] and a.get("embed_model") != model:
+                a["story_id"] = None
+        _drop_empty_stories(store)
     embedded = _embed_missing(store, router, arts)
     # an article whose story was decided on another model's vector is grouped again from scratch
     regroup = [a["id"] for a in arts if a["id"] in stale and a.get("embed_model") == model and a["story_id"] is not None]

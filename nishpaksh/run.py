@@ -129,6 +129,21 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             if origins.assess_story(store, None, sid):
                 perspectives.mark_qualified(store, sid, "interim")
 
+    # a story whose read articles were grouped on another embedding model's vectors cannot be
+    # trusted to be one event (real data: one such "story" mixed GST, a temple and a phone launch);
+    # it is not published until those articles are re-embedded and regrouped
+    model = story_mod.embed_model(router)
+    if model:
+        untrusted = {r["story_id"] for r in store.rows(
+            select(_articles.c.story_id).where(_articles.c.story_id.is_not(None), _articles.c.extracted_at.is_not(None),
+                                               (_articles.c.embed_model.is_(None)) | (_articles.c.embed_model != model))
+            .distinct())}
+        if untrusted:
+            ids = sorted(untrusted)
+            for i in range(0, len(ids), 500):
+                store.exec(update(stories).where(stories.c.id.in_(ids[i:i + 500]), stories.c.qualifies.is_(True))
+                           .values(qualifies=False))
+        stats["stories_awaiting_regroup"] = len(untrusted)
     qualifying = {r["id"] for r in store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))}
     with store.engine.connect() as c:
         live = {r[0] for r in c.execute(select(_published.c.story_id))}
@@ -152,7 +167,9 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     # pages not touched this run still age: a "developing" statement becomes established once it has
     # stood 6 hours, and the clock is code-only (no model calls), so every live page is re-checked
     for sid in sorted(live - set(to_publish)):
-        if sid in qualifying and verify.base_verdicts(store, sid):
+        if sid not in qualifying:
+            to_publish.append(sid)          # no longer qualifies: publish_story takes the page down
+        elif verify.base_verdicts(store, sid):
             to_publish.append(sid)
     published = _parallel(to_publish, lambda sid: compose.publish_story(store, router, sid), deadline, workers)
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(to_publish),

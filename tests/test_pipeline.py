@@ -803,3 +803,30 @@ def test_embedding_quota_is_counted_per_text(store):
     assert r.tiers["embed"][0].used_today == 60
     assert r.embed([f"more {i}" for i in range(60)]) is None or r.tiers["embed"][0].used_today <= 100
     assert r.tiers["embed"][0].used_today <= 100
+
+
+def test_unnamed_people_and_records_add_no_origin(store):
+    """'A witness' in one outlet and 'a witness' in another may be the same person; 'official data'
+    with no body named may be one release: none of these can make a second origin."""
+    from nishpaksh import origins
+    sid, cid = _origin_story(store, [("Outlet A", "PTI", None), ("Outlet B", None, "named witness"),
+                                     ("Outlet C", None, "media report"), ("Outlet D", None, "official data")])
+    info = origins.compute_origins(store, _AttribR(), sid)[cid]
+    assert info["origins"] == ["agency:pti", "pool"]
+
+
+def test_story_grouped_on_old_vectors_is_not_published(store):
+    """Read articles whose vectors came from another embedding model mean the story's membership
+    was never checked: it must not be published until they are re-embedded and regrouped."""
+    from nishpaksh.run import run
+    _seed(store)
+    _run_twice(store)
+    assert store.rows(select(published))
+    store.exec(update(articles).where(articles.c.extracted_at.is_not(None)).values(embed_model="old-model"))
+
+    class NoEmbed(FakeBackend):
+        def embed(self, model, texts):
+            raise RuntimeError("429 RESOURCE_EXHAUSTED GenerateRequestsPerDay")
+    stats = run(store=store, backend=NoEmbed(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    assert stats["stories_awaiting_regroup"] >= 1
+    assert store.rows(select(published)) == []

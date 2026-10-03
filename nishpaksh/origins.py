@@ -31,7 +31,14 @@ OWN_WORDS = {"", "article", "the article", "report", "the report", "news report"
              "this article", "outlet", "editorial", "our correspondent"}
 ANON_WORDS = {"unnamed source", "unnamed sources", "source", "sources", "reports", "media reports", "unknown",
               "none", "people familiar", "insiders", "sources said", "a source", "social media", "viral video",
-              "anonymous", "reportedly", "it is said", "local media", "media"}
+              "anonymous", "reportedly", "it is said", "local media", "media", "media report", "report", "news reports",
+              # unnamed people and unnamed records: nobody can tell whether two outlets' "a witness" or
+              # "official data" are the same one, so they add no origin (seen on real data)
+              "witness", "witnesses", "eyewitness", "eyewitnesses", "named witness", "a witness", "locals", "residents",
+              "local residents", "villagers", "people", "family", "relatives", "officials", "an official", "official",
+              "data", "official data", "records", "documents", "document", "video", "statement", "a statement",
+              "complaint", "fir", "audit", "survey", "study", "experts", "analysts", "observers", "critics",
+              "supporters", "netizens", "users", "x users", "a post", "posts"}
 GOV_KINDS = {"police", "government", "official", "ministry", "agency_gov"}
 
 ATTRIB_PROMPT = """These are the sources that news reports in ONE story attribute statements to, written as the
@@ -44,6 +51,8 @@ For each numbered source, say who it is:
   same person or body (e.g. "DCP North", "Delhi Police spokesperson", "police" -> "Delhi Police" if the story
   makes clear it is the same force).
 - "kind": person | police | government | court | party | company | witness | document | anonymous | other
+  (anonymous also covers any source the reports do not identify by name or by a named body: "a witness",
+   "locals", "experts", "official data" with no body named, "a video", "media reports")
   (government = a ministry, department, minister, chief minister, official or government agency;
    document = an FIR, court order, report or data release; anonymous = unnamed, "sources", "officials" with no
    body named, social media)
