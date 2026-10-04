@@ -63,8 +63,8 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Flash models: 20/day each per key (writer/judge); Flash-Lite 500/day each per key; Gemma is
   unreliable on the free tier (overflow only). Grounded search ~20/day per model per key.
 - Run logs are readable via the `runs` table (stats + health). A crashing run writes its traceback to
-  `diagnostics` (kind 'crash'); `gh run view --log` also works now. GitHub job logs are not reachable from
-  the sandbox; tools write to the `diagnostics` table instead.
+  `diagnostics` (kind 'crash'). `gh run list/view` shows run status, but job log downloads were refused
+  (403) from the sandbox; tools write to the `diagnostics` table instead.
 
 ## Tools
 - `python -m nishpaksh.tools.replay --stories 10192,10254` (workflow `replay`, dispatch via
