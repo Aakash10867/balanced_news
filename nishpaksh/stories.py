@@ -120,8 +120,21 @@ def _embed_missing(store: Store, router: Router | None, arts: list[dict]) -> int
     # articles already read come first (their stories cannot be published until regrouped), then
     # newest first: what is arriving now matters more than the backlog. The budget is in texts
     # (Google counts each text in a batch), spread over the day's remaining runs.
-    missing.sort(key=lambda a: (a["extracted_at"] is None, -a["published_at"].timestamp()))
-    budget = min(max(router.per_run_budget("embed"), SETTINGS.embed_min_texts_per_run), router.remaining_today("embed"))
+    # Budget: everything left today except what the remaining runs need for new arrivals, so a
+    # backlog clears early in the day instead of being spread thin (real runs: only 75 of 1,510
+    # new articles got a vector in a day, so almost nothing could be grouped or read).
+    import datetime as _dt
+    from .router import PACIFIC
+    left = router.remaining_today("embed")
+    runs_left = max(1, 24 - _dt.datetime.now(PACIFIC).hour)
+    budget = min(left, max(SETTINGS.embed_min_texts_per_run, left - SETTINGS.embed_reserve_per_run * (runs_left - 1)))
+    # Half for new arrivals (newest first: that is what forms today's stories), half for read
+    # articles still on an old model's vector (their stories cannot be published until regrouped).
+    new = sorted([a for a in missing if a["extracted_at"] is None], key=lambda a: a["published_at"], reverse=True)
+    old = sorted([a for a in missing if a["extracted_at"] is not None], key=lambda a: a["published_at"], reverse=True)
+    half = budget // 2
+    take_old = old[:max(half, budget - len(new))]
+    missing = new[:budget - len(take_old)] + take_old
     done = 0
     for start in range(0, len(missing), 25):
         chunk = missing[start:start + 25][:max(0, budget)]
