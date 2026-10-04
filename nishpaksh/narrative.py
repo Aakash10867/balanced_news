@@ -178,37 +178,45 @@ def _numbers(s: str) -> set[str]:
     return set(re.findall(r"\d+(?:[.,]\d+)?", s))
 
 
+REJECT_REASONS: dict[str, int] = {}
+
+
+def _no(reason: str):
+    REJECT_REASONS[reason] = REJECT_REASONS.get(reason, 0) + 1
+    return None
+
+
 def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets: list[str]) -> list[int] | None:
     text = str(sentence.get("text") or "").strip()
     try:
         ids = [int(x) for x in sentence.get("ids") or []]
     except (TypeError, ValueError):
-        return None
+        return _no("bad ids")
     ids = [i for i in dict.fromkeys(ids) if i in by_id]
     if not text or not ids or len(text) > 700:
-        return None
+        return _no("empty, no valid ids or too long")
     low = text.lower()
     if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned):
-        return None
+        return _no("loaded word")
     # outlet names never appear in the article (the source links carry them)
     if any(re.search(rf"(?<!\w){re.escape(o)}(?!\w)", text) for o in outlets if len(o) >= 3):
-        return None
+        return _no("names an outlet")
     source_text = " ".join(by_id[i]["text"] + " " + ((by_id[i].get("time") or {}).get("when_text") or "")
                            + " " + " ".join(by_id[i]["check"]["reasons"] if by_id[i].get("check") else [])
                            for i in ids)
     if not _numbers(text) <= _numbers(source_text):
-        return None
+        return _no("number not in statements")
     verdicts = {by_id[i]["verdict"] for i in ids}
     if "false" in verdicts and not any(m in low for m in FALSE_MARKERS):
-        return None
+        return _no("false without saying so")
     # an accusation or claim with a known speaker must name who makes it (or say it is alleged)
     for i in ids:
         sp = by_id[i].get("speaker")
         if sp and by_id[i]["verdict"] not in ("corroborated", "confirmed"):
             if not (_word_set(sp) & _word_set(text)) and "alleg" not in low:
-                return None
+                return _no("claim without its speaker")
     if "disputed" in verdicts and not any(m in low for m in DISPUTE_MARKERS + ATTRIBUTION_VERBS):
-        return None
+        return _no("dispute stated as fact")
     # never invent a speaker: "X said / alleged / claimed / denied" only for a statement that names one
     speakers = [by_id[i].get("speaker") for i in ids if by_id[i].get("speaker")]
     if SPEECH.search(source_text) or re.search(r"(?i)\b(said|stated|alleged|claimed|denied|announced|told)\b", source_text):
@@ -218,11 +226,11 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
         if re.search(r"reports?\W*$|according to (early |some )?reports?\W*$", before) or m.group(0).lower().startswith("according to report"):
             continue   # the paragraph hedge ("reports said"), not a speaker
         if not speakers:
-            return None
+            return _no("invented speaker")
     # never link events by cause unless a statement does
     for c in CAUSAL:
         if re.search(rf"\b{c}\b", low) and c not in source_text.lower():
-            return None
+            return _no("cause not in statements")
     return ids
 
 
@@ -282,6 +290,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
         except Exception as e:  # noqa: BLE001
             log.warning("narrative failed: %s", e)
 
+    REJECT_REASONS.clear()
     paragraphs, covered, rejected = [], set(), 0
     for para in drafted:
         out = []
@@ -354,5 +363,5 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
                    for url, n in sorted(numbering.items(), key=lambda kv: kv[1])]
     if rejected:
         log.info("narrative: %d sentences failed checks and were replaced with plain wording", rejected)
-    return {"hash": input_hash(sections_from_payload(payload), background), "writer": WRITER_VERSION, "model": model, "rejected": rejected,
+    return {"hash": input_hash(sections_from_payload(payload), background), "writer": WRITER_VERSION, "model": model, "rejected": rejected, "reject_reasons": dict(REJECT_REASONS),
             "paragraphs": paragraphs, "sources": source_list}

@@ -69,7 +69,7 @@ def main() -> None:
             entry.update(
                 published=ok, headline=pe.get("headline"), importance=pe.get("importance"), rank=pe.get("rank"),
                 parents=pe.get("parents"), background=[b["text"] for b in pe.get("background") or []],
-                model=nar.get("model"), rejected=nar.get("rejected"),
+                model=nar.get("model"), rejected=nar.get("rejected"), reasons=nar.get("reject_reasons"),
                 essay=" ".join(x["text"] for para in nar.get("paragraphs") or [] for x in para)[:2500])
         except Exception as e:  # noqa: BLE001
             log.exception("story %s failed", sid)
