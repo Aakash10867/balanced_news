@@ -75,3 +75,11 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Green rule may be too strict (own-voice reporting rarely counts as an origin); revisit with data.
 - Thread timeline page (later). Weak fallback headlines when the model fails twice.
 - Perspective clusters appear but flip between runs; watch stability.
+
+## Fixed at the root (Oct 2026), keep the guards
+- Name consolidation maps only spelling variants (`consolidate.is_spelling_variant`); aliases were
+  rewriting "X, also known as Y" into "Y, also known as Y". Old bad mappings are undone on the next run.
+- `when_text` is extracted in English; `narrative.english_when` converts any stored Devanagari.
+- Writer validator rejects Hindi in English text, and reported speech ("A said that B claimed X")
+  turned into a fact or pinned on A.
+- `compose.tidy` removes "X (X)" duplicates.

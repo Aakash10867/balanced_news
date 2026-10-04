@@ -34,8 +34,12 @@ HEADLINE_PROMPT = """Write the headline for this news story: at most 12 words, p
   shopkeeper", "IIT Bombay student"), never by a bare name the reader cannot know.
 - Use ONLY the statements given. ESTABLISHED ones may be stated as fact. For the others, attribute
   ("family alleges ...") or put "alleged"/"reportedly" next to the uncertain part, never at the end.
-- Do not link two events by cause ("due to", "because", "over", "amid") unless a statement does; a
-  time order ("after") is fine if the statements give it.
+- Lead with the NEWEST development. Background from earlier weeks or months is not the hook; leave it
+  out rather than tie it on.
+- Do not link two events by cause ("due to", "because", "over", "amid") unless a statement does.
+  "After" may join only two steps of the same incident (a death, then the probe into it); never use it
+  to tie the newest event to an older, separate one.
+- Describe what people did with the statements' own verbs ("called himself", not "posed as").
 - Never start with "Reports", never write "reports say/emerge/detail".
 {thread}
 Statements, most important first:
