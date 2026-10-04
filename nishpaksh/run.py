@@ -245,7 +245,26 @@ def main() -> None:
     a = p.parse_args()
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    run(time_budget_min=a.time_budget, ingest_news=not a.no_ingest, search_news=not (a.no_search or a.no_ingest))
+    try:
+        run(time_budget_min=a.time_budget, ingest_news=not a.no_ingest, search_news=not (a.no_search or a.no_ingest))
+    except BaseException as e:  # noqa: BLE001
+        # GitHub job logs are not readable from where the pipeline is maintained: keep the traceback
+        if not isinstance(e, SystemExit) or e.code not in (0, None):
+            _record_crash()
+        raise
+
+
+def _record_crash() -> None:
+    import json
+    import traceback
+    try:
+        from sqlalchemy import text as sql
+        with Store(database_url()).engine.begin() as c:
+            c.execute(sql("insert into diagnostics (kind, report) values ('crash', :r)"),
+                      {"r": json.dumps({"trigger": os.environ.get("RUN_TRIGGER", "manual"),
+                                        "traceback": traceback.format_exc()[-6000:]})})
+    except Exception:  # noqa: BLE001
+        log.exception("could not record the crash")
 
 
 if __name__ == "__main__":
