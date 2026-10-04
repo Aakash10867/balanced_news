@@ -384,11 +384,22 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
         else:
             place(i, None)
 
+    # A story asked about can be emptied later in this pass (its lone article joined another story).
+    # Those articles are not guessed into anything: they get their own story, and as lone stories
+    # they are looked at again next run.
+    gone = [(i, sid, near) for i, sid, near in asks if sid not in index.medoid]
+    asks = [a for a in asks if a[1] in index.medoid]
+    for i, _, _ in gone:
+        place(i, None)
+    if gone:
+        log.info("stories: %d questions dropped, their story was merged away in this pass", len(gone))
     if asks:
         verdicts = _same_event(router, [(arts[i], arts[index.medoid[sid]], arts[near]) for i, sid, near in asks])
         rejected = []
         for (i, sid, _), same in zip(asks, verdicts):
-            if same:
+            if same and sid not in index.medoid:    # emptied by an earlier answer in this loop
+                place(i, None)
+            elif same:
                 place(i, sid)
             else:
                 rejected.append(i)

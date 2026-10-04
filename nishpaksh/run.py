@@ -94,7 +94,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         stats["tavily_pages_read"] = step("tavily", lambda: extract.read_blocked_pages(
             store, tavily, SETTINGS.tavily_extract_pages_per_run))
     stats["wire_assigned"] = wire.assign_wire_groups(store)
-    stats["grouped"] = story_mod.group_stories(store, router)
+    stats["grouped"] = step("grouping", lambda: story_mod.group_stories(store, router))   # a failure must not stop reading and writing
     # time plan: reading stops 20 minutes before the deadline; the story stage gets the rest
     stats["extracted"] = extract.extract_pending(store, router, deadline - 20 * 60)
 
