@@ -12,6 +12,7 @@ rejected if it contains any loaded word) and the Hindi translation.
 from __future__ import annotations
 
 import copy
+import datetime as dt
 import hashlib
 import json
 import logging
@@ -42,7 +43,7 @@ HEADLINE_PROMPT = """Write the headline for this news story: at most 12 words, p
 - Describe what people did with the statements' own verbs ("called himself", not "posed as").
 - Never start with "Reports", never write "reports say/emerge/detail".
 {thread}
-Statements, most important first:
+Statements, NEWEST FIRST, each with the date it happened (headline the newest development that matters):
 {facts}
 
 Reply with JSON only: {{"headline": "..."}}"""
@@ -94,6 +95,25 @@ def _headline(router: Router | None, facts: list[str], banned: set[str], fallbac
         prompt = HEADLINE_PROMPT.format(facts="\n".join(lines), thread=ctx) + (
             f"\n\nYour previous headline \"{h}\" was rejected: {problem}. Write a new one.")
     return fallback
+
+
+def _newest_first(items: list[dict]) -> list[str]:
+    """'(3 October) text' lines, newest first; undated ones after, best-supported first."""
+    seen, dated, undated = set(), [], []
+    for i in items:
+        if i["id"] in seen:
+            continue
+        seen.add(i["id"])
+        start = (i.get("time") or {}).get("start")
+        try:
+            d = dt.datetime.fromisoformat(start) if start else None
+        except (TypeError, ValueError):
+            d = None
+        (dated if d else undated).append((d, i))
+    dated.sort(key=lambda x: (x[0].replace(tzinfo=None), x[1]["n_sources"]), reverse=True)
+    undated.sort(key=lambda x: (-x[1]["n_sources"], -x[1]["n_articles"]))
+    return ([f"({d.strftime('%-d %B')}) {i['text']}" for d, i in dated]
+            + [f"(undated) {i['text']}" for _, i in undated])
 
 
 def _headline_problem(h: str, facts: list[str], source: str, banned: set[str]) -> str | None:
@@ -245,7 +265,12 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                                                         published.c.payload_en, published.c.updated_at)
                                                  .where(published.c.story_id.in_(parent_ids + child_ids or [-1])))}
     thread_ctx = "; ".join(live[p]["headline_en"] for p in parent_ids if p in live)
-    headline = _headline(router, facts, banned, fallback, unsettled, thread_ctx)
+    # The headline model sees each statement's date, newest first. Sorted by support alone, old
+    # background that every report retells (a January protest) outranked this week's arrest, and the
+    # model tied the two together with "after".
+    contested_top = [i for i in contested if not i["minor"]][:8] or contested[:8]
+    headline = _headline(router, _newest_first(est_all), banned, fallback,
+                         _newest_first(contested_top), thread_ctx)
 
     analysis = story["analysis"] or {}
     persp = defaultdict(set)
