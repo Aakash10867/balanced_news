@@ -75,6 +75,10 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Green rule may be too strict (own-voice reporting rarely counts as an origin); revisit with data.
 - Thread timeline page (later). Weak fallback headlines when the model fails twice.
 - Perspective clusters appear but flip between runs; watch stability.
+- Writer sometimes fails all 5 attempts on big stories ("empty, no valid ids or too long", Kumar 10254
+  in replay 17; fine in 15/16): split the reason into its three causes, then consider shorter input.
+- Fallback sentences append `when_text` that can be relative to another event ("on Thursday, a day
+  before his arrest" on the arrest itself); prefer the absolute date in fallbacks.
 
 ## Fixed at the root (Oct 2026), keep the guards
 - Name consolidation maps only spelling variants (`consolidate.is_spelling_variant`); aliases were
@@ -83,3 +87,5 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Writer validator rejects Hindi in English text, and reported speech ("A said that B claimed X")
   turned into a fact or pinned on A.
 - `compose.tidy` removes "X (X)" duplicates.
+- The headline model gets statements dated and newest first (`compose._newest_first`); sorted by support,
+  old background outranked the new development and got tied to it with "after".
