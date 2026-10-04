@@ -178,7 +178,7 @@ def test_end_to_end(store):
     assert pub["version"] == 2
     en, hi = pub["payload_en"], pub["payload_hi"]
     # 5 articles; the two PTI copies count once -> 4 independent sources
-    assert en["counts"] == {"articles": 5, "independent_sources": 4}
+    assert en["counts"] == {"articles": 5, "independent_sources": 4, "outlets": 5}
 
     timeline_text = [i["text"] for tier in en["timeline"] for i in tier]
     assert any("collapsed" in t for t in timeline_text)
