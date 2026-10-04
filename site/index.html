@@ -71,6 +71,9 @@
   .ftag { font-family: var(--sans); font-size: .62em; font-weight: 700; letter-spacing: .06em; color: #fff;
           background: var(--v-false); border-radius: 3px; padding: .08em .38em; margin-right: .35em; vertical-align: .14em; }
   .sources li.unread { color: var(--ink-soft); }
+  .thread { padding-left: 1.1rem; margin: 0 0 1rem; }
+  .thread li { margin: 0 0 .35rem; }
+  details.more summary { font-family: var(--sans); font-size: .9rem; color: var(--ink-soft); cursor: pointer; margin: 1.5rem 0 .8rem; }
   .sources .why { font-family: var(--sans); font-size: .75rem; margin-left: .35em; }
   .s.false { color: var(--v-false); }
   .plain .s { color: inherit; }
@@ -139,6 +142,7 @@ const T = {
     intro: "Each story is written from every outlet that covered it. Colour shows how well each sentence is supported.",
     sources: (n, o) => `${n} independent source${n === 1 ? "" : "s"}` + (o && o > n ? ` (${o} outlets)` : ""),
     sameOwner: "Outlets with the same owner, and copies of the same wire story, count as one source.",
+    ongoing: "part of an ongoing story", more: "More stories", earlier: "Earlier in this story", next: "What happened next",
     helpline: "If you or someone you know is struggling, help is available: Tele-MANAS, free and confidential, 14416 or 1-800-891-4416 (24×7).",
     updated: "updated", ago: a => `${a} ago`, back: "All stories",
     k_established: "established", k_developing: "developing (recent)", k_disputed: "sources disagree",
@@ -161,6 +165,7 @@ const T = {
     intro: "हर ख़बर उन सभी स्रोतों से लिखी गई है जिन्होंने उसे कवर किया। रंग बताता है कि हर वाक्य कितना पुष्ट है।",
     sources: (n, o) => `${n} स्वतंत्र स्रोत` + (o && o > n ? ` (${o} समाचार माध्यम)` : ""),
     sameOwner: "एक ही मालिक के माध्यम, और एक ही एजेंसी ख़बर की प्रतियाँ, एक स्रोत गिनी जाती हैं।",
+    ongoing: "जारी ख़बर का हिस्सा", more: "और ख़बरें", earlier: "इस ख़बर में पहले", next: "इसके बाद क्या हुआ",
     helpline: "अगर आप या आपका कोई परिचित मुश्किल में है, तो मदद उपलब्ध है: टेली-मानस, निःशुल्क और गोपनीय, 14416 या 1-800-891-4416 (24×7)।",
     updated: "अपडेट", ago: a => `${a} पहले`, back: "सभी ख़बरें",
     k_established: "स्थापित", k_developing: "विकसित हो रही (ताज़ा)", k_disputed: "स्रोतों में मतभेद",
@@ -231,20 +236,40 @@ async function front() {
   try {
     rows = await api("published?select=story_id,updated_at,headline_en,headline_hi," +
       "counts:payload_en->counts,lead_en:payload_en->narrative->paragraphs->0," +
-      "lead_hi:payload_hi->narrative->paragraphs->0&order=updated_at.desc&limit=60");
+      "lead_hi:payload_hi->narrative->paragraphs->0,rank:payload_en->rank,thread:payload_en->thread," +
+      "parents:payload_en->parents&order=updated_at.desc&limit=200");
   } catch (e) { main.innerHTML = `<p class="error">${esc(t.error)}</p>`; return; }
   rows = rows.filter(r => r.lead_en);  // pages awaiting their first essay are skipped
   if (!rows.length) { main.innerHTML = `<p class="empty">${esc(t.empty)}</p>`; return; }
-  const items = rows.map(r => {
+  // one entry per thread: its latest development, ranked by the thread's most important story
+  const byThread = new Map();
+  for (const r of rows) {
+    const k = r.thread || r.story_id;
+    const cur = byThread.get(k);
+    if (!cur) byThread.set(k, {latest: r, rank: r.rank || 0, size: 1});
+    else {
+      cur.size += 1;
+      cur.rank = Math.max(cur.rank, r.rank || 0);
+      if (new Date(r.updated_at) > new Date(cur.latest.updated_at)) cur.latest = r;
+    }
+  }
+  const threads = [...byThread.values()].sort((a, b) =>
+    (b.rank - a.rank) || (new Date(b.latest.updated_at) - new Date(a.latest.updated_at)));
+  const item = th => {
+    const r = th.latest;
     const head = lang === "hi" && r.headline_hi ? r.headline_hi : r.headline_en;
     const lead = (lang === "hi" && r.lead_hi ? r.lead_hi : r.lead_en) || [];
     const first = lead.length ? lead[0].text : "";
     const n = (r.counts || {}).independent_sources || 0;
+    const ongoing = th.size > 1 || (r.parents || []).length ? ` · ${esc(t.ongoing)}` : "";
     return `<a class="item" href="#/story/${r.story_id}">
         <h2>${esc(head)}</h2>${first ? `<p>${esc(first)}</p>` : ""}
-        <div class="meta">${esc(t.sources(n))}, ${esc(t.updated)} ${esc(ago(r.updated_at))}</div></a>`;
-  }).join("");
-  main.innerHTML = `<section class="front"><p class="intro">${esc(t.intro)}</p>${items}</section>`;
+        <div class="meta">${esc(t.sources(n))}, ${esc(t.updated)} ${esc(ago(r.updated_at))}${ongoing}</div></a>`;
+  };
+  const top = threads.slice(0, 20).map(item).join("");
+  const rest = threads.slice(20).map(item).join("");
+  main.innerHTML = `<section class="front"><p class="intro">${esc(t.intro)}</p>${top}
+    ${rest ? `<details class="more"><summary>${esc(t.more)} (${threads.length - 20})</summary>${rest}</details>` : ""}</section>`;
 }
 
 /* ---------- story ---------- */
@@ -333,6 +358,10 @@ async function story(id) {
       ${p.has_established ? "" : `<p class="note">${esc(t.unsettled)}</p>`}
       ${p.qualified_by === "interim" && p.perspective_mode !== "global" ? `<p class="note">${esc(t.interim)}</p>` : ""}
       ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
+      ${(p.parents || []).length ? `<h3>${esc(t.earlier)}</h3><ul class="thread">${p.parents.map(x =>
+        `<li><a href="#/story/${encodeURIComponent(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul>` : ""}
+      ${(p.children || []).length ? `<h3>${esc(t.next)}</h3><ul class="thread">${p.children.map(x =>
+        `<li><a href="#/story/${encodeURIComponent(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul>` : ""}
       <h3>${esc(t.sourcesTitle)}</h3><ol class="sources">${sources}</ol>
       ${framing}
       ${persp ? `<h3>${esc(t.perspectives)}</h3><p>${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</p>` : ""}

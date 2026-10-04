@@ -222,7 +222,7 @@ def test_headline_with_loaded_word_is_rejected(store):
 
     class Loaded(FakeBackend):
         def generate(self, model, prompt, json_mode, grounded):
-            if "Write one news headline" in prompt:
+            if "Write the headline for this news story" in prompt:
                 return '{"headline": "Shoddy flyover collapses in Kesarganj"}', [], 10
             return super().generate(model, prompt, json_mode, grounded)
     _seed(store)
@@ -851,3 +851,83 @@ def test_plain_wording_keeps_names_and_never_repeats_the_speaker():
         "Sahil Wakode faced caste-based discrimination, according to his parents."
     assert s(text="Sahil Wakode was found dead in his hostel room.") == "Sahil Wakode was found dead in his hostel room."
     assert "other reports differ" in s(text="About 40 people gave statements", verdict="disputed")
+
+
+# ---------------------------------------------------------------- writing round 2
+
+def _item(i, text, verdict="unverified", speaker=None):
+    return {"id": i, "kind": "event", "text": text, "verdict": verdict, "speaker": speaker, "sources": [],
+            "time": None, "check": None}
+
+
+def test_writer_never_invents_a_speaker_or_a_cause():
+    from nishpaksh.narrative import _validate
+    by = {1: _item(1, "A group of students intensified their agitation on October 2"),
+          2: _item(2, "Professor Doolla denied the allegations", speaker="Professor Doolla"),
+          3: _item(3, "Sahil Wakode was found dead in his hostel room"),
+          4: _item(4, "He was caught using a phone in the exam")}
+    v = lambda text, ids: _validate({"text": text, "ids": ids}, by, set(), ["The Hindu"])
+    assert v("Students said they intensified their agitation on October 2.", [1]) is None      # invented "said"
+    assert v("Students intensified their agitation on October 2, reports said.", [1]) == [1]  # the hedge is fine
+    assert v("Professor Doolla denied the allegations.", [2]) == [2]                          # a real speaker
+    assert v("He was found dead in his hostel room because he was caught using a phone.", [3, 4]) is None
+    assert v("He was found dead in his hostel room after he was caught using a phone.", [3, 4]) == [3, 4]
+    assert v("The Hindu reported he was found dead in his hostel room.", [3]) is None          # outlet named
+
+
+def test_headline_checks_catch_bare_names_and_tacked_on_hedges():
+    from nishpaksh.compose import _headline_problem
+    src = "kumar was produced before the court in kotdwar"
+    assert "bare name" in _headline_problem("Kumar was produced before the court in Kotdwar", ["x"], src, set())
+    assert "tack" in _headline_problem("Gym trainer produced before Kotdwar court, reportedly", ["x"], src, set())
+    assert "12 words" in _headline_problem(" ".join(["word"] * 15), ["x"], src, set())
+    assert _headline_problem("Gym trainer who defended shopkeeper produced before Kotdwar court", ["x"], src, set()) is None
+
+
+def test_filler_is_never_published(store):
+    from nishpaksh import compose
+    _seed(store)
+    _run_twice(store)
+    sid = store.rows(select(published.c.story_id))[0]["story_id"]
+    store.exec(update(stories).where(stories.c.id == sid).values(signature="Aaj ka Rashifal"))
+    an = dict(store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"])
+    an.pop("importance", None)
+    store.exec(update(stories).where(stories.c.id == sid).values(analysis=an))
+
+    class Horoscope(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            if "Rate how important" in prompt:
+                return '{"score": 1, "filler": true, "reason": "horoscope"}', [], 10
+            return super().generate(model, prompt, json_mode, grounded)
+    from nishpaksh.config import load_yaml
+    r = Router(load_yaml("models.yaml")["tiers"], Horoscope(), store)
+    r.resolve()
+    assert compose.publish_story(store, r, sid) is False
+    assert store.rows(select(published).where(published.c.story_id == sid)) == []
+
+
+def test_a_later_development_links_to_its_story_and_gets_background(store):
+    """A bail hearing for the arrested engineer is a development of the flyover collapse: the new page
+    links back, opens with the new development, and the old page gains 'what happened next'."""
+    from nishpaksh import compose, threads
+    from nishpaksh.db import story_links
+    _seed(store)
+    _run_twice(store)
+    parent = store.rows(select(published.c.story_id))[0]["story_id"]
+    later = NOW + dt.timedelta(hours=1)
+    child = store.insert_returning_id(stories, dict(created_at=later, updated_at=later, dirty=False, qualifies=True,
+                                                   signature="Court grants bail to Kesarganj flyover site engineer"))
+    from nishpaksh.config import load_yaml
+    r = Router(load_yaml("models.yaml")["tiers"], FakeBackend(), store)
+    r.resolve()
+    assert threads.find_parents(store, r, child, "Court grants bail to Kesarganj flyover site engineer",
+                                "The site engineer arrested after the Kesarganj flyover collapse got bail") == [parent]
+    assert store.rows(select(story_links)) and store.one(select(stories.c.dirty).where(stories.c.id == parent))["dirty"]
+    # an unrelated story with no shared name is never linked
+    other = store.insert_returning_id(stories, dict(created_at=later, updated_at=later, dirty=False, qualifies=True,
+                                                   signature="Monsoon session of Lucknow assembly adjourned"))
+    assert threads.find_parents(store, r, other, "Monsoon session of Lucknow assembly adjourned", "") == []
+    compose.publish_story(store, r, parent)
+    page = store.one(select(published).where(published.c.story_id == parent))["payload_en"]
+    assert page["children"] == [] or page["children"][0]["story_id"] == child   # child shows once it is published
+    assert threads.root_of(store, child) == parent

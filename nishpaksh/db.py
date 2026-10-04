@@ -136,6 +136,14 @@ runs = Table(  # one row per pipeline run; the scheduler gate reads it
     Column("stats", JSON),
 )
 
+story_links = Table(  # threads: a later story that develops an earlier one
+    "story_links", md,
+    Column("parent_id", Integer, primary_key=True),
+    Column("child_id", Integer, primary_key=True),
+    Column("created_at", DateTime),
+    Column("reason", Text),
+)
+
 quota_usage = Table(
     "quota_usage", md,
     Column("model", String(100), primary_key=True),
@@ -245,5 +253,5 @@ class Store:
 
 __all__ = [
     "Store", "utcnow", "feeds", "articles", "stories", "claims", "canonical", "story_pairs",
-    "source_clusters", "published", "translations", "quota_usage", "runs", "select", "insert", "update", "delete",
+    "source_clusters", "published", "translations", "quota_usage", "runs", "story_links", "select", "insert", "update", "delete",
 ]

@@ -27,7 +27,7 @@ import re
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
-WRITER_VERSION = 3   # part of the cache key: pages written by an older writer are rewritten once
+WRITER_VERSION = 4   # part of the cache key: pages written by an older writer are rewritten once
 
 RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "disputed": 3, "false": 4}
 CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "disputed", 4: "false"}
@@ -61,11 +61,14 @@ Attribution rules (important):
 - FALSE: say who claimed it and that the evidence shows it is false, citing the evidence given.
 
 Never add any fact, name, number, place, cause, motive, adjective or opinion that is not in the
-statements. Do not link two events by cause unless a statement says so. No headings, no bullet points.
+statements. Events may be told in order ("after", "later", "then"), but never link two events by cause
+("because", "due to", "led to") unless a statement says so. Use "said", "alleged", "claimed", "denied"
+only for the person or body a statement names in "said by"; never invent a speaker.
+No headings, no bullet points.
 Never use any of these words: {banned}
 Every sentence lists in "ids" every statement it uses. Use every statement at least once.
 
-Statements, events in time order first:
+{background}Statements, events in time order first:
 {statements}
 
 Reply with JSON only:
@@ -77,6 +80,9 @@ HEDGE_MARKERS = ("reportedly", "according to report", "report", "it is said", "w
                  "accounts differ", "according to early", "unconfirmed", "allegedly")
 ATTRIBUTION_VERBS = ("said", "say", "says", "alleg", "claim", "accus", "denied", "deny", "denies", "demand",
                      "told", "stated", "according to", "maintain", "insist", "assert")
+SPEECH = re.compile(r"(?i)\b(said|says|stated|told|claimed|claims|denied|denies|alleged that|alleges|accused|"
+                    r"according to (?!(?:early |some |other )?reports?\b))")
+CAUSAL = ("because", "due to", "led to", "as a result", "resulted in", "caused", "triggered")
 DISPUTE_MARKERS = ("differ", "disput", "contradict", "others", "while", "however", "but ", "conflicting",
                    "versions", "other reports")
 
@@ -198,6 +204,18 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
                 return None
     if "disputed" in verdicts and not any(m in low for m in DISPUTE_MARKERS + ATTRIBUTION_VERBS):
         return None
+    # never invent a speaker: "X said / alleged / claimed / denied" only for a statement that names one
+    speakers = [by_id[i].get("speaker") for i in ids if by_id[i].get("speaker")]
+    for m in SPEECH.finditer(text):
+        before = text[max(0, m.start() - 30):m.start()].lower()
+        if re.search(r"reports?\W*$|according to (early |some )?reports?\W*$", before) or m.group(0).lower().startswith("according to report"):
+            continue   # the paragraph hedge ("reports said"), not a speaker
+        if not speakers:
+            return None
+    # never link events by cause unless a statement does
+    for c in CAUSAL:
+        if re.search(rf"\b{c}\b", low) and c not in source_text.lower():
+            return None
     return ids
 
 
@@ -211,9 +229,10 @@ def _hedge(text: str) -> str:
     return re.sub(r"[.!]?\s*$", "", text) + ", reports said."
 
 
-def input_hash(sections: dict[str, list[dict]]) -> str:
+def input_hash(sections: dict[str, list[dict]], background: list[dict] | None = None) -> str:
     key = {k: [(i["id"], i["verdict"], i["text"], i.get("speaker"), sorted(s["url"] for s in i["sources"]))
                for i in v] for k, v in sections.items()}
+    key["_background"] = sorted(b["id"] for b in background or [])
     key["_writer"] = WRITER_VERSION
     return hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()[:16]
 
@@ -228,7 +247,8 @@ def _known_outlets() -> list[str]:
 
 def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> dict:
     items = ordered_items(payload)
-    by_id = {i["id"]: i for i in items}
+    background = [b for b in payload.get("background") or [] if b.get("id") is not None]
+    by_id = {i["id"]: i for i in items + background}
     # every outlet we know, not just this story's: statements sometimes quote another outlet's report
     outlets = sorted({s["outlet"] for s in payload["sources"] if s.get("outlet")} | set(_known_outlets()),
                      key=len, reverse=True)
@@ -236,7 +256,13 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
     drafted: list[list[dict]] = []
     model = None
     if router is not None and items:
-        prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)",
+        bg = ""
+        if background:
+            bg = ("This story is a later development of an earlier story on the site. Open with the NEW "
+                  "development; then give at most TWO sentences of background from these earlier facts, "
+                  "citing their ids (they are optional; do not repeat them later):\n"
+                  + "\n".join(_statement_line(b) for b in background) + "\n\n")
+        prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg,
                                       statements="\n".join(_statement_line(i) for i in items))
         try:
             res = router.call("writer", prompt, json_out=True, max_output_tokens=6000)
@@ -262,7 +288,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
                         x = int(x)
                     except (TypeError, ValueError):
                         continue
-                    if x in by_id and x not in covered:
+                    if x in by_id and x not in covered and x >= 0:   # optional background is not forced in
                         out.append({"text": plain_sentence(by_id[x]), "ids": [x], "plain": True})
                         covered.add(x)
                 continue
@@ -312,5 +338,5 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
                    for url, n in sorted(numbering.items(), key=lambda kv: kv[1])]
     if rejected:
         log.info("narrative: %d sentences failed checks and were replaced with plain wording", rejected)
-    return {"hash": input_hash(sections_from_payload(payload)), "writer": WRITER_VERSION, "model": model, "rejected": rejected,
+    return {"hash": input_hash(sections_from_payload(payload), background), "writer": WRITER_VERSION, "model": model, "rejected": rejected,
             "paragraphs": paragraphs, "sources": source_list}

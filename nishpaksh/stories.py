@@ -440,6 +440,8 @@ def _drop_empty_stories(store: Store, sids: list[int] | None = None) -> int:
         store.exec(delete(canonical).where(canonical.c.story_id.in_(chunk)))
         store.exec(delete(published).where(published.c.story_id.in_(chunk)))
         store.exec(delete(stories).where(stories.c.id.in_(chunk)))
+        from .db import story_links
+        store.exec(delete(story_links).where(story_links.c.parent_id.in_(chunk) | story_links.c.child_id.in_(chunk)))
     return len(empty)
 
 

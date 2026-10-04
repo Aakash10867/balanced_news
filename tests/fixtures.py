@@ -135,11 +135,20 @@ class FakeBackend:
                      {"text": "Officials say 5 people were hurt.", "ids": [bad_target]},  # invented number
                      {"text": "Daily Alpha reported the collapse.", "ids": [bad_target]}]  # names an outlet
             return json.dumps({"paragraphs": [first, rest]}), [], 400
+        if "Rate how important this Indian news story" in prompt:
+            head = re.search(r"Headline: (.*)", prompt).group(1).lower()
+            filler = "horoscope" in head or "rashifal" in head
+            return json.dumps({"score": 4, "filler": filler, "reason": "state-level incident"}), [], 30
+        if "A news site has a NEW story and some EARLIER stories" in prompt:
+            new = re.search(r"NEW: (.*)", prompt).group(1)
+            earlier = re.findall(r"^(\d+)\. (.*)$", prompt, flags=re.M)
+            dev = [int(n) for n, t in earlier if "Kesarganj" in new and "Kesarganj" in t]
+            return json.dumps({"developments": dev}), [], 30
         if "statements extracted from several news reports about ONE story" in prompt:
             lines = re.findall(r"^(\d+) \| (.*?) \| (.*)$", prompt, flags=re.M)
             speaker = {n: by for n, _, by in lines if by not in ("article", "unnamed source") and "," not in by}
             return json.dumps({"same": [], "conflicts": [], "names": {}, "speaker": speaker}), [], 100
-        if "Write one news headline" in prompt:
+        if "Write the headline for this news story" in prompt:
             return json.dumps({"headline": "Section of Kesarganj flyover collapses; two dead, engineer arrested"}), [], 50
         if "Translate each value" in prompt:
             payload = json.loads(prompt[prompt.index("{"):])

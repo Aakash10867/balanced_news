@@ -26,21 +26,25 @@ from .verify import _story_context, relation_text, support_summary
 log = logging.getLogger(__name__)
 ESTABLISHED = {"corroborated", "confirmed"}
 
-HEADLINE_PROMPT = """Write one news headline of at most 14 words in plain English for the story below.
-- Be specific: name the main person, place or body, and say what happened.
-- Use ONLY the statements given. ESTABLISHED ones may be stated as fact. For the others, hedge only
-  the uncertain part ("alleged", "reportedly"), or attribute it ("family alleges ...").
-- Do not link two events by cause or sequence ("following", "after", "due to", "amid", "over") unless a
-  statement says so. No judging adjectives, no motives, no blame beyond the statements.
-- Never start with "Reports", and never write "reports say", "reports emerge" or "reports detail".
-
+HEADLINE_PROMPT = """Write the headline for this news story: at most 12 words, plain English, crisp.
+- Hit the single most consequential fact, with an active verb and one concrete detail (a number, a
+  place, a role). The reader should want to read on: lead with the tension or the unusual element that
+  the statements themselves contain. No question headlines, no clickbait, no judging adjectives.
+- Introduce any person who is not nationally famous by who they are ("gym trainer who defended a
+  shopkeeper", "IIT Bombay student"), never by a bare name the reader cannot know.
+- Use ONLY the statements given. ESTABLISHED ones may be stated as fact. For the others, attribute
+  ("family alleges ...") or put "alleged"/"reportedly" next to the uncertain part, never at the end.
+- Do not link two events by cause ("due to", "because", "over", "amid") unless a statement does; a
+  time order ("after") is fine if the statements give it.
+- Never start with "Reports", never write "reports say/emerge/detail".
+{thread}
 Statements, most important first:
 {facts}
 
 Reply with JSON only: {{"headline": "..."}}"""
 
 LAZY_HEDGES = re.compile(r"(?i)\breports? (say|says|emerge|emerges|detail|details|indicate|indicates|follow|on)\b|^reports\b")
-LINKS = ("following", "after", "due to", "amid", "because", "as a result", "triggered", "led to")
+LINKS = ("due to", "amid", "because", "as a result", "triggered", "led to")
 
 TRANSLATE_PROMPT = """Translate each value of this JSON object into Hindi (Devanagari script).
 Translate literally and neutrally: do not add, soften or strengthen anything. Keep names of people,
@@ -58,7 +62,7 @@ def _interval(rows: list[dict]) -> dict:
 
 
 def _headline(router: Router | None, facts: list[str], banned: set[str], fallback: str,
-              unsettled: list[str] | None = None) -> str:
+              unsettled: list[str] | None = None, thread: str = "") -> str:
     """A specific headline. `facts` are established statements, `unsettled` the best-supported
     others. Checked: no loaded word, no lazy 'reports say', no cause/sequence link the statements
     do not make, no number the statements do not have."""
@@ -66,7 +70,8 @@ def _headline(router: Router | None, facts: list[str], banned: set[str], fallbac
     if router is None or not lines:
         return fallback
     source = " ".join(facts + (unsettled or [])).lower()
-    prompt = HEADLINE_PROMPT.format(facts="\n".join(lines))
+    ctx = f"\nThis is a new development in an ongoing story: {thread}. Headline the NEW development.\n" if thread else ""
+    prompt = HEADLINE_PROMPT.format(facts="\n".join(lines), thread=ctx)
     for _ in range(2):   # one retry, told what was wrong
         try:
             res = router.call("light", prompt, json_out=True, max_output_tokens=200)
@@ -77,15 +82,20 @@ def _headline(router: Router | None, facts: list[str], banned: set[str], fallbac
         problem = _headline_problem(h, facts, source, banned)
         if not problem:
             return h
-        prompt = HEADLINE_PROMPT.format(facts="\n".join(lines)) + (
+        prompt = HEADLINE_PROMPT.format(facts="\n".join(lines), thread=ctx) + (
             f"\n\nYour previous headline \"{h}\" was rejected: {problem}. Write a new one.")
     return fallback
 
 
 def _headline_problem(h: str, facts: list[str], source: str, banned: set[str]) -> str | None:
     low = h.lower()
-    if not h or len(h.split()) > 16:
-        return "it must be at most 14 words"
+    if not h or len(h.split()) > 13:
+        return "it must be at most 12 words"
+    if re.search(r"(?i),?\s*(reportedly|allegedly|reports say|reports said)\s*$", h):
+        return "do not tack 'reportedly' on at the end; put it next to the uncertain part or attribute"
+    m = re.match(r"([A-Z][a-z]+)\s+(was|is|has|had|gets|got|were)\b", h)
+    if m and m.group(1).lower() not in ("police", "court", "government", "centre", "parliament", "army"):
+        return f"it starts with a bare name ('{m.group(1)}'); introduce the person by who they are"
     if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned):
         return "it uses a loaded word"
     if LAZY_HEDGES.search(h):
@@ -203,7 +213,16 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     facts = [i["text"] for i in sorted(est_all, key=lambda i: (-i["n_sources"], -i["n_articles"]))]
     unsettled = [i["text"] for i in contested if not i["minor"]][:8] or [i["text"] for i in contested][:8]
     fallback = _fallback_headline(facts, unsettled, story["signature"] or "")
-    headline = _headline(router, facts, banned, fallback, unsettled)
+    # threads first: a development of an earlier story is headlined as the new development
+    from . import importance as imp, threads
+    main_facts = (facts + unsettled)[:8]
+    parent_ids = threads.find_parents(store, router, story_id, story["signature"] or "", " ".join(main_facts[:4]))
+    _, child_ids = threads.relatives(store, story_id)
+    live = {r["story_id"]: r for r in store.rows(select(published.c.story_id, published.c.headline_en,
+                                                        published.c.payload_en, published.c.updated_at)
+                                                 .where(published.c.story_id.in_(parent_ids + child_ids or [-1])))}
+    thread_ctx = "; ".join(live[p]["headline_en"] for p in parent_ids if p in live)
+    headline = _headline(router, facts, banned, fallback, unsettled, thread_ctx)
 
     analysis = story["analysis"] or {}
     persp = defaultdict(set)
@@ -217,8 +236,42 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                        "found_by": a["found_by"] or "feed",
                        "published_at": a["published_at"].isoformat(timespec="minutes") if a["published_at"] else None}
                       for a in full_arts.values()], key=lambda s: (s["perspective"], s["outlet"]))
+
+    # importance: filler is never published; the rest is ranked for the front page
+    rated = imp.assess(router, headline, main_facts, analysis.get("importance"))
+    if rated != analysis.get("importance"):
+        an = dict(story["analysis"] or {})
+        an["importance"] = rated
+        store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
+    if rated.get("filler"):
+        log.info("story %s is filler (%s): not published", story_id, rated.get("reason"))
+        return None
+    n_indep = len(analysis.get("groups") or {})
+    langs = len({a["lang"] for a in full_arts.values() if a["extracted_at"]})
+
+    # threads: earlier stories this one develops, and later ones that develop it (published only)
+    parents = [{"story_id": p, "headline": live[p]["headline_en"]} for p in parent_ids if p in live]
+    children = [{"story_id": c, "headline": live[c]["headline_en"]} for c in child_ids if c in live]
+    # background for the essay: the parents' established facts, with their sources (at most 4)
+    background = []
+    for p in parent_ids:
+        if p not in live:
+            continue
+        pe = live[p]["payload_en"] or {}
+        est = [i for tier in pe.get("timeline") or [] for i in tier] + (pe.get("established") or [])
+        if not est:   # nothing established on the parent: its best-supported reports, still as reports
+            est = sorted(pe.get("contested") or [], key=lambda i: -i.get("n_articles", 0))
+        for i in est[:4 - len(background)]:
+            if i.get("kind") != "relation":
+                background.append(dict(i, id=-int(i["id"]), kind="background", parent=p))
     return {
         "story_id": story_id,
+        "importance": {"score": rated["score"], "reason": rated.get("reason")},
+        "rank": imp.rank(rated["score"], n_indep, langs),
+        "thread": threads.root_of(store, story_id) if parents else story_id,
+        "parents": parents,
+        "children": children,
+        "background": background,
         "headline": headline,
         "has_established": bool(facts),
         "perspective_mode": analysis.get("mode"),
@@ -257,6 +310,8 @@ def _collect_strings(payload: dict) -> list[str]:
                 out.append(i["time"]["when_text"])
     for f in payload["framing"]:
         out.append(f["text"])
+    out += [x["headline"] for x in payload.get("parents", []) + payload.get("children", []) if x.get("headline")]
+    out += [b["text"] for b in payload.get("background", [])]
     for para in (payload.get("narrative") or {}).get("paragraphs", []):
         out += [x["text"] for x in para]
     return [s for s in dict.fromkeys(out) if s]
@@ -303,6 +358,10 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
                 i["time"]["when_text"] = tr(i["time"]["when_text"])
     for f in hi["framing"]:
         f["text"] = tr(f["text"])
+    for x in hi.get("parents", []) + hi.get("children", []):
+        x["headline"] = tr(x["headline"])
+    for b in hi.get("background", []):
+        b["text"] = tr(b["text"])
     for para in (hi.get("narrative") or {}).get("paragraphs", []):
         for x in para:
             x["text"] = tr(x["text"])
@@ -320,7 +379,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     prev = store.one(select(published).where(published.c.story_id == story_id))
     from .narrative import input_hash, sections_from_payload, write_narrative
     old = ((prev or {}).get("payload_en") or {}).get("narrative")
-    if (old and old.get("paragraphs") and old.get("hash") == input_hash(sections_from_payload(payload))
+    if (old and old.get("paragraphs") and old.get("hash") == input_hash(sections_from_payload(payload), payload.get("background"))
             and not old.get("rejected")):
         payload["narrative"] = old  # same statements, same verdicts: keep the story as written
     else:
