@@ -71,8 +71,12 @@ Rules:
 4. stance: "asserts" = the article states it as fact in its own voice; "attributes" = the article reports
    that someone else says it; "denies" = the article says it did not happen or is untrue. For "denies",
    write "text" as the positive statement being denied (text "X insulted deities", stance "denies").
+   An allegation, accusation, charge or claim that someone makes is ALWAYS "attributes" with that
+   person as attributed_to, even when the article words it in its own voice (an article writing
+   "the professor harassed the student" while reporting the family's complaint -> stance "attributes",
+   attributed_to "the student's family"). Use "asserts" only for what the article itself establishes.
 5. attributed_to: who the article gives as the source ("article", "police", "victim's family", "accused",
-   "eyewitness", "minister", "unnamed source", ...).
+   "eyewitness", "minister", "unnamed source", ...). Write it in English.
 6. evidence: what the article cites: fir | court_record | official_data | video | official_statement |
    named_witness | unnamed_source | none.
 7. Record every factual detail, including small ones. One fact per item; do not merge.

@@ -115,8 +115,15 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
 
     from . import origins
 
+    from .consolidate import consolidate_story
+    live_now = {r["story_id"] for r in store.rows(select(_published.c.story_id))}
+
     def analyse(sid):
         match.match_story(store, router, sid)
+        # merge duplicate statements, mark contradictions, one spelling per name: only for stories
+        # that can be published (it costs a model call)
+        if sid in live_now or origins.independent_read_outlets(store, sid) >= SETTINGS.qualify_min_outlets:
+            consolidate_story(store, router, sid)
         perspectives.analyze_story(store, sid)
         if origins.assess_story(store, router, sid):
             # interim rule while perspectives are unknown: 3+ independent outlets, 2+ origins

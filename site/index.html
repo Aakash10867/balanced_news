@@ -137,7 +137,9 @@ const SUPABASE_KEY = "sb_publishable_0Gex7dG16My6MPvW2M1Jsg_raI1lqfS";  // publi
 const T = {
   en: {
     intro: "Each story is written from every outlet that covered it. Colour shows how well each sentence is supported.",
-    sources: n => `${n} independent source${n === 1 ? "" : "s"}`,
+    sources: (n, o) => `${n} independent source${n === 1 ? "" : "s"}` + (o && o > n ? ` (${o} outlets)` : ""),
+    sameOwner: "Outlets with the same owner, and copies of the same wire story, count as one source.",
+    helpline: "If you or someone you know is struggling, help is available: Tele-MANAS, free and confidential, 14416 or 1-800-891-4416 (24×7).",
     updated: "updated", ago: a => `${a} ago`, back: "All stories",
     k_established: "established", k_developing: "developing (recent)", k_disputed: "sources disagree",
     k_unverified: "not yet cross-checked", k_false: "shown false", falseTag: "FALSE",
@@ -157,7 +159,9 @@ const T = {
   },
   hi: {
     intro: "हर ख़बर उन सभी स्रोतों से लिखी गई है जिन्होंने उसे कवर किया। रंग बताता है कि हर वाक्य कितना पुष्ट है।",
-    sources: n => `${n} स्वतंत्र स्रोत`,
+    sources: (n, o) => `${n} स्वतंत्र स्रोत` + (o && o > n ? ` (${o} समाचार माध्यम)` : ""),
+    sameOwner: "एक ही मालिक के माध्यम, और एक ही एजेंसी ख़बर की प्रतियाँ, एक स्रोत गिनी जाती हैं।",
+    helpline: "अगर आप या आपका कोई परिचित मुश्किल में है, तो मदद उपलब्ध है: टेली-मानस, निःशुल्क और गोपनीय, 14416 या 1-800-891-4416 (24×7)।",
     updated: "अपडेट", ago: a => `${a} पहले`, back: "सभी ख़बरें",
     k_established: "स्थापित", k_developing: "विकसित हो रही (ताज़ा)", k_disputed: "स्रोतों में मतभेद",
     k_unverified: "अभी पुष्टि नहीं", k_false: "असत्य सिद्ध", falseTag: "असत्य",
@@ -247,12 +251,23 @@ async function front() {
 // links on the page only ever point to web pages (never javascript: or data:)
 function safeUrl(u) { try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:"; } catch (e) { return false; } }
 
+// [1,2,3,4,8] -> [[1,4],[8,8]]: "1–4, 8" instead of a long list
+function ranges(nums) {
+  const out = [];
+  for (const n of [...nums].sort((a, b) => a - b)) {
+    const last = out[out.length - 1];
+    if (last && n === last[1] + 1) last[1] = n; else out.push([n, n]);
+  }
+  return out;
+}
+
 function essayHtml(nar, t) {
   const names = Object.fromEntries(nar.sources.map(s => [s.n, s.outlet]));
   return nar.paragraphs.map(para => "<p>" + para.map(x => {
     const nums = x.sources || [];
-    const sup = nums.slice(0, 4).map(n => `<a href="#src-${n}" title="${esc(names[n] || "")}" data-src="${n}">${n}</a>`).join(",")
-              + (nums.length > 4 ? `,+${nums.length - 4}` : "");
+    const sup = ranges(nums).map(([a, b]) => b === a
+        ? `<a href="#src-${a}" title="${esc(names[a] || "")}" data-src="${a}">${a}</a>`
+        : `<a href="#src-${a}" title="${esc(names[a] || "")}" data-src="${a}">${a}</a>–<a href="#src-${b}" title="${esc(names[b] || "")}" data-src="${b}">${b}</a>`).join(",");
     const who = [...new Set(nums.map(n => names[n]).filter(Boolean))].join(", ");
     const tag = x.class === "false" ? `<span class="ftag">${esc(t.falseTag)}</span>` : "";
     return `${tag}<span class="s ${esc(x.class)}" title="${esc(who)}">${esc(x.text)}</span><sup>${sup}</sup>`;
@@ -311,12 +326,13 @@ async function story(id) {
   main.innerHTML = `<article>
     <a class="back" href="#/">${esc(t.back)}</a>
     <h1>${esc(p.headline)}</h1>
-    <div class="meta">${esc(t.sources(n))}, ${esc(t.updated)} ${esc(ago(row.updated_at))}</div>
+    <div class="meta"><span title="${esc(t.sameOwner)}">${esc(t.sources(n, (p.counts || {}).outlets))}</span>, ${esc(t.updated)} ${esc(ago(row.updated_at))}</div>
     <div class="story ${plain ? "plain" : ""}" id="story">${essayHtml(nar, t)}</div>
     ${keyHtml(t, present)}
     <div class="after">
       ${p.has_established ? "" : `<p class="note">${esc(t.unsettled)}</p>`}
       ${p.qualified_by === "interim" && p.perspective_mode !== "global" ? `<p class="note">${esc(t.interim)}</p>` : ""}
+      ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
       <h3>${esc(t.sourcesTitle)}</h3><ol class="sources">${sources}</ol>
       ${framing}
       ${persp ? `<h3>${esc(t.perspectives)}</h3><p>${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</p>` : ""}

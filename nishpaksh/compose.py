@@ -15,6 +15,7 @@ import copy
 import hashlib
 import json
 import logging
+import re
 from collections import Counter, defaultdict
 
 from .db import Store, articles, delete, published, select, stories, update, utcnow, insert
@@ -25,26 +26,21 @@ from .verify import _story_context, relation_text, support_summary
 log = logging.getLogger(__name__)
 ESTABLISHED = {"corroborated", "confirmed"}
 
-HEADLINE_PROMPT = """Write one news headline of at most 14 words in plain English, using ONLY the established facts below.
-Say who did what, where: the core event, not a side detail. Facts are listed from most to least supported.
-No judging adjectives, no motives, no blame beyond what the facts state, no words that are not needed.
+HEADLINE_PROMPT = """Write one news headline of at most 14 words in plain English for the story below.
+- Be specific: name the main person, place or body, and say what happened.
+- Use ONLY the statements given. ESTABLISHED ones may be stated as fact. For the others, hedge only
+  the uncertain part ("alleged", "reportedly"), or attribute it ("family alleges ...").
+- Do not link two events by cause or sequence ("following", "after", "due to", "amid", "over") unless a
+  statement says so. No judging adjectives, no motives, no blame beyond the statements.
+- Never start with "Reports", and never write "reports say", "reports emerge" or "reports detail".
 
-Established facts:
+Statements, most important first:
 {facts}
 
 Reply with JSON only: {{"headline": "..."}}"""
 
-HEADLINE_UNSETTLED_PROMPT = """Nothing in this story is yet confirmed by independent sources. Write one neutral news
-headline of at most 12 words that says what is being REPORTED without asserting it as fact
-(for example "Reports say ...", "Accounts differ on ...", "... , reports say").
-No judging adjectives, no motives, no blame.
-
-Statements reported:
-{facts}
-
-Reply with JSON only: {{"headline": "..."}}"""
-
-HEDGES = ("report", "say", "said", "claim", "alleg", "accounts", "differ", "dispute", "according")
+LAZY_HEDGES = re.compile(r"(?i)\breports? (say|says|emerge|emerges|detail|details|indicate|indicates|follow|on)\b|^reports\b")
+LINKS = ("following", "after", "due to", "amid", "because", "as a result", "triggered", "led to")
 
 TRANSLATE_PROMPT = """Translate each value of this JSON object into Hindi (Devanagari script).
 Translate literally and neutrally: do not add, soften or strengthen anything. Keep names of people,
@@ -63,23 +59,42 @@ def _interval(rows: list[dict]) -> dict:
 
 def _headline(router: Router | None, facts: list[str], banned: set[str], fallback: str,
               unsettled: list[str] | None = None) -> str:
-    """Headline from established facts; if there are none, a hedged one from what is reported."""
-    if router is None or not (facts or unsettled):
+    """A specific headline. `facts` are established statements, `unsettled` the best-supported
+    others. Checked: no loaded word, no lazy 'reports say', no cause/sequence link the statements
+    do not make, no number the statements do not have."""
+    lines = [f"- ESTABLISHED: {f}" for f in facts[:6]] + [f"- REPORTED: {f}" for f in (unsettled or [])[:8]]
+    if router is None or not lines:
         return fallback
-    prompt = (HEADLINE_PROMPT.format(facts="\n".join(f"- {f}" for f in facts[:8])) if facts else
-              HEADLINE_UNSETTLED_PROMPT.format(facts="\n".join(f"- {f}" for f in (unsettled or [])[:8])))
     try:
-        res = router.call("light", prompt, json_out=True, max_output_tokens=200)
+        res = router.call("light", HEADLINE_PROMPT.format(facts="\n".join(lines)), json_out=True, max_output_tokens=200)
         h = str((res.data or {}).get("headline") or "").strip().strip('"').rstrip(".")
     except (QuotaExhausted, Exception) as e:  # noqa: BLE001
         log.info("headline fallback: %s", e)
         return fallback
     low = h.lower()
-    if not h or len(h.split()) > 16 or any(w in low for w in banned):
+    source = " ".join(facts + (unsettled or [])).lower()
+    if (not h or len(h.split()) > 16 or any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned)
+            or LAZY_HEDGES.search(h)
+            or any(re.search(rf"\b{l}\b", low) and l not in source for l in LINKS)
+            or not set(re.findall(r"\d+", h)) <= set(re.findall(r"\d+", source))):
         return fallback
-    if not facts and not any(m in low for m in HEDGES):  # unsettled stories must not assert
-        return fallback
+    if not facts and not any(m in low for m in ("alleg", "reported", "claim", "accus", "say", "said", "denies",
+                                                "deny", "question", "probe", "differ")):
+        return fallback   # nothing is established: the headline must not assert, it must attribute or hedge
     return h
+
+
+def _fallback_headline(facts: list[str], unsettled: list[str], signature: str) -> str:
+    """No usable model headline: the best-supported statement itself, shortened; attributed to
+    reports if it is not established. Never a raw non-English title."""
+    def short(t):
+        words = t.rstrip(".").split()
+        return " ".join(words[:14]) + ("…" if len(words) > 14 else "")
+    if facts:
+        return short(facts[0])
+    if unsettled:
+        return short(unsettled[0]) + " (reported)"
+    return short(signature) if signature and not re.search(r"[\u0900-\u097f]", signature) else "Developing story"
 
 
 def build_payload(store: Store, router: Router | None, story_id: int) -> dict | None:
@@ -91,6 +106,8 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                articles.c.published_at, articles.c.role, articles.c.extracted_at, articles.c.text_source,
                articles.c.found_by).where(articles.c.story_id == story_id))}
     texts = {cid: c["text"] for cid, c in canon.items()}
+
+    speakers = (story["analysis"] or {}).get("speakers") or {}
 
     def item(cid: int) -> dict:
         c = canon[cid]
@@ -126,6 +143,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "framing": {k: sorted(v) for k, v in sorted(framing.items())},
             "sources": sorted(srcs, key=lambda x: (x["perspective"], x["outlet"])),
             "check": check, "minor": s["n_articles"] <= 1,
+            "speaker": speakers.get(str(cid)),
             "origins": (c.get("origins") or {}).get("origins", []),
             "n_origins": (c.get("origins") or {}).get("n_origins", 0),
             "n_outlets": (c.get("origins") or {}).get("outlets", 0),
@@ -165,8 +183,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     est_all = [items[n] for tier in tl["tiers"] for n in tier] + [items[n] for n in tl["undated"]] + established
     facts = [i["text"] for i in sorted(est_all, key=lambda i: (-i["n_sources"], -i["n_articles"]))]
     unsettled = [i["text"] for i in contested if not i["minor"]][:8] or [i["text"] for i in contested][:8]
-    short_sig = " ".join((story["signature"] or "").rstrip(".").split()[:12])
-    fallback = facts[0].rstrip(".") if facts else f"Reports on: {short_sig}"
+    fallback = _fallback_headline(facts, unsettled, story["signature"] or "")
     headline = _headline(router, facts, banned, fallback, unsettled)
 
     analysis = story["analysis"] or {}
@@ -195,7 +212,11 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         "framing": framing,
         "sources": sources,
         "loaded_words": sorted(banned),
-        "counts": {"articles": len(full_arts), "independent_sources": len(analysis.get("groups") or {})},
+        "counts": {"articles": len(full_arts), "independent_sources": len(analysis.get("groups") or {}),
+                   "outlets": len({a["outlet"] for a in full_arts.values()})},
+        # a suicide story carries a helpline note (responsible-reporting guidelines)
+        "suicide": any(re.search(r"(?i)suicide|took (his|her|their) own life|आत्महत्या|ख़ुदकुशी|खुदकुशी", i["text"])
+                       for i in items.values()),
     }
 
 

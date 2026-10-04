@@ -346,9 +346,15 @@ def test_narrative_is_checked_and_coloured(store):
     paras = nar["paragraphs"]
     sents = [x for para in paras for x in para]
     text = " ".join(x["text"] for x in sents)
-    assert "shoddy" not in text.lower() and "5 people" not in text     # both bad sentences rejected
-    # rejected: loaded word, invented number, and the red sentence that never said "false"
-    assert nar["rejected"] == 3
+    assert "shoddy" not in text.lower() and "5 people" not in text     # bad sentences rejected
+    assert "Daily Alpha" not in text and "Beta News" not in text        # outlets are never named in the text
+    # rejected: loaded word, invented number, an outlet named, and the red sentence that never said "false"
+    assert nar["rejected"] == 4
+    # an allegation with a known speaker names the speaker; nothing unconfirmed reads as plain fact
+    for para in paras:
+        if any(x["class"] in ("unverified", "developing") for x in para):
+            assert any(w in " ".join(x["text"].lower() for x in para)
+                       for w in ("reportedly", "reports said", "said", "alleg", "according to"))
     assert all(x["class"] == "established" for x in paras[0])            # essay opens with what is settled
     false_s = [x for x in sents if x["class"] == "false"]
     assert false_s and "substandard" in false_s[0]["text"] and "false" in false_s[0]["text"]
@@ -357,7 +363,9 @@ def test_narrative_is_checked_and_coloured(store):
     payload = p["payload_en"]
     all_ids = {i["id"] for i in payload["contested"] + payload["established"] + payload["undated"]}
     all_ids |= {i["id"] for tier in payload["timeline"] for i in tier}
-    assert all_ids <= {x for s in sents for x in s["ids"]}
+    relations = {i["id"] for i in payload["contested"] + payload["established"] if i["kind"] == "relation"}
+    assert all_ids - relations <= {x for s in sents for x in s["ids"]}    # links between events order them, not repeated
+    assert not relations & {x for s in sents for x in s["ids"]}
     assert [s["n"] for s in nar["sources"]] == list(range(1, len(nar["sources"]) + 1))
     assert p["payload_hi"]["narrative"]["paragraphs"][0][0]["text"].startswith("[हिं]")
 

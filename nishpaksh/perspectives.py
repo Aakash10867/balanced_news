@@ -194,7 +194,8 @@ def analyze_story(store: Store, story_id: int) -> dict:
 
     old = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     analysis = {
-        "attribution_map": old.get("attribution_map") or {},
+        # kept across re-analysis: work done by origins.py and consolidate.py
+        **{k: old[k] for k in ("attribution_map", "consolidated", "speakers", "names", "not_same") if k in old},
         "qualified_by": "perspectives" if qualifies else None,
         "mode": mode,
         "split": side is not None,

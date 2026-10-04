@@ -120,21 +120,25 @@ class FakeBackend:
                 label = "same" if len(wa & wb) / len(wa | wb) >= 0.5 else "different"
                 res.append({"n": int(n), "label": label})
             return json.dumps({"results": res}), [], 200
-        if "Write the story below as ONE coherent" in prompt:
-            stmts = re.findall(r'#(\d+) ([\w-]+) \| "(.*?)"(?: \| reported by: ([^|\n]*))?', prompt)
+        if "Write the story below as ONE news article" in prompt:
+            stmts = re.findall(r'#(\d+) ([\w-]+) \| "(.*?)"(?: \| said by: ([^|\n]*))?', prompt)
             first, rest = [], []
             for sid, status, text, by in stmts:
                 if status == "ESTABLISHED":
                     first.append({"text": text + ".", "ids": [int(sid)]})
+                elif by:
+                    rest.append({"text": f"{by.strip()} said that {text[0].lower() + text[1:]}.", "ids": [int(sid)]})
                 else:
-                    rest.append({"text": f"According to {by.strip()}, {text[0].lower() + text[1:]}.",
-                                 "ids": [int(sid)]})
+                    rest.append({"text": f"Reportedly, {text[0].lower() + text[1:]}.", "ids": [int(sid)]})
             bad_target = next(int(sid) for sid, status, *_ in stmts if status != "ESTABLISHED")
             rest += [{"text": "The shoddy work was obvious.", "ids": [bad_target]},        # loaded word
-                     {"text": "Officials say 5 people were hurt.", "ids": [bad_target]}]  # invented number
+                     {"text": "Officials say 5 people were hurt.", "ids": [bad_target]},  # invented number
+                     {"text": "Daily Alpha reported the collapse.", "ids": [bad_target]}]  # names an outlet
             return json.dumps({"paragraphs": [first, rest]}), [], 400
-        if "Nothing in this story is yet confirmed" in prompt:
-            return json.dumps({"headline": "Accounts differ on what happened, reports say"}), [], 50
+        if "statements extracted from several news reports about ONE story" in prompt:
+            lines = re.findall(r"^(\d+) \| (.*?) \| (.*)$", prompt, flags=re.M)
+            speaker = {n: by for n, _, by in lines if by not in ("article", "unnamed source") and "," not in by}
+            return json.dumps({"same": [], "conflicts": [], "names": {}, "speaker": speaker}), [], 100
         if "Write one news headline" in prompt:
             return json.dumps({"headline": "Section of Kesarganj flyover collapses; two dead, engineer arrested"}), [], 50
         if "Translate each value" in prompt:
