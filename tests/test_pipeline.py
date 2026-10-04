@@ -931,3 +931,9 @@ def test_a_later_development_links_to_its_story_and_gets_background(store):
     page = store.one(select(published).where(published.c.story_id == parent))["payload_en"]
     assert page["children"] == [] or page["children"][0]["story_id"] == child   # child shows once it is published
     assert threads.root_of(store, child) == parent
+
+
+def test_ids_written_like_the_prompt_are_accepted():
+    from nishpaksh.narrative import _validate
+    by = {16191: _item(16191, "The police questioned the professor for 10 hours", verdict="corroborated")}
+    assert _validate({"text": "The police questioned the professor for 10 hours.", "ids": ["#16191"]}, by, set(), []) == [16191]

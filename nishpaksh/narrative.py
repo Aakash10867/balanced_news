@@ -188,9 +188,13 @@ def _no(reason: str):
 
 def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets: list[str]) -> list[int] | None:
     text = str(sentence.get("text") or "").strip()
-    try:
-        ids = [int(x) for x in sentence.get("ids") or []]
-    except (TypeError, ValueError):
+    ids = []
+    for x in sentence.get("ids") or []:
+        # models often echo the id as written in the prompt ("#16191"); read the number, keep the sign
+        m = re.search(r"-?\d+", str(x))
+        if m:
+            ids.append(int(m.group(0)))
+    if not ids and sentence.get("ids"):
         return _no("bad ids")
     ids = [i for i in dict.fromkeys(ids) if i in by_id]
     if not text or not ids or len(text) > 700:
@@ -267,6 +271,10 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
     # every outlet we know, not just this story's: statements sometimes quote another outlet's report
     outlets = sorted({s["outlet"] for s in payload["sources"] if s.get("outlet")} | set(_known_outlets()),
                      key=len, reverse=True)
+    # a word the neutral statements themselves use (e.g. "threat" in "an alleged threat") is not loaded
+    # in this story's own wording; banning it would reject every faithful sentence
+    used = " ".join(i["text"].lower() for i in items + background)
+    banned = {w for w in banned if not re.search(rf"(?<!\w){re.escape(w.lower())}(?!\w)", used)}
 
     drafted: list[list[dict]] = []
     model = None
@@ -300,10 +308,10 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
                 rejected += 1
                 # keep the paragraph whole: the statements of a rejected sentence go in plainly here
                 for x in (s.get("ids") or []) if isinstance(s, dict) else []:
-                    try:
-                        x = int(x)
-                    except (TypeError, ValueError):
+                    m = re.search(r"-?\d+", str(x))
+                    if not m:
                         continue
+                    x = int(m.group(0))
                     if x in by_id and x not in covered and x >= 0:   # optional background is not forced in
                         out.append({"text": plain_sentence(by_id[x]), "ids": [x], "plain": True})
                         covered.add(x)
