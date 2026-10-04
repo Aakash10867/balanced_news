@@ -838,3 +838,16 @@ def test_story_grouped_on_old_vectors_is_not_published(store):
     stats = run(store=store, backend=NoEmbed(), time_budget_min=30, ingest_news=False, verify_budget=VB)
     assert stats["stories_awaiting_regroup"] >= 1
     assert store.rows(select(published)) == []
+
+
+def test_plain_wording_keeps_names_and_never_repeats_the_speaker():
+    """Real fallback sentences that read badly: 'According to protesters, Protesters demanded...',
+    'reported that sahil Wakode', and a hedge on every single sentence."""
+    from nishpaksh.narrative import plain_sentence
+    s = lambda **k: plain_sentence(dict({"verdict": "unverified", "speaker": None, "check": None}, **k))
+    assert s(text="Protesters demanded the resignation of the CEC.", speaker="protesters") == \
+        "Protesters demanded the resignation of the CEC."
+    assert s(text="Sahil Wakode faced caste-based discrimination", speaker="his parents") == \
+        "Sahil Wakode faced caste-based discrimination, according to his parents."
+    assert s(text="Sahil Wakode was found dead in his hostel room.") == "Sahil Wakode was found dead in his hostel room."
+    assert "other reports differ" in s(text="About 40 people gave statements", verdict="disputed")

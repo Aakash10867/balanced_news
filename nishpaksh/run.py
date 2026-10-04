@@ -103,7 +103,9 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     for row in store.rows(select(_published.c.story_id, _published.c.payload_en)):
         pe = row["payload_en"] or {}
         # missing or old format; "qualified_by" marks pages built under the origins rules
-        if not (pe.get("narrative") or {}).get("paragraphs") or "qualified_by" not in pe:
+        from .narrative import WRITER_VERSION
+        if (not (pe.get("narrative") or {}).get("paragraphs") or "qualified_by" not in pe
+                or (pe.get("narrative") or {}).get("writer") != WRITER_VERSION):
             store.exec(update(stories).where(stories.c.id == row["story_id"]).values(dirty=True))
     dirty = [s["id"] for s in store.rows(select(stories.c.id).where(stories.c.dirty.is_(True)))]
     # most-covered stories first, so the stories readers most likely want are never the ones cut

@@ -65,36 +65,55 @@ def _headline(router: Router | None, facts: list[str], banned: set[str], fallbac
     lines = [f"- ESTABLISHED: {f}" for f in facts[:6]] + [f"- REPORTED: {f}" for f in (unsettled or [])[:8]]
     if router is None or not lines:
         return fallback
-    try:
-        res = router.call("light", HEADLINE_PROMPT.format(facts="\n".join(lines)), json_out=True, max_output_tokens=200)
-        h = str((res.data or {}).get("headline") or "").strip().strip('"').rstrip(".")
-    except (QuotaExhausted, Exception) as e:  # noqa: BLE001
-        log.info("headline fallback: %s", e)
-        return fallback
-    low = h.lower()
     source = " ".join(facts + (unsettled or [])).lower()
-    if (not h or len(h.split()) > 16 or any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned)
-            or LAZY_HEDGES.search(h)
-            or any(re.search(rf"\b{l}\b", low) and l not in source for l in LINKS)
-            or not set(re.findall(r"\d+", h)) <= set(re.findall(r"\d+", source))):
-        return fallback
+    prompt = HEADLINE_PROMPT.format(facts="\n".join(lines))
+    for _ in range(2):   # one retry, told what was wrong
+        try:
+            res = router.call("light", prompt, json_out=True, max_output_tokens=200)
+            h = str((res.data or {}).get("headline") or "").strip().strip('"').rstrip(".")
+        except (QuotaExhausted, Exception) as e:  # noqa: BLE001
+            log.info("headline fallback: %s", e)
+            return fallback
+        problem = _headline_problem(h, facts, source, banned)
+        if not problem:
+            return h
+        prompt = HEADLINE_PROMPT.format(facts="\n".join(lines)) + (
+            f"\n\nYour previous headline \"{h}\" was rejected: {problem}. Write a new one.")
+    return fallback
+
+
+def _headline_problem(h: str, facts: list[str], source: str, banned: set[str]) -> str | None:
+    low = h.lower()
+    if not h or len(h.split()) > 16:
+        return "it must be at most 14 words"
+    if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned):
+        return "it uses a loaded word"
+    if LAZY_HEDGES.search(h):
+        return "do not write 'reports say/emerge/detail'; attribute to a person or use 'reportedly'"
+    bad = [l for l in LINKS if re.search(rf"\b{l}\b", low) and l not in source]
+    if bad:
+        return f"it links events with '{bad[0]}', which no statement does"
+    if not set(re.findall(r"\d+", h)) <= set(re.findall(r"\d+", source)):
+        return "it has a number that is not in the statements"
     if not facts and not any(m in low for m in ("alleg", "reported", "claim", "accus", "say", "said", "denies",
-                                                "deny", "question", "probe", "differ")):
-        return fallback   # nothing is established: the headline must not assert, it must attribute or hedge
-    return h
+                                                "deny", "question", "probe", "differ", "seek", "demand")):
+        return "nothing is established, so it must attribute or hedge (e.g. 'reportedly', 'alleges')"
+    return None
 
 
 def _fallback_headline(facts: list[str], unsettled: list[str], signature: str) -> str:
-    """No usable model headline: the best-supported statement itself, shortened; attributed to
-    reports if it is not established. Never a raw non-English title."""
-    def short(t):
-        words = t.rstrip(".").split()
-        return " ".join(words[:14]) + ("…" if len(words) > 14 else "")
-    if facts:
-        return short(facts[0])
-    if unsettled:
-        return short(unsettled[0]) + " (reported)"
-    return short(signature) if signature and not re.search(r"[\u0900-\u097f]", signature) else "Developing story"
+    """No usable model headline: a short best-supported statement itself (never cut mid-sentence),
+    marked as reported if it is not established. Never a raw non-English title."""
+    def fits(t):
+        return len(t.rstrip(".").split()) <= 14
+    for pool, mark in ((facts, ""), (unsettled, ", reportedly")):
+        for t in pool[:8]:
+            if fits(t):
+                return t.rstrip(".") + mark
+    if facts or unsettled:
+        t = (facts or unsettled)[0].rstrip(".")
+        return " ".join(t.split()[:12]) + "…"
+    return signature if signature and not re.search(r"[\u0900-\u097f]", signature) else "Developing story"
 
 
 def build_payload(store: Store, router: Router | None, story_id: int) -> dict | None:

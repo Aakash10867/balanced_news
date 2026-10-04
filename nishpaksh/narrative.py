@@ -27,7 +27,7 @@ import re
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
-WRITER_VERSION = 2   # part of the cache key: pages written by an older writer are rewritten once
+WRITER_VERSION = 3   # part of the cache key: pages written by an older writer are rewritten once
 
 RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "disputed": 3, "false": 4}
 CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "disputed", 4: "false"}
@@ -73,9 +73,8 @@ Reply with JSON only:
 
 FALSE_MARKERS = ("false", "untrue", "not true", "contradict", "evidence shows", "disproved", "incorrect",
                  "no evidence", "refut")
-HEDGE_MARKERS = ("reportedly", "according to report", "reports said", "reports say", "reported", "it is said",
-                 "was said to", "were said to", "accounts differ", "some reports", "according to early",
-                 "unconfirmed", "allegedly")
+HEDGE_MARKERS = ("reportedly", "according to report", "report", "it is said", "was said to", "were said to",
+                 "accounts differ", "according to early", "unconfirmed", "allegedly")
 ATTRIBUTION_VERBS = ("said", "say", "says", "alleg", "claim", "accus", "denied", "deny", "denies", "demand",
                      "told", "stated", "according to", "maintain", "insist", "assert")
 DISPUTE_MARKERS = ("differ", "disput", "contradict", "others", "while", "however", "but ", "conflicting",
@@ -92,23 +91,28 @@ def _soft_lower(text: str) -> str:
     return text[0].lower() + text[1:] if m else text
 
 
+def _speaker_is_subject(speaker: str, text: str) -> bool:
+    """'Protesters demanded...' with speaker 'protesters': the sentence already says who."""
+    head = _word_set(" ".join(text.split()[:6]))
+    return bool(_word_set(speaker) & head)
+
+
 def plain_sentence(item: dict) -> str:
-    """Deterministic fallback wording for one statement, under the same attribution rules."""
+    """Deterministic fallback wording for one statement, under the same attribution rules. The
+    statement keeps its own capitalisation (names stay capitalised); attribution goes at the end.
+    Unconfirmed sentences carry no hedge of their own: the paragraph gets one (see write_narrative)."""
     text = item["text"].strip().rstrip(".")
     v = item["verdict"]
     speaker = item.get("speaker")
-    if v in ("corroborated", "confirmed"):
-        return text + "."
     if v == "false":
         why = (item.get("check") or {}).get("reasons") or []
-        who = f"{speaker} claimed" if speaker else "It was claimed"
         tail = f" The evidence shows this is false: {why[0].rstrip('.')}." if why else " The evidence shows this is false."
-        return f"{who} that {_soft_lower(text)}.{tail}"
+        return f"{text}, {'according to ' + speaker if speaker else 'it was claimed'}.{tail}"
     if v == "disputed":
-        return f"Accounts differ on this: {_soft_lower(text) if speaker is None else text}, according to some reports."
-    if speaker:
-        return f"According to {speaker}, {_soft_lower(text)}."
-    return f"{text}, reports said."
+        return f"{text}, according to some reports; other reports differ."
+    if speaker and v not in ("corroborated", "confirmed") and not _speaker_is_subject(speaker, text):
+        return f"{text}, according to {speaker}."
+    return text + "."
 
 
 def _time_key(i: dict):
@@ -214,10 +218,20 @@ def input_hash(sections: dict[str, list[dict]]) -> str:
     return hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()[:16]
 
 
+def _known_outlets() -> list[str]:
+    from .config import load_yaml
+    names = {f["name"] for f in load_yaml("feeds.yaml").get("feeds") or []}
+    for info in (load_yaml("ownership.yaml").get("groups") or {}).values():
+        names |= set(info.get("outlets") or [])
+    return sorted(names)
+
+
 def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> dict:
     items = ordered_items(payload)
     by_id = {i["id"]: i for i in items}
-    outlets = sorted({s["outlet"] for s in payload["sources"] if s.get("outlet")}, key=len, reverse=True)
+    # every outlet we know, not just this story's: statements sometimes quote another outlet's report
+    outlets = sorted({s["outlet"] for s in payload["sources"] if s.get("outlet")} | set(_known_outlets()),
+                     key=len, reverse=True)
 
     drafted: list[list[dict]] = []
     model = None
@@ -298,5 +312,5 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
                    for url, n in sorted(numbering.items(), key=lambda kv: kv[1])]
     if rejected:
         log.info("narrative: %d sentences failed checks and were replaced with plain wording", rejected)
-    return {"hash": input_hash(sections_from_payload(payload)), "model": model, "rejected": rejected,
+    return {"hash": input_hash(sections_from_payload(payload)), "writer": WRITER_VERSION, "model": model, "rejected": rejected,
             "paragraphs": paragraphs, "sources": source_list}

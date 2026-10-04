@@ -90,7 +90,7 @@ class Settings:
     story_split_min_size: int = 4
     heal_per_run: int = 20
     embed_min_texts_per_run: int = 60      # Google counts each text; ~1,000 texts a day per key
-    embed_reserve_per_run: int = 80        # kept back for each later run today (new arrivals)
+    embed_reserve_per_run: int = 40        # kept back for each later run today (new arrivals)
 
     # extraction: only stories covered by >= 2 independent sources; at most this many articles each
     max_extract_per_story: int = 8

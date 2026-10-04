@@ -20,6 +20,9 @@ log = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
 STANCES = {"asserts", "attributes", "denies"}
+ROUNDUP = re.compile(r"(?i)\blive\b.*\bupdates?\b|\blive\s*(blog|updates?|news)\b|^live[:|\s]|\btop (news|headlines|stories)\b"
+                     r"|\bnews (wrap|roundup|highlights|bulletin)\b|\bmorning brief\b|\bevening brief\b|\bnews live\b"
+                     r"|लाइव|ताजा खबर|बड़ी खबरें|टॉप न्यूज|न्यूज़ अपडेट")
 EVIDENCE = {"fir", "court_record", "official_data", "video", "official_statement",
             "named_witness", "unnamed_source", "none"}
 PRECISION = {"exact", "hour", "part_of_day", "day", "week", "month", "unknown"}
@@ -79,7 +82,9 @@ Rules:
    "eyewitness", "minister", "unnamed source", ...). Write it in English.
 6. evidence: what the article cites: fir | court_record | official_data | video | official_statement |
    named_witness | unnamed_source | none.
-7. Record every factual detail, including small ones. One fact per item; do not merge.
+7. Record every factual detail about the article's core event (the "signature"), including small ones.
+   One fact per item; do not merge. If the article is a roundup or live blog covering several unrelated
+   news events, record ONLY the core event's facts and ignore the rest.
 8. Reply with the JSON only.
 """
 
@@ -214,6 +219,8 @@ def select_for_extraction(store: Store) -> list[dict]:
     )
     by_story: dict[int, list[dict]] = {}
     for r in rows:
+        if ROUNDUP.search(r["title"] or ""):
+            continue   # live blogs and news roundups mix unrelated events into one story
         by_story.setdefault(r["story_id"], []).append(r)
     ranked = []
     for sid, arts in by_story.items():
