@@ -103,6 +103,11 @@ def _speaker_is_subject(speaker: str, text: str) -> bool:
     return bool(_word_set(speaker) & head)
 
 
+def disputed_pair(a: dict, b: dict) -> str:
+    """Two statements that cannot both be true, in one sentence."""
+    return f"Accounts differ: some reports say {_soft_lower(a['text'].strip().rstrip('.'))}, others that {_soft_lower(b['text'].strip().rstrip('.'))}."
+
+
 def plain_sentence(item: dict) -> str:
     """Deterministic fallback wording for one statement, under the same attribution rules. The
     statement keeps its own capitalisation (names stay capitalised); attribution goes at the end.
@@ -206,6 +211,8 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
         return None
     # never invent a speaker: "X said / alleged / claimed / denied" only for a statement that names one
     speakers = [by_id[i].get("speaker") for i in ids if by_id[i].get("speaker")]
+    if SPEECH.search(source_text) or re.search(r"(?i)\b(said|stated|alleged|claimed|denied|announced|told)\b", source_text):
+        speakers = speakers or ["(in the statement)"]   # the statement itself says who spoke
     for m in SPEECH.finditer(text):
         before = text[max(0, m.start() - 30):m.start()].lower()
         if re.search(r"reports?\W*$|according to (early |some )?reports?\W*$", before) or m.group(0).lower().startswith("according to report"):
@@ -301,7 +308,16 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
     if missing:  # in reading order, a few sentences per paragraph
         chunk = []
         for i in missing:
-            chunk.append({"text": plain_sentence(i), "ids": [i["id"]], "plain": True})
+            if i["id"] in covered:
+                continue
+            partner = next((by_id[o] for o in i.get("conflicts_with") or []
+                            if o in by_id and o not in covered and o >= 0), None)
+            if i["verdict"] == "disputed" and partner:
+                chunk.append({"text": disputed_pair(i, partner), "ids": [i["id"], partner["id"]], "plain": True})
+                covered.update({i["id"], partner["id"]})
+            else:
+                chunk.append({"text": plain_sentence(i), "ids": [i["id"]], "plain": True})
+                covered.add(i["id"])
             if len(chunk) == 4:
                 paragraphs.append(chunk)
                 chunk = []

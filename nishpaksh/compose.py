@@ -72,7 +72,7 @@ def _headline(router: Router | None, facts: list[str], banned: set[str], fallbac
     source = " ".join(facts + (unsettled or [])).lower()
     ctx = f"\nThis is a new development in an ongoing story: {thread}. Headline the NEW development.\n" if thread else ""
     prompt = HEADLINE_PROMPT.format(facts="\n".join(lines), thread=ctx)
-    for _ in range(2):   # one retry, told what was wrong
+    for _ in range(3):   # two retries, each told what was wrong
         try:
             res = router.call("light", prompt, json_out=True, max_output_tokens=200)
             h = str((res.data or {}).get("headline") or "").strip().strip('"').rstrip(".")
@@ -92,7 +92,8 @@ def _headline_problem(h: str, facts: list[str], source: str, banned: set[str]) -
     if not h or len(h.split()) > 13:
         return "it must be at most 12 words"
     if re.search(r"(?i),?\s*(reportedly|allegedly|reports say|reports said)\s*$", h):
-        return "do not tack 'reportedly' on at the end; put it next to the uncertain part or attribute"
+        return ("do not tack 'reportedly' on at the end; put it before the verb, e.g. 'Delhi Police reportedly "
+                "deny permission for Jantar Mantar protest', or attribute it to whoever says it")
     m = re.match(r"([A-Z][a-z]+)\s+(was|is|has|had|gets|got|were)\b", h)
     if m and m.group(1).lower() not in ("police", "court", "government", "centre", "parliament", "army"):
         return f"it starts with a bare name ('{m.group(1)}'); introduce the person by who they are"
@@ -111,15 +112,28 @@ def _headline_problem(h: str, facts: list[str], source: str, banned: set[str]) -
     return None
 
 
+VERB_START = re.compile(r"\b(was|were|is|are|has|have|had|does|did|do|will|gave|made|held|took|paid|met|got|"
+                        r"\w+ed)\b")
+
+
+def _hedged(t: str) -> str:
+    """'Delhi Police denied permission' -> 'Delhi Police reportedly denied permission': the hedge goes
+    before the first verb, never tacked on at the end."""
+    m = VERB_START.search(t, 1)
+    return t[:m.start()] + "reportedly " + t[m.start():] if m else t
+
+
 def _fallback_headline(facts: list[str], unsettled: list[str], signature: str) -> str:
     """No usable model headline: a short best-supported statement itself (never cut mid-sentence),
-    marked as reported if it is not established. Never a raw non-English title."""
+    hedged before its verb if it is not established. Never a raw non-English title."""
     def fits(t):
-        return len(t.rstrip(".").split()) <= 14
-    for pool, mark in ((facts, ""), (unsettled, ", reportedly")):
-        for t in pool[:8]:
-            if fits(t):
-                return t.rstrip(".") + mark
+        return len(t.rstrip(".").split()) <= 13
+    for t in facts[:8]:
+        if fits(t):
+            return t.rstrip(".")
+    for t in unsettled[:8]:
+        if fits(t):
+            return _hedged(t.rstrip("."))
     if facts or unsettled:
         t = (facts or unsettled)[0].rstrip(".")
         return " ".join(t.split()[:12]) + "…"
