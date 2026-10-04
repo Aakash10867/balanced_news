@@ -36,8 +36,10 @@ Do four things:
    or person, or where one adds an important new fact.
 2. "conflicts": pairs of ids that cannot both be true (for example different numbers, times or places
    for the same thing, or one says something happened and the other says it did not).
-3. "names": spelling variants of the same person or place mapped to ONE spelling (use the most common
-   one), e.g. {{"Dulla": "Doolla", "Dula": "Doolla"}}. Only real variants of the same name.
+3. "names": SPELLING variants of the same name mapped to ONE spelling (use the most common one),
+   e.g. {{"Dulla": "Doolla", "Dula": "Doolla"}}. Only different spellings or transliterations of the SAME
+   name. Never map an alias, a nickname, a title or a different name of the same person to another
+   (e.g. "Deepak Kumar" and "Mohammad Deepak" are two names, not two spellings: leave them).
 4. "speaker": for each statement that is an allegation, accusation, claim, demand, denial or
    opinion made by a person or body, who makes it, in plain English ("Sahil's parents", "Professor
    Doolla", "Mumbai Police"). Leave out statements that are simply reported events.
@@ -52,6 +54,18 @@ def _hash(rows: list[dict]) -> str:
     return hashlib.sha256(json.dumps(sorted((r["id"], r["text"]) for r in rows)).encode()).hexdigest()[:16]
 
 
+def is_spelling_variant(a: str, b: str) -> bool:
+    """Doolla / Dulla / Dula, Shireesh / Shirish: yes. Deepak Kumar / Mohammad Deepak (an alias), or
+    Kumar / Mohammad Deepak: no. Replacing an alias with another name rewrote "X, also known as Y" into
+    "Y, also known as Y" on a real page, so only near-identical strings with the same number of words
+    are accepted."""
+    from difflib import SequenceMatcher
+    a, b = a.strip().lower(), b.strip().lower()
+    if a == b or len(a.split()) != len(b.split()):
+        return False
+    return SequenceMatcher(None, a, b).ratio() >= 0.6 and a[0] == b[0]
+
+
 def _apply_names(text: str, names: dict[str, str]) -> str:
     for variant, canon in names.items():
         if len(variant) >= 3 and variant != canon:
@@ -59,11 +73,29 @@ def _apply_names(text: str, names: dict[str, str]) -> str:
     return text
 
 
+def _repair_aliases(store: Store, story_id: int, analysis: dict) -> None:
+    """Undo name mappings an earlier version accepted that were aliases, not spellings: restore each
+    statement's text from the words of the report it came from, and consolidate again."""
+    bad = {k: v for k, v in (analysis.get("names") or {}).items() if not is_spelling_variant(k, v)}
+    if not bad:
+        return
+    for c in store.rows(select(canonical.c.id, canonical.c.text).where(canonical.c.story_id == story_id)):
+        if not c["text"] or not any(v in c["text"] for v in bad.values()):
+            continue
+        first = store.one(select(claims.c.text).where(claims.c.canonical_id == c["id"]).order_by(claims.c.id))
+        if first and first["text"] and first["text"] != c["text"]:
+            store.exec(update(canonical).where(canonical.c.id == c["id"]).values(text=first["text"]))
+    analysis["names"] = {k: v for k, v in (analysis.get("names") or {}).items() if k not in bad}
+    analysis.pop("consolidated", None)
+    log.info("consolidate story %s: undid %d alias mappings", story_id, len(bad))
+
+
 def consolidate_story(store: Store, router: Router | None, story_id: int, max_statements: int = 90) -> dict:
     story = store.one(select(stories.c.id, stories.c.analysis).where(stories.c.id == story_id))
     if not story or router is None:
         return {}
     analysis = dict(story["analysis"] or {})
+    _repair_aliases(store, story_id, analysis)
     rows = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind, canonical.c.conflicts)
                                   .where(canonical.c.story_id == story_id)) if r["kind"] != "relation" and r["text"]]
     if len(rows) < 2 or analysis.get("consolidated") == _hash(rows):
@@ -131,7 +163,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
             added += 1
 
     names = {str(k).strip(): str(v).strip() for k, v in (data.get("names") or {}).items()
-             if isinstance(k, str) and isinstance(v, str) and k.strip() and v.strip()}
+             if isinstance(k, str) and isinstance(v, str) and k.strip() and v.strip() and is_spelling_variant(k, v)}
     if names:
         for r in rows:
             if r["id"] in gone:

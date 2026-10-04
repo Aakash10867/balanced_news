@@ -27,7 +27,7 @@ import re
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
-WRITER_VERSION = 4   # part of the cache key: pages written by an older writer are rewritten once
+WRITER_VERSION = 5   # part of the cache key: pages written by an older writer are rewritten once
 
 RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "disputed": 3, "false": 4}
 CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "disputed", 4: "false"}
@@ -63,7 +63,8 @@ Attribution rules (important):
 Never add any fact, name, number, place, cause, motive, adjective or opinion that is not in the
 statements. Events may be told in order ("after", "later", "then"), but never link two events by cause
 ("because", "due to", "led to") unless a statement says so. Use "said", "alleged", "claimed", "denied"
-only for the person or body a statement names in "said by"; never invent a speaker.
+only for the person or body a statement names in "said by"; never invent a speaker. When a statement
+is itself reported speech ("A said that B claimed X"), keep it reported: never make A the author of X.
 No headings, no bullet points.
 Never use any of these words: {banned}
 Every sentence lists in "ids" every statement it uses. Use every statement at least once.
@@ -82,6 +83,9 @@ ATTRIBUTION_VERBS = ("said", "say", "says", "alleg", "claim", "accus", "denied",
                      "told", "stated", "according to", "maintain", "insist", "assert")
 SPEECH = re.compile(r"(?i)\b(said|says|stated|told|claimed|claims|denied|denies|alleged that|alleges|accused|"
                     r"according to (?!(?:early |some |other )?reports?\b))")
+REPORTED = re.compile(r"(?i)\b(said|stated|told|claimed|alleged|announced|added|noted|denied)\s+that\b")
+SPEECH_ANY = re.compile(r"(?i)\b(said|says|stated|states|told|claimed|claims|alleged|alleges|announced|added|noted|"
+                        r"denied|denies|according to|reportedly|reports? (?:said|say|stated))\b")
 CAUSAL = ("because", "due to", "led to", "as a result", "resulted in", "caused", "triggered")
 DISPUTE_MARKERS = ("differ", "disput", "contradict", "others", "while", "however", "but ", "conflicting",
                    "versions", "other reports")
@@ -168,10 +172,23 @@ def _statement_line(i: dict) -> str:
         line += f" | said by: {i['speaker']}"
     if i["verdict"] == "false" and i.get("check"):
         line += f" | evidence: {'; '.join(i['check'].get('reasons') or [])}"
-    when = (i.get("time") or {}).get("when_text")
+    when = english_when(i.get("time") or {})
     if when:
         line += f" | when: {when}"
     return line
+
+
+def english_when(t: dict) -> str:
+    """The time words for an English page. Older readings copied Hindi time words ("26 सितंबर"),
+    which then appeared in English text: those are replaced by the date itself, or dropped."""
+    w = (t.get("when_text") or "").strip()
+    if w and not re.search(r"[\u0900-\u097f]", w):
+        return w
+    start = t.get("start")
+    try:
+        return dt.datetime.fromisoformat(start).strftime("%-d %B") if start else ""
+    except ValueError:
+        return ""
 
 
 def _numbers(s: str) -> set[str]:
@@ -210,6 +227,12 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
                            for i in ids)
     if not _numbers(text) <= _numbers(source_text):
         return _no("number not in statements")
+    if re.search(r"[\u0900-\u097f]", text) and not re.search(r"[\u0900-\u097f]", source_text):
+        return _no("Hindi words in English text")
+    # "A said that B claimed X" must stay reported speech: a sentence may not drop the "said" and
+    # make A the author of the claim (seen: "a claim was made by DIG Singla")
+    if any(REPORTED.search(by_id[i]["text"]) for i in ids) and not SPEECH_ANY.search(text):
+        return _no("reported speech turned into fact")
     verdicts = {by_id[i]["verdict"] for i in ids}
     if "false" in verdicts and not any(m in low for m in FALSE_MARKERS):
         return _no("false without saying so")

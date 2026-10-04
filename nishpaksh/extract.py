@@ -68,7 +68,7 @@ Rules:
    hate, radical, thug, martyr) out of "text" and into "loaded_words", copied exactly as the article
    wrote it, in the article's own language.
 2. Write "text" in English even when the article is in Hindi. Keep names as written.
-3. Times: copy the article's time words into "when_text". Fill start/end ONLY when they follow from the
+3. Times: write the article's time words in English in "when_text" ("26 September", "Tuesday night"). Fill start/end ONLY when they follow from the
    text and the publish date (for example "Tuesday night" -> that Tuesday 18:00 to 23:59). Never guess.
    If unclear use null and precision "unknown".
 4. stance: "asserts" = the article states it as fact in its own voice; "attributes" = the article reports

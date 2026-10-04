@@ -53,6 +53,11 @@ places and organisations, and all numbers, as they are. Return a JSON object wit
 {payload}"""
 
 
+def tidy(text: str) -> str:
+    """'LPU (LPU)' -> 'LPU': an abbreviation the extraction repeated in brackets."""
+    return re.sub(r"\b([\w.&'-]+(?: [\w.&'-]+){0,4}) \(\1\)", r"\1", text or "")
+
+
 def _interval(rows: list[dict]) -> dict:
     starts = [r["time"]["start"] for r in rows if r.get("time") and r["time"].get("start")]
     ends = [r["time"]["end"] for r in rows if r.get("time") and r["time"].get("end")]
@@ -178,7 +183,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                      "web_sources": detail.get("web_sources", [])}
         return {
             "id": cid, "kind": c["kind"],
-            "text": relation_text(c["rel"], texts) if c["kind"] == "relation" else c["text"],
+            "text": relation_text(c["rel"], texts) if c["kind"] == "relation" else tidy(c["text"]),
             "verdict": c["verdict"], "n_sources": len(s["support_groups"]), "n_articles": s["n_articles"],
             "supported_by": s["support_perspectives"], "denied_by": s["deny_perspectives"],
             "conflicts_with": [x for x in (c["conflicts"] or []) if x in canon],
