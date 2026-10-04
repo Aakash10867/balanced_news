@@ -22,11 +22,11 @@ from ..db import Store, articles, canonical, claims, md, published, select, stor
 from ..router import GeminiBackend, Router
 
 log = logging.getLogger("replay")
-SKIP_COLS = {"embedding", "minhash", "text"}
+SKIP_COLS = {"embedding", "minhash"}   # article bodies are skipped separately (only articles have them)
 
 
 def _copy(src: Store, dst: Store, table, where) -> int:
-    cols = [c for c in table.c if c.name not in SKIP_COLS]
+    cols = [c for c in table.c if c.name not in SKIP_COLS and not (table is articles and c.name == "text")]
     rows = src.rows(select(*cols).where(where))
     if rows:
         with dst.engine.begin() as c:
