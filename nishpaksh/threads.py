@@ -85,7 +85,7 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
     if cands:
         earlier = "\n".join(f"{k + 1}. {t}" for k, (_, _, t, _) in enumerate(cands))
         try:
-            res = router.call("light", PROMPT.format(new=f"{headline}. {summary}"[:600], earlier=earlier),
+            res = router.call("page", PROMPT.format(new=f"{headline}. {summary}"[:600], earlier=earlier),
                               json_out=True, max_output_tokens=100)
             for n in (res.data or {}).get("developments", []) if isinstance(res.data, dict) else []:
                 try:

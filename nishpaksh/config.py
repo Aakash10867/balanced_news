@@ -115,6 +115,8 @@ class Settings:
 
     # run health checks
     health_max_story_articles: int = 80
+    health_embed_batch: int = 25        # one grouping batch (stories.py embeds 25 texts per call)
+    health_stall_runs: int = 3
 
 
 SETTINGS = Settings()

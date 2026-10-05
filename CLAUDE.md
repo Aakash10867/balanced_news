@@ -62,6 +62,15 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Google counts **each text in an embedding batch** as one request: ~1,000 texts/day per key.
 - Flash models: 20/day each per key (writer/judge); Flash-Lite 500/day each per key; Gemma is
   unreliable on the free tier (overflow only). Grounded search ~20/day per model per key.
+- Quotas reset at 00:00 Pacific = 12:30 IST. **Every tier is paced** over that day
+  (`router.pace_cap`: allowance x (hours + 2)/24, unused carries forward): unpaced, Flash-Lite ran
+  out after ~15 runs and the site sat frozen from ~23:30 to 12:30 IST (Oct 4-5 2026). Dispatch the
+  hourly workflow with reason `backfill` for a deliberate unpaced catch-up.
+- `light` = analysis (decides colours); `page` = headline, importance, threads, Hindi (same models,
+  nothing kept back, so page building is never the step starved). Before moving a light/page task
+  to another model, run `tools/modelcmp` (workflow `modelcmp`).
+- Health flags a tier that cannot pay for one call (embed < one 25-text batch) and grouping that
+  stalls for 3 runs while articles keep coming in.
 - Run logs are readable via the `runs` table (stats + health). A crashing run writes its traceback to
   `diagnostics` (kind 'crash'). `gh run list/view` shows run status, but job log downloads were refused
   (403) from the sandbox; tools write to the `diagnostics` table instead.
@@ -69,6 +78,8 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 ## Tools
 - `python -m nishpaksh.tools.replay --stories 10192,10254` (workflow `replay`, dispatch via
   Supabase `net.http_post` with the Vault token): re-run writing stages on stored stories, site untouched.
+- `python -m nishpaksh.tools.modelcmp --variants flash,flash2,gemma`: same stories analysed from
+  scratch per model; per-statement colour confusion vs Flash-Lite's own run-to-run noise.
 - `python -m nishpaksh.tools.probe --parts search,fetch,grouping,embedcmp`: measurements on real data.
 - Tests: `python -m pytest -q` (fake backend in `tests/fixtures.py`; add fakes for any new prompt).
 

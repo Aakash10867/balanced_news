@@ -52,7 +52,7 @@ def assess(router: Router | None, headline: str, facts: list[str], cached: dict 
     if router is None:
         return out
     try:
-        res = router.call("light", PROMPT.format(headline=headline, facts="\n".join(f"- {f}" for f in facts[:8])),
+        res = router.call("page", PROMPT.format(headline=headline, facts="\n".join(f"- {f}" for f in facts[:8])),
                           json_out=True, max_output_tokens=150)
         d = res.data if isinstance(res.data, dict) else {}
         score = int(d.get("score", 3))

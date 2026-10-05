@@ -22,8 +22,17 @@ tiers:
     - {id: gemma-4-31b-it, rpm: 30, tpm: 16000, rpd: 14400, json_mode: false}
     - {id: gemma-4-26b-it, rpm: 30, tpm: 16000, rpd: 14400, json_mode: false}
 
-  # Claim matching, headlines, Hindi/English translation.
+  # Analysis: statement matching, consolidation, who-said-what, fact vs characterisation, and
+  # the same-event check in grouping. These decide sentence colours, so model changes here need
+  # tools/modelcmp first. `keep` leaves 60 a day on each model for the page tier below.
   light:
+    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 60}
+    - {id: gemini-3.1-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 60}
+
+  # Building the page: headline, importance, thread links, Hindi translation. Same models as
+  # light but nothing kept back, so the last steps of a run are never the ones starved.
+  # Every tier is paced over the quota day (router.pace_cap).
+  page:
     - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
     - {id: gemini-3.1-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
 

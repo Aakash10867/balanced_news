@@ -187,12 +187,31 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     from . import retention
     stats.update(storage=retention.enforce(store), seconds=round(time.time() - t0))
     stats["quota_left"] = {t: router.remaining_today(t) for t in router.tiers}
+    stats["quota_now"] = {t: router.remaining_now(t) for t in router.tiers}   # under the pacing curve
     if tavily is not None:
         stats["tavily"] = {"spent_this_run": tavily.spent_this_run, "left_today": tavily.allowance_today()}
     stats["health"] = health(store, stats)
     store.exec(update(_runs).where(_runs.c.id == run_id).values(finished_at=_now(), stats=stats))
     log.info("run complete: %s", stats)
     return stats
+
+
+def stalled(store: Store, stats: dict) -> dict:
+    """Is the pipeline still taking in news? Counts from this run and the last few finished runs:
+    articles came in but none were grouped for STALL_RUNS runs in a row. (Zero articles read is
+    not a stall signal: healthy runs often read none, as only multi-outlet stories are read.)"""
+    from .db import runs as R
+    n = SETTINGS.health_stall_runs
+    past = [r["stats"] or {} for r in store.rows(select(R.c.stats).where(R.c.finished_at.is_not(None))
+                                                  .order_by(R.c.id.desc()).limit(n - 1))]
+    window = [stats] + past
+    out: dict = {"problems": []}
+    if len(window) < n:
+        return {}
+    came_in = sum((s.get("ingested") or 0) + ((s.get("search") or {}).get("new_articles") or 0) for s in window)
+    if came_in and not any(s.get("grouped") for s in window):
+        out["problems"].append(f"{came_in} new articles in the last {n} runs but none grouped")
+    return {"stall": out["problems"]} if out["problems"] else {}
 
 
 def health(store: Store, stats: dict) -> dict:
@@ -225,12 +244,20 @@ def health(store: Store, stats: dict) -> dict:
         summ = store.rows(select(A.c.id).where(A.c.text_source == "summary", A.c.extracted_at.is_not(None)).limit(5))
         if summ:
             out["problems"].append(f"headline-only articles were read for facts: {[r['id'] for r in summ]}")
-        if stats.get("quota_left", {}).get("embed") == 0:
-            out["problems"].append("embedding quota exhausted")
+        # a tier is dead for the day when what is left cannot pay for one call (one grouping batch
+        # for embeddings). Oct 2026: 20 embeddings and 0 Flash-Lite left read as "no problems"
+        # while nothing new was read or grouped for nine hours.
+        need = {"embed": SETTINGS.health_embed_batch, "light": 1, "page": 1, "writer": 1}
+        left = stats.get("quota_left", {})
+        dead = [t for t, n in need.items() if t in left and left[t] < n]
+        if dead:
+            out["problems"].append(f"daily quota used up for: {', '.join(dead)} (resets 00:00 Pacific)")
+        out.update(stalled(store, stats))
         if stats.get("errors"):
             out["problems"].append(f"{len(stats['errors'])} steps failed")
     except Exception as e:  # noqa: BLE001
         out["problems"].append(f"health check failed: {e}")
+    out["problems"] += out.pop("stall", [])
     for p in out["problems"]:
         log.warning("HEALTH: %s", p)
     return out

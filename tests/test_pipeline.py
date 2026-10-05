@@ -3,7 +3,7 @@ import datetime as dt
 import numpy as np
 import pytest
 
-from nishpaksh.db import Store, articles, canonical, insert, published, select, source_clusters, stories, story_pairs, update
+from nishpaksh.db import Store, articles, canonical, claims, insert, published, select, source_clusters, stories, story_pairs, update
 from nishpaksh.router import ModelSlot, Router, parse_json
 from nishpaksh.timeline import build_timeline
 from nishpaksh.wire import independence_groups, jaccard, minhash
@@ -937,3 +937,74 @@ def test_ids_written_like_the_prompt_are_accepted():
     from nishpaksh.narrative import _validate
     by = {16191: _item(16191, "The police questioned the professor for 10 hours", verdict="corroborated")}
     assert _validate({"text": "The police questioned the professor for 10 hours.", "ids": ["#16191"]}, by, set(), []) == [16191]
+
+
+def test_router_paces_each_tier_over_the_quota_day():
+    """Oct 2026: unpaced, a day's Flash-Lite went in ~15 runs and the site sat dark until the
+    reset. Spend opens up evenly over the Pacific day; the page tier (nothing kept) outlasts the
+    analysis tier, which outlasts bulk reading; unused allowance carries forward."""
+    from nishpaksh.router import PACIFIC, QuotaExhausted
+
+    class B:
+        def generate(self, model, prompt, json_mode, grounded):
+            return '{"ok": true}', [], 10
+    cfg = {"bulk": [dict(id="fl", rpm=1000, tpm=10**7, rpd=480, keep=240), dict(id="gemma", rpm=1000, tpm=10**7, rpd=14400)],
+           "light": [dict(id="fl", rpm=1000, tpm=10**7, rpd=480, keep=48)],
+           "page": [dict(id="fl", rpm=1000, tpm=10**7, rpd=480)]}
+    r = Router(cfg, B(), paced=True)
+    clock = {"t": dt.datetime(2026, 10, 5, 0, 0, tzinfo=PACIFIC)}
+    r._now_pacific = lambda: clock["t"]
+    fl = r.tiers["page"][0]
+    # midnight + 2 h slack = 1/12 of each tier's allowance
+    assert r.pace_cap("page", fl) == 40 and r.pace_cap("light", fl) == 36 and r.pace_cap("bulk", fl) == 20
+    models = [r.call("bulk", "x").model for _ in range(25)]
+    assert models[:20] == ["fl"] * 20 and set(models[20:]) == {"gemma"}   # reading overflows to Gemma
+    for _ in range(16):
+        r.call("light", "x")
+    with pytest.raises(QuotaExhausted):
+        r.call("light", "x")
+    for _ in range(4):
+        r.call("page", "x")                     # the page still gets its share
+    with pytest.raises(QuotaExhausted):
+        r.call("page", "x")
+    clock["t"] = clock["t"].replace(hour=22)    # by the end of the day everything is open
+    assert r.pace_cap("page", fl) == 480 and r.remaining_now("light") == 432 - 40
+    assert Router(cfg, B(), paced=False).pace_cap("page", fl) == 480   # backfill: unpaced
+
+
+def test_health_flags_quota_too_small_for_a_call_and_stalled_grouping(tmp_path):
+    from nishpaksh.db import runs, utcnow
+    from nishpaksh.run import health
+    store = Store(f"sqlite:///{tmp_path}/h.db")
+    store.init()
+    for _ in range(2):
+        store.insert_returning_id(runs, dict(started_at=utcnow(), finished_at=utcnow(),
+                                             stats={"ingested": 40, "grouped": 0}))
+    stats = {"ingested": 50, "grouped": 0, "quota_left": {"embed": 20, "light": 0, "page": 300, "writer": 4}}
+    probs = " | ".join(health(store, stats)["problems"])
+    assert "embed, light" in probs and "page" not in probs.split("for:")[1].split("(")[0]
+    assert "none grouped" in probs
+    ok = health(store, {"ingested": 50, "grouped": 30, "quota_left": {"embed": 900, "light": 10, "page": 10, "writer": 4}})
+    assert not [p for p in ok["problems"] if "quota" in p or "grouped" in p]
+
+
+def test_modelcmp_reruns_analysis_on_a_scratch_copy_and_compares(store):
+    """The model comparison tool rebuilds statement matching from nothing in a scratch copy (the
+    real store is untouched) and compares colours per extracted statement."""
+    from nishpaksh.run import run
+    from nishpaksh.tools import modelcmp
+    _seed(store)
+    backend = FakeBackend()
+    run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB)
+    sid = max((r["story_id"], ) for r in store.rows(select(claims.c.story_id)))[0]
+    before = store.rows(select(canonical.c.id, canonical.c.verdict).where(canonical.c.story_id == sid))
+    out = []
+    for _ in range(2):
+        st = modelcmp.scratch(store, [sid])
+        out.append(modelcmp.analyse(st, modelcmp.Counting(_router(st, backend)), sid))
+    assert out[0] and set(out[0]) == set(out[1])
+    cmp = modelcmp.compare(out[0], out[1])
+    assert cmp["colour_agreement"] == 1.0 and cmp["new_green"] == 0
+    assert store.rows(select(canonical.c.id, canonical.c.verdict).where(canonical.c.story_id == sid)) == before
+    page = modelcmp.page_tasks(store, modelcmp.Counting(_router(store, backend)), sid, [x["text"] for x in out[0].values()])
+    assert page["headline"]

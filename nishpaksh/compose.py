@@ -84,7 +84,7 @@ def _headline(router: Router | None, facts: list[str], banned: set[str], fallbac
     prompt = HEADLINE_PROMPT.format(facts="\n".join(lines), thread=ctx)
     for _ in range(3):   # two retries, each told what was wrong
         try:
-            res = router.call("light", prompt, json_out=True, max_output_tokens=200)
+            res = router.call("page", prompt, json_out=True, max_output_tokens=200)
             h = str((res.data or {}).get("headline") or "").strip().strip('"').rstrip(".")
         except (QuotaExhausted, Exception) as e:  # noqa: BLE001
             log.info("headline fallback: %s", e)
@@ -374,7 +374,7 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
             chunk = missing[start:start + 40]
             body = json.dumps({str(i): s for i, s in enumerate(chunk)}, ensure_ascii=False)
             try:
-                res = router.call("light", TRANSLATE_PROMPT.format(payload=body), json_out=True,
+                res = router.call("page", TRANSLATE_PROMPT.format(payload=body), json_out=True,
                                   max_output_tokens=4000)
             except QuotaExhausted:
                 log.info("translation: light tier exhausted; Hindi version partial")

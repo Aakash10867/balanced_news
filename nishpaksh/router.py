@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 log = logging.getLogger(__name__)
 EMBED_DIMS = 256
 PACIFIC = ZoneInfo("America/Los_Angeles")  # Gemini daily quotas reset at midnight Pacific
+PACE_SLACK_HOURS = 2   # how far ahead of an even spread a slot may run
 
 
 def quota_day() -> str:
@@ -173,13 +174,17 @@ def _norm(model_id: str) -> str:
 
 
 class Router:
-    def __init__(self, tiers_cfg: dict, backend, store=None, max_wait: float = 180.0):
+    def __init__(self, tiers_cfg: dict, backend, store=None, max_wait: float = 180.0, paced: bool | None = None):
         # One backend per API key. Each key is a separate Google Cloud project with its own
         # free-tier quota, so every (key, model) pair is its own slot with its own counters.
         self.backends = list(backend) if isinstance(backend, (list, tuple)) else [backend]
         self.backend = self.backends[0]
         self.store = store
         self.max_wait = max_wait
+        import os
+        # paced only against the real shared quota (the production database); tests opt in
+        real = store is not None and not str(getattr(getattr(store, "engine", None), "url", "")).startswith("sqlite")
+        self.paced = (real and os.environ.get("RUN_TRIGGER", "") != "backfill") if paced is None else paced
         self.day = quota_day()
         self._lock = threading.Lock()
         self.bad_keys: set[int] = set()
@@ -257,6 +262,28 @@ class Router:
                 slot.disabled = True
 
     # budgets -------------------------------------------------------------------
+    def pace_cap(self, tier: str, slot: ModelSlot) -> int:
+        """Most requests this tier may have spent on this slot by now. The daily allowance (rpd
+        minus what the tier leaves for others) opens up evenly over the Pacific quota day, plus
+        PACE_SLACK_HOURS of headroom; whatever an hour does not use carries forward. Without it the
+        whole day's Flash-Lite went in ~15 runs (Oct 2026), leaving the site dark until the reset.
+        A run started with RUN_TRIGGER=backfill is not paced (deliberate catch-up)."""
+        allowance = slot.rpd - self.keep.get((tier, id(slot)), 0)
+        if not self.paced:
+            return allowance
+        now = self._now_pacific()
+        hours = now.hour + now.minute / 60
+        frac = min(1.0, (hours + PACE_SLACK_HOURS) / 24)
+        return int(allowance * frac + 1e-6)
+
+    def _now_pacific(self) -> dt.datetime:
+        return dt.datetime.now(PACIFIC)
+
+    def remaining_now(self, tier: str) -> int:
+        """Requests this tier can still make in this run under the pacing curve."""
+        return sum(max(0, self.pace_cap(tier, s) - s.used_today)
+                   for s in self.tiers.get(tier, []) if not s.disabled)
+
     def remaining_today(self, tier: str) -> int:
         return sum(max(0, s.rpd - s.used_today - self.keep.get((tier, id(s)), 0))
                    for s in self.tiers.get(tier, []) if not s.disabled)
@@ -273,7 +300,7 @@ class Router:
         best = None
         now = time.time()
         for s in self.tiers.get(tier, []):
-            if s.rpd - s.used_today - units < self.keep.get((tier, id(s)), 0):
+            if s.used_today + units > self.pace_cap(tier, s):
                 continue
             w = s.wait_time(est, now, units)
             if w is not None and (best is None or w < best[0]):
