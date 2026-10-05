@@ -46,6 +46,10 @@ tiers:
     - {id: gemini-3.6-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
     - {id: gemini-3.5-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
     - {id: gemini-3-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
+    # A Flash model of the previous generation, with its own quota. Kept for search grounding while red
+    # verdicts were on; they are on hold, so its calls go to the writer (Oct 5 2026: the 3.x Flash
+    # models answered nearly every writer call with 503 "high demand" in the Indian afternoon).
+    - {id: gemini-2.5-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
 
   # Verdicts on contested claims. Gemma (second tier) gives the independent second opinion.
   # gemini-2.5-flash is deliberately NOT here: its 20/day are reserved for search grounding.
