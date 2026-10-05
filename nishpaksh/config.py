@@ -94,6 +94,7 @@ class Settings:
 
     # extraction: only stories covered by >= 2 independent sources; at most this many articles each
     max_extract_per_story: int = 8
+    waiting_per_run: int = 12            # waiting stories offered to the writer per run, most covered first
     min_sources_to_read: int = 3          # independent sources with a readable page before a story is read
 
     # claim matching (TF-IDF within a story; the middle band goes to an LLM)

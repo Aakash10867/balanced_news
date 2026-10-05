@@ -552,8 +552,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         payload["headline"] = prev["headline_en"]   # a written headline beats the code fallback
         payload["headline_is_fallback"] = False
     if nar is None or payload.get("headline_is_fallback"):
-        # nothing worth reading yet: wait for the writer (the story is retried next run)
-        store.exec(update(stories).where(stories.c.id == story_id).values(dirty=True))
+        # nothing worth reading yet: wait for the writer. The story stays qualified and is offered to
+        # the writer again in a later run (run.py "waiting"); it is re-analysed only when new reports arrive
         if prev:
             store.exec(delete(published).where(published.c.story_id == story_id))
         log.info("story %s waits for a written essay%s", story_id, " (taken down)" if prev else "")

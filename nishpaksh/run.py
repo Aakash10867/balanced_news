@@ -193,6 +193,11 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             checked += verify.verify_story(store, router, sid, budget)
     # pages not touched this run still age: a "developing" statement becomes established once it has
     # stood 6 hours, and the clock is code-only (no model calls), so every live page is re-checked
+    # stories that qualify but wait for an essay (the writer was refused or failed) are offered to the
+    # writer again without being re-analysed, the most-covered first, a few per run: re-analysing all
+    # of them every hour took the whole run (Oct 5 2026: 118 waiting stories, 62-minute runs)
+    waiting = sorted(qualifying - live - set(to_publish), key=lambda sid: -size.get(sid, 0))
+    to_publish.extend(waiting[:SETTINGS.waiting_per_run])
     for sid in sorted(live - set(to_publish)):
         if sid not in qualifying:
             to_publish.append(sid)          # no longer qualifies: publish_story takes the page down
@@ -208,7 +213,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         stats["positions"] = {k: pos.get(k) for k in ("signal", "r", "separated", "null_r", "null_separated", "units", "items")}
     from . import retention
     stats.update(storage=retention.enforce(store), seconds=round(time.time() - t0))
-    stats["quota_left"] = {t: router.remaining_today(t) for t in router.tiers}
+    # the day's allowance; models switched off for this run (overloaded) still have theirs
+    stats["quota_left"] = {t: router.remaining_today(t, include_disabled=True) for t in router.tiers}
     stats["quota_now"] = {t: router.remaining_now(t) for t in router.tiers}   # under the pacing curve
     stats["model_errors"] = dict(router.error_log.most_common(15))
     stats["model_calls"] = {k: dict(v) for k, v in sorted(router.call_log.items())}

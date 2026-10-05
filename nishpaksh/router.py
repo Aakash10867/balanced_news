@@ -22,6 +22,7 @@ EMBED_DIMS = 256
 PACIFIC = ZoneInfo("America/Los_Angeles")  # Gemini daily quotas reset at midnight Pacific
 PACE_SLACK_HOURS = 2   # how far ahead of an even spread a slot may run
 OVERLOAD_STREAK = 3    # consecutive overload errors before a model is dropped for the run
+TIER_OVERLOAD_STREAK = 10   # consecutive refusals across a whole tier before it is skipped for the run
 
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -243,6 +244,7 @@ class Router:
         # every request's outcome per model and key ("gemini-3.8-flash@k2" -> {"ok": 4, "overloaded 5xx": 9}),
         # so refusal rates can be compared by hour of day (owner, Oct 5 2026)
         self.call_log: dict[str, _C] = {}
+        self.tier_streak: dict[str, int] = {}   # consecutive overload refusals per tier
         # One slot per (key, model), shared by every tier that lists the model, so a model used by
         # two tiers is never counted against two separate quotas. `keep` lets a tier stop using a
         # model while that many requests remain today, leaving them for the other tiers.
@@ -341,9 +343,9 @@ class Router:
         return sum(max(0, self.pace_cap(tier, s) - s.used_today)
                    for s in self.tiers.get(tier, []) if not s.disabled)
 
-    def remaining_today(self, tier: str) -> int:
+    def remaining_today(self, tier: str, include_disabled: bool = False) -> int:
         return sum(max(0, s.rpd - s.used_today - self.keep.get((tier, id(s)), 0))
-                   for s in self.tiers.get(tier, []) if not s.disabled)
+                   for s in self.tiers.get(tier, []) if include_disabled or not s.disabled)
 
     def per_run_budget(self, tier: str) -> int:
         """Spread what is left of today's quota over the hourly runs left today."""
@@ -431,6 +433,10 @@ class Router:
         json_retry_used = False
         errors: list[str] = []
         for _ in range(max_attempts):
+            if self.tier_streak.get(tier, 0) >= TIER_OVERLOAD_STREAK:
+                # every model of this tier has been refusing for load (Oct 5 2026: the writer made
+                # ~55 refused calls a run for hours): stop asking for the rest of this run
+                raise CallFailed(f"{tier}: models overloaded this run ({self.tier_streak[tier]} refusals in a row)")
             try:
                 slot = self._reserve(tier, est)
             except QuotaExhausted:
@@ -455,9 +461,12 @@ class Router:
                     self._record(slot, 0)
                     self.error_log[f"{tier} | {slot.id} | {kind}"] += 1
                     self._outcome(slot, kind)
+                    if kind in ("overloaded 5xx", "timeout"):
+                        self.tier_streak[tier] = self.tier_streak.get(tier, 0) + 1
                 continue
             with self._lock:
                 slot.fail_streak = 0
+                self.tier_streak[tier] = 0
                 self._outcome(slot, "ok")
                 if tokens and booked in slot.window:
                     slot.window[slot.window.index(booked)] = (booked[0], tokens)

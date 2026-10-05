@@ -236,7 +236,8 @@ def test_headline_with_loaded_word_is_rejected(store):
     run(store=store, backend=Loaded(), time_budget_min=30, ingest_news=False, verify_budget=VB)
     # the loaded headline is rejected; with only the code fallback left, the new story waits
     assert store.rows(select(published)) == []
-    assert store.rows(select(stories.c.dirty).where(stories.c.qualifies.is_(True)))[0]["dirty"] is True
+    # it stays qualified and is offered to the writer again in a later run, without re-analysis
+    assert store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))
 
 
 def test_quota_exhaustion_degrades_safely(store):
@@ -1149,7 +1150,7 @@ def test_new_story_waits_for_the_writer_and_live_page_keeps_its_essay(store):
     store.exec(update(published).where(published.c.story_id == sid).values(payload_en=pe))
     assert compose.publish_story(store, r, sid) is False
     assert store.rows(select(published).where(published.c.story_id == sid)) == []
-    assert store.one(select(stories.c.dirty).where(stories.c.id == sid))["dirty"] is True
+    assert store.one(select(stories.c.qualifies).where(stories.c.id == sid))["qualifies"] is True
     # so is one written by Flash-Lite
     assert compose._keepable({"model": "gemini-3.5-flash-lite", "paragraphs": [[{}]]}) is False
 
@@ -1522,3 +1523,21 @@ def test_consolidation_takes_back_a_contradiction_it_does_not_confirm(store):
             return LLMResult("", {"same": [], "conflicts": [], "names": {}, "speaker": {}, "responses": []}, "m", [], 1)
     consolidate_story(store, R(), sid)
     assert store.one(select(canonical.c.conflicts).where(canonical.c.id == c1))["conflicts"] == []
+
+
+def test_a_tier_that_keeps_refusing_is_skipped_for_the_run():
+    from nishpaksh.router import CallFailed, TIER_OVERLOAD_STREAK
+
+    class Busy:
+        def __init__(self): self.n = 0
+        def generate(self, model, prompt, json_mode, grounded):
+            self.n += 1
+            raise RuntimeError("503 UNAVAILABLE: high demand")
+    b = Busy()
+    r = Router({"w": [dict(id=f"m{k}", rpm=100, tpm=10**6, rpd=100) for k in range(20)]}, b, max_wait=0.1)
+    for _ in range(10):
+        try:
+            r.call("w", "x", max_attempts=3)
+        except CallFailed:
+            pass
+    assert b.n <= TIER_OVERLOAD_STREAK + 2
