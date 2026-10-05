@@ -21,6 +21,7 @@ jobs:
       - env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           STORIES: ${{ github.event.inputs.stories }}
         run: python -m nishpaksh.tools.replay --stories "$STORIES"

@@ -24,6 +24,7 @@ jobs:
       - env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |

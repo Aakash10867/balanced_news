@@ -13,7 +13,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (green) or false (red) when it is not; when unsure, be more cautious.
 
 ## Hard constraints
-- Free tiers only. **No billing**, ever. Gemini free API (2 keys: `GEMINI_API_KEY`, `GEMINI_API_KEY_2`,
+- Free tiers only. **No billing**, ever. Gemini free API (3 keys: `GEMINI_API_KEY`, `_2`, `_3`,
   separate projects; the owner decided this), Tavily free (1,000 credits/month, ≤31/day), Supabase free
   (stay well under 500 MB), GitHub Actions on a public repo.
 - The pipeline's DB role (`nishpaksh_app`) cannot create or alter tables: schema changes go in
