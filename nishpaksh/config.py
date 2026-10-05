@@ -94,6 +94,7 @@ class Settings:
 
     # extraction: only stories covered by >= 2 independent sources; at most this many articles each
     max_extract_per_story: int = 8
+    min_sources_to_read: int = 3          # independent sources with a readable page before a story is read
 
     # claim matching (TF-IDF within a story; the middle band goes to an LLM)
     claim_same_cosine: float = 0.75
@@ -115,6 +116,13 @@ class Settings:
     # health: an outlet whose articles depart this often (with this many assessed) is flagged
     departure_watch_rate: float = 0.3
     departure_watch_min: int = 5
+    # the daily positions test (positions.py): perspectives are shown only if it finds a signal
+    positions_every_hours: int = 20
+    require_positions_signal: bool = True
+    positions_min_answers: int = 15
+    positions_min_r: float = 0.7          # stability across resampled stories
+    positions_min_separated: float = 0.15  # share of outlet pairs whose 90% ranges do not overlap
+    positions_beat_null_r: float = 0.15   # and clearly better than outlet names shuffled per story
 
     # verdicts
     min_articles_to_verify: int = 2

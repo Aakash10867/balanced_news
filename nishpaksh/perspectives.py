@@ -151,7 +151,8 @@ def _direct_conflict(side, groups, M, conflicts) -> bool:
 
 def analyze_story(store: Store, story_id: int) -> dict:
     arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.author, articles.c.agency,
-                             articles.c.wire_group, articles.c.role).where(articles.c.story_id == story_id))
+                             articles.c.wire_group, articles.c.role, articles.c.text, articles.c.text_source,
+                             articles.c.extracted_at).where(articles.c.story_id == story_id))
     by_id = {a["id"]: a for a in arts}
     gmap = independence_groups(arts)
     groups = sorted(set(gmap.values()))
@@ -172,7 +173,14 @@ def analyze_story(store: Store, story_id: int) -> dict:
         m = amap.get(r["attributed_to"] or "") or {}
         if m.get("key") and m.get("kind") not in ("own", "anonymous", "unresolved", None):
             art_voices[r["article_id"]][m["key"]] += 1
-        art_words[r["article_id"]][r["canonical_id"]] |= {w.lower() for w in (r["loaded_words"] or [])}
+        art_words[r["article_id"]][r["canonical_id"]] |= {w for w in (r["loaded_words"] or [])}
+    # framing is compared as English concepts; a Hindi word not yet mapped is left out (comparing it
+    # raw would only separate Hindi outlets from English ones)
+    from . import concepts
+    concept = concepts.lookup(store, {w for d in art_words.values() for ws in d.values() for w in ws})
+    for d in art_words.values():
+        for c in list(d):
+            d[c] = {concept[w] for w in d[c] if w in concept}
     M: dict[str, dict[int, float]] = {}
     prof: dict[str, dict] = {}
     for g in groups:
@@ -304,6 +312,8 @@ def analyze_story(store: Store, story_id: int) -> dict:
 
     old = old_analysis
     analysis = {
+        # article bodies are cleared after a while (retention): keep the evidence already gathered
+        "coverage": _coverage(store, story_id, arts, gmap) or old_analysis.get("coverage") or {},
         "departures": departures,
         "assessed": assessed,
         # kept across re-analysis: work done by origins.py and consolidate.py
@@ -323,6 +333,44 @@ def analyze_story(store: Store, story_id: int) -> dict:
     }
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis, qualifies=qualifies))
     return analysis
+
+
+def _coverage(store: Store, story_id: int, arts: list[dict], gmap: dict[int, str]) -> dict:
+    """Which genuinely reported facts each unit reported, and which it left out. A fact counts as
+    genuinely reported when 2+ independent sources report it; a unit left it out only if none of its
+    read articles reports it AND its text does not contain the fact's names and numbers (otherwise
+    it is our reader's miss, not the outlet's choice). Omission patterns are the main evidence of a
+    perspective (owner, Oct 2026): each side leaves out what is inconvenient to it."""
+    from .textmatch import Text, verdict
+    read = [a for a in arts if a["extracted_at"] and a["text_source"] != "summary" and a["text"]]
+    if len({gmap[a["id"]] for a in read}) < 3:
+        return {}
+    canon = {c["id"]: c["text"] for c in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind)
+                                                    .where(canonical.c.story_id == story_id)) if c["kind"] != "relation"}
+    by_art: dict[int, set[int]] = defaultdict(set)
+    for r in store.rows(select(claims.c.article_id, claims.c.canonical_id)
+                        .where(claims.c.story_id == story_id, claims.c.canonical_id.is_not(None))):
+        by_art[r["article_id"]].add(r["canonical_id"])
+    groups_reporting: dict[int, set[str]] = defaultdict(set)
+    for a in read:
+        for c in by_art.get(a["id"], ()):
+            groups_reporting[c].add(gmap[a["id"]])
+    facts = [c for c, g in groups_reporting.items() if len(g) >= 2 and c in canon]
+    units: dict[str, list[dict]] = defaultdict(list)
+    for a in read:
+        units[source_key(a)].append(a)
+    texts = {a["id"]: Text(a["text"]) for a in read}
+    out = {}
+    for u, ua in units.items():
+        reported = sorted({c for a in ua for c in by_art.get(a["id"], ()) if c in facts})
+        omitted = []
+        for c in facts:
+            if c in reported:
+                continue
+            if all(verdict(canon[c], texts[a["id"]]) == "absent" for a in ua):
+                omitted.append(c)
+        out[u] = {"reported": reported, "omitted": sorted(omitted)}
+    return out
 
 
 def mark_qualified(store: Store, story_id: int, rule: str) -> None:
@@ -391,6 +439,13 @@ def recompute_global(store: Store) -> int:
         deg[b] += 1
     sources = sorted(s for s, d in deg.items() if d >= 3)
     if len(sources) < SETTINGS.global_min_sources:
+        return 0
+    # the daily positions test must have found real positions first (owner, Oct 2026: show sides
+    # only when the data proves they exist; until then no perspectives at all)
+    from . import positions
+    pos = positions.latest(store)
+    if SETTINGS.require_positions_signal and not (pos and pos.get("signal")):
+        store.exec(delete(source_clusters))
         return 0
     idx = {s: i for i, s in enumerate(sources)}
     A = np.full((len(sources), len(sources)), 0.5)

@@ -119,6 +119,14 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
 
     from .consolidate import consolidate_story
     stats["units"] = step("units", lambda: perspectives.refresh_units(store))
+
+    def _concepts():
+        from . import concepts
+        from .db import claims as _claims
+        words = {w for r in store.rows(select(_claims.c.loaded_words).where(_claims.c.loaded_words.is_not(None)))
+                 for w in (r["loaded_words"] or [])}
+        return concepts.map_new(store, router, words)
+    stats["concepts_mapped"] = step("concepts", _concepts)
     live_now = {r["story_id"] for r in store.rows(select(_published.c.story_id))}
 
     def analyse(sid):
@@ -194,6 +202,10 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(to_publish),
                  claims_checked=checked, published=len(published),
                  left_for_next_run=len(dirty) - len(analysed) + len(to_publish) - len(published))
+    from . import positions
+    pos = step("positions", lambda: positions.daily(store, until=deadline))
+    if pos is not None:
+        stats["positions"] = {k: pos.get(k) for k in ("signal", "r", "separated", "null_r", "null_separated", "units", "items")}
     from . import retention
     stats.update(storage=retention.enforce(store), seconds=round(time.time() - t0))
     stats["quota_left"] = {t: router.remaining_today(t) for t in router.tiers}

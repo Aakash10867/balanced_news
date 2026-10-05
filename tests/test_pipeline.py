@@ -102,8 +102,12 @@ def test_slot_waits_for_token_window():
     assert s.wait_time(20000, now) is None                           # can never fit
 
 
-def test_global_clusters_emerge_from_roll_call(store):
+def test_global_clusters_emerge_from_roll_call(store, monkeypatch):
+    import dataclasses
+    import nishpaksh.perspectives as P
     from nishpaksh.perspectives import recompute_global
+    # the clustering machinery itself; the positions-test gate is covered separately
+    monkeypatch.setattr(P, "SETTINGS", dataclasses.replace(P.SETTINGS, require_positions_signal=False))
     camp1, camp2 = ["O1", "O2", "O3"], ["O4", "O5", "O6"]
     rows = []
     for sid in range(1, 6):
@@ -156,13 +160,15 @@ def test_end_to_end(store):
     _seed(store)
     backend = FakeBackend()
     stats = run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB)
-    # the second PTI copy is the same source as the first, so it is never sent to a model
-    assert stats["extracted"] == len(ARTICLES) - 1
+    # the second PTI copy is the same source as the first, so it is never sent to a model; the
+    # assembly story has only two independent sources, so it is not read at all (read in depth: a
+    # story is read once 3+ independent sources have a readable page)
+    assert stats["extracted"] == 4
 
     sts = store.rows(select(stories))
     assert len(sts) == 2                                         # Hindi + English grouped together
     contested = next(s for s in sts if "flyover" in s["signature"])
-    consensus = next(s for s in sts if "assembly" in s["signature"])
+    consensus = next(s for s in sts if s["id"] != contested["id"])     # unread: two sources only
     assert contested["qualifies"] and contested["analysis"]["mode"] == "story"
     assert not consensus["qualifies"]                            # one perspective only: not published
 
@@ -1227,3 +1233,60 @@ def test_one_odd_article_does_not_depart_on_thin_evidence(store):
     store.exec(update(Cl).where(Cl.c.article_id == aids["A3"], Cl.c.text == "fact 0").values(stance="denies"))
     an = P.analyze_story(store, sid)
     assert str(aids["A3"]) not in an["departures"]
+
+
+def test_no_perspectives_until_the_positions_test_finds_a_signal(store):
+    """Even clean-looking clusters stay off the site until the daily test (resampling + shuffled
+    baseline) says outlets really take positions."""
+    from nishpaksh.db import diagnostics
+    from nishpaksh.perspectives import recompute_global
+    camp1, camp2 = ["O1", "O2", "O3"], ["O4", "O5", "O6"]
+    rows = [dict(story_id=sid, a=a, b=b, value=0.9 if (a in camp1) == (b in camp1) else -0.6)
+            for sid in range(1, 6) for i, a in enumerate(camp1 + camp2) for b in (camp1 + camp2)[i + 1:]]
+    with store.engine.begin() as c:
+        c.execute(insert(story_pairs), rows)
+    assert recompute_global(store) == 0                       # no test run yet
+    store.exec(insert(diagnostics).values(kind="positions", report={"signal": False}))
+    assert recompute_global(store) == 0
+    store.exec(insert(diagnostics).values(kind="positions", report={"signal": True}))
+    assert recompute_global(store) == 2
+
+
+def test_omission_counts_only_when_the_text_lacks_the_fact():
+    """Our reader's miss is not the outlet's choice: a fact counts as left out only if its names and
+    numbers are absent from the article, across Roman and Devanagari spellings."""
+    from nishpaksh.textmatch import Text, verdict
+    hi = Text("विदेश मंत्री एस जयशंकर ने कहा कि भारत रूस और यूक्रेन दोनों से बात कर रहा है।")
+    assert verdict("Subrahmanyam Jaishankar said India is talking to Russia and Ukraine", hi) == "present"
+    assert verdict("Andrii Sybiha held a briefing in Kyiv", hi) == "absent"
+    assert verdict("The talks went well", hi) is None              # nothing checkable: never an omission
+
+
+def test_positions_test_finds_real_sides_and_not_noise(store):
+    """Two camps that each leave out what the other reports, story after story: a signal. The same
+    amount of omission at random: none."""
+    import random
+    from nishpaksh import positions
+    camp = {f"O{i}": i < 4 for i in range(8)}
+    def make(random_omit):
+        rng = random.Random(1)
+        per = {}
+        for sid in range(60):
+            items = []
+            for f in range(4):
+                side = f % 2 == 0                       # facts 0,2 inconvenient to camp False...
+                d = {}
+                for o, c in camp.items():
+                    omit = rng.random() < 0.5 if random_omit else (c != side and rng.random() < 0.85)
+                    d[o] = 0 if omit else 1
+                items.append(("omission", d))
+            per[sid] = items
+        return per
+    for random_omit, expect in ((False, True), (True, False)):
+        orig = positions.build_items
+        positions.build_items = lambda store, per=make(random_omit): per
+        try:
+            rep = positions.test_positions(store, rounds=8, shuffles=2)
+        finally:
+            positions.build_items = orig
+        assert rep["signal"] is expect, rep

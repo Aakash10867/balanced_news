@@ -152,6 +152,14 @@ quota_usage = Table(
     Column("tokens", Integer, default=0),
 )
 
+diagnostics = Table(  # reports from tools and periodic checks (created by supabase/migrations)
+    "diagnostics", md,
+    Column("id", Integer, primary_key=True),
+    Column("created_at", DateTime, default=lambda: utcnow()),
+    Column("kind", String(40)),
+    Column("report", JSON),
+)
+
 
 def utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)

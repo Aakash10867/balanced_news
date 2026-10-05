@@ -111,7 +111,18 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
   Evidence, strongest first: stance on contested facts (1), whose named voices are carried (0.5),
   loaded words for the same fact (0.5), omission (0.15). Never anything about the outlet itself.
   At outlet level on the old omission-heavy signal: silhouette 0.07, resample ARI ~0.35 (still noise,
-  gated off); the voices/words signals are new, judge them after a few days of data.
+  gated off).
+- **Perspectives must pass the daily positions test (`positions.py`, owner Oct 5 2026).** Like with
+  like only (same story, same fact); evidence: OMISSION as the main signal (each side leaves out
+  what is inconvenient to it; a fact counts as left out only if 2+ independent sources report it and
+  `textmatch` finds its names/numbers absent from the outlet's text, across Roman/Devanagari),
+  stance, framing (Hindi loaded words mapped to English concepts, `concepts.py`), voices. Model: 1-D
+  ideal points; signal only if stable under resampling (r>=0.7), 15%+ of outlet pairs separated,
+  and clearly better than outlet names shuffled per story. No signal, no perspectives at all.
+  Offline on Oct 5 data: no method beat the shuffled baseline (too few multi-outlet stories).
+  Clusters on voice kinds or raw words were rejected: they found genre and language, not lean.
+- **Read in depth:** a story is read once 3+ independent sources have a readable page
+  (`min_sources_to_read`); stories already being read are finished first.
 - Writer failures on big stories: the reason is now split ("empty sentence" / "no valid ids" / "too
   long", plus reply-level `failure`); read `stories.analysis.writer_failures` before shortening input.
 - Fallback sentences append `when_text` that can be relative to another event ("on Thursday, a day

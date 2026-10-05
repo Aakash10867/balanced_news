@@ -225,7 +225,11 @@ def select_for_extraction(store: Store) -> list[dict]:
     ranked = []
     for sid, arts in by_story.items():
         groups = independence_groups(arts)
-        if len(set(groups.values())) < 2:
+        # read in depth (owner, Oct 2026): a story is read only once 3+ independent sources have a
+        # readable page. Under 3 it can never be published, and omissions (the main evidence of a
+        # perspective) can only be seen when several outlets' versions of one story are read.
+        readable = {groups[a["id"]] for a in arts if a["text_source"] != "summary"}
+        if len(readable) < SETTINGS.min_sources_to_read:
             continue
         done = [a for a in arts if a["extracted_at"]]
         room = SETTINGS.max_extract_per_story - len(done)
@@ -248,9 +252,10 @@ def select_for_extraction(store: Store) -> list[dict]:
             seen_groups.add(groups[a["id"]])
         if picked:
             newest = max(a["published_at"] for a in arts)
-            ranked.append((len(set(groups.values())), newest, picked))
-    ranked.sort(key=lambda t: (t[0], t[1]), reverse=True)
-    return [a for _, _, picked in ranked for a in picked]
+            # finish stories already being read before starting new ones, then the most covered
+            ranked.append((len(seen_groups - {groups[a["id"]] for a in picked}) > 0, len(readable), newest, picked))
+    ranked.sort(key=lambda t: (t[0], t[1], t[2]), reverse=True)
+    return [a for *_, picked in ranked for a in picked]
 
 
 def retract_unreadable(store: Store) -> int:
