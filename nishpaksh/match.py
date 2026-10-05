@@ -22,7 +22,10 @@ log = logging.getLogger(__name__)
 MATCH_PROMPT = """Each numbered line has two statements, A and B, from different news reports about the same story.
 For each line decide:
   "same"       - A and B state the same fact (wording or tone may differ),
-  "contradict" - A and B cannot both be true,
+  "contradict" - A and B cannot both be true as facts (different numbers, times or places for the
+                 same thing, or one says it happened and the other says it did not). A person's or
+                 body's answer to an allegation ("the company says its product is safe") is NOT a
+                 contradiction of the report that the allegation was made: label that "different",
   "different"  - neither of the above.
 Judge only the facts stated, not the tone.
 
@@ -55,6 +58,13 @@ def _add_conflict(store: Store, a: int, b: int) -> None:
         r = store.one(select(canonical).where(canonical.c.id == x))
         if r and y not in (r["conflicts"] or []):
             store.exec(update(canonical).where(canonical.c.id == x).values(conflicts=sorted((r["conflicts"] or []) + [y])))
+
+
+def _remove_conflict(store: Store, a: int, b: int) -> None:
+    for x, y in ((a, b), (b, a)):
+        r = store.one(select(canonical).where(canonical.c.id == x))
+        if r and y in (r["conflicts"] or []):
+            store.exec(update(canonical).where(canonical.c.id == x).values(conflicts=[c for c in r["conflicts"] if c != y]))
 
 
 def _llm_pairs(router: Router | None, pairs: list[tuple[str, str]]) -> list[str]:

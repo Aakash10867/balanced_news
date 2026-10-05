@@ -30,12 +30,13 @@ id | statement | who the reports attribute it to (as they wrote it; "article" = 
 
 {lines}
 
-Do four things:
+Do seven things:
 1. "same": groups of ids that state the same fact, even if worded differently, in another language,
    or with names spelled differently. Do NOT group statements that differ in any number, date, place
    or person, or where one adds an important new fact.
-2. "conflicts": pairs of ids that cannot both be true (for example different numbers, times or places
-   for the same thing, or one says something happened and the other says it did not).
+2. "conflicts": pairs of ids that cannot both be true AS FACTS (for example different numbers, times or
+   places for the same thing, or one says something happened and the other says it did not).
+   A named party's answer to an allegation or finding is NOT a conflict (see 5).
 3. "names": SPELLING variants of the same name mapped to ONE spelling (use the most common one),
    e.g. {{"Dulla": "Doolla", "Dula": "Doolla"}}. Only different spellings or transliterations of the SAME
    name. Never map an alias, a nickname, a title or a different name of the same person to another
@@ -43,15 +44,32 @@ Do four things:
 4. "speaker": for each statement that is an allegation, accusation, claim, demand, denial or
    opinion made by a person or body, who makes it, in plain English ("Sahil's parents", "Professor
    Doolla", "Mumbai Police"). Leave out statements that are simply reported events.
+5. "responses": pairs [first, second] where the second is a named person's or body's answer, rebuttal
+   or denial of the first (e.g. "an analyst declared the sample unsafe" / "the company says the product
+   is safe"). Both can be true as reports: one records a finding, the other a party's position.
+6. "role": for each statement that is NOT about the story's main event, what it is: "background"
+   (an earlier event that led to this one), "related" (a separate event the reports connect to this
+   one), "explanation" (what a rule, term or finding means) or "next" (what happens next). Leave out
+   statements about the main event. Also "related_event": for each "related" statement, a short
+   name of that separate event with its date if known.
+7. "name_conflicts": groups of ids where the reports name a DIFFERENT person or organisation for the
+   same role in the same fact (e.g. one says company A's licence was suspended, another company B's),
+   with the names: {{"ids": [5, 9], "names": ["Company A", "Company B"]}}. Not spelling variants.
 
 Reply with JSON only:
-{{"same": [[1, 4]], "conflicts": [[2, 7]], "names": {{"Dulla": "Doolla"}}, "speaker": {{"3": "Sahil's parents"}}}}"""
+{{"same": [[1, 4]], "conflicts": [[2, 7]], "names": {{"Dulla": "Doolla"}}, "speaker": {{"3": "Sahil's parents"}},
+ "responses": [[8, 9]], "role": {{"11": "related"}}, "related_event": {{"11": "FSSAI finding on Nestle whitener, 4 October"}},
+ "name_conflicts": [{{"ids": [5, 9], "names": ["Company A", "Company B"]}}]}}"""
+
+ROLES = {"background", "related", "explanation", "reaction", "next"}
+CONSOLIDATE_VERSION = 2   # part of the cache key: stories are consolidated again when the task changes
 
 NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
 
 def _hash(rows: list[dict]) -> str:
-    return hashlib.sha256(json.dumps(sorted((r["id"], r["text"]) for r in rows)).encode()).hexdigest()[:16]
+    key = [CONSOLIDATE_VERSION, sorted((r["id"], r["text"]) for r in rows)]
+    return hashlib.sha256(json.dumps(key).encode()).hexdigest()[:16]
 
 
 def is_spelling_variant(a: str, b: str) -> bool:
@@ -132,9 +150,17 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         return out
 
     conflicts = {tuple(sorted(p)) for p in (tuple(ids(p)) for p in data.get("conflicts") or []) if len(p) == 2 and p[0] != p[1]}
+    responses = [tuple(p) for p in (ids(p) for p in data.get("responses") or []) if len(p) == 2 and p[0] != p[1]]
+    response_pairs = {tuple(sorted(p)) for p in responses}
     for r in rows:  # contradictions already known
         for o in r["conflicts"] or []:
             conflicts.add(tuple(sorted((r["id"], o))))
+    # a party's answer to a claim is a response, not a contradiction (Oct 2026: a company's statement
+    # that its product is safe turned the analyst's finding amber): take such pairs out of conflicts
+    from .match import _remove_conflict
+    for a, b in conflicts & response_pairs:
+        _remove_conflict(store, a, b)
+    conflicts -= response_pairs
     merged = 0
     gone: set[int] = set()
     for group in data.get("same") or []:
@@ -179,10 +205,35 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
             continue
         if k in by_id and k not in gone and isinstance(v, str) and v.strip():
             speakers[str(k)] = _apply_names(v.strip(), names)[:80]
+    alive = lambda x: x not in gone   # noqa: E731
+    roles = {str(k): v for k, v in (analysis.get("roles") or {}).items()}
+    for k, v in (data.get("role") or {}).items():
+        k = ids([k])
+        if k and alive(k[0]) and v in ROLES:
+            roles[str(k[0])] = v
+    related = dict(analysis.get("related_event") or {})
+    for k, v in (data.get("related_event") or {}).items():
+        k = ids([k])
+        if k and isinstance(v, str) and v.strip():
+            related[str(k[0])] = v.strip()[:160]
+    prev_resp = {tuple(p) for p in analysis.get("responses") or []}
+    all_resp = sorted({p for p in prev_resp | set(responses) if alive(p[0]) and alive(p[1])})
+    name_conf = dict(analysis.get("name_conflicts") or {})
+    for g in data.get("name_conflicts") or []:
+        if not isinstance(g, dict):
+            continue
+        names_g = [str(n).strip() for n in g.get("names") or [] if str(n).strip()]
+        if len(set(n.lower() for n in names_g)) < 2:
+            continue
+        for x in ids(g.get("ids")):
+            if alive(x):
+                name_conf[str(x)] = names_g[:4]
     after = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind)
                                    .where(canonical.c.story_id == story_id)) if r["kind"] != "relation" and r["text"]]
     analysis.update(consolidated=_hash(after), speakers=speakers,
-                    names={**(analysis.get("names") or {}), **names})
+                    names={**(analysis.get("names") or {}), **names},
+                    roles=roles, related_event=related, responses=[list(p) for p in all_resp],
+                    name_conflicts=name_conf)
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis))
     log.info("consolidate story %s: %d merged, %d contradictions, %d names", story_id, merged, added, len(names))
     return {"merged": merged, "conflicts": added, "names": len(names)}

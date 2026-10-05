@@ -313,7 +313,7 @@ function keyHtml(t, present) {
 }
 
 function detailHtml(p, t) {
-  const all = [...p.timeline.flat(), ...p.undated, ...p.established, ...p.contested];
+  const all = [...p.timeline.flat(), ...p.undated, ...p.established, ...p.contested, ...(p.context || [])];
   const line = i => {
     const sup = [...new Set(i.sources.filter(s => s.stance !== "denies").map(s => s.outlet))];
     const den = [...new Set(i.sources.filter(s => s.stance === "denies").map(s => s.outlet))];

@@ -1070,8 +1070,9 @@ def test_speaker_named_once_carries_through_the_paragraph():
     para = [{"text": "Ukraine's foreign minister Andrii Sybiha said India's proposal is the most comprehensive of four.", "ids": [1]},
             {"text": "He added that Ukraine is ready for an energy truce.", "ids": [2]},
             {"text": "He said Russia is not interested in peace talks.", "ids": [3]}]   # Merz's claim, not Sybiha's
-    paras, dropped, rejected = _check_paragraphs([para], by, set(), [])
-    assert [s["ids"] for s in paras[0]] == [[1], [2]] and rejected == 1 and dropped == [3]
+    paras, failed, rejected = _check_paragraphs([para], by, set(), [])
+    assert [s["ids"] for s in paras[0]] == [[1], [2]] and rejected == 1
+    assert failed[0]["sentence"]["ids"] == [3] and failed[0]["reason"] == "claim without its speaker"
 
 
 def test_dispute_must_say_what_the_other_side_is():
@@ -1333,3 +1334,117 @@ def test_reanalysis_keeps_work_of_other_stages(store):
         "writer_failures": {"n": 1}, "importance": {"score": 4}, "thread_checked": "h"}))
     an = P.analyze_story(store, sid)
     assert an["writer_failures"] == {"n": 1} and an["importance"] == {"score": 4} and an["thread_checked"] == "h"
+
+
+# ---------------------------------------------------------------- the Everest page (Oct 5 2026)
+
+def test_headline_must_keep_who_did_what():
+    from nishpaksh.compose import _actor_problem
+    src = "fssai ordered the recall of everest food products' cumin powder. fssai suspended the licence"
+    assert "who did what" in _actor_problem("FSSAI recalls Everest cumin powder", src)
+    assert _actor_problem("FSSAI suspends licence, orders Everest recall", src) is None
+    assert _actor_problem("Justice Bhuyan calls mass deletion unconstitutional", "justice bhuyan said it") is None
+
+
+def _resp_items():
+    claim = dict(_item(1, "A food analyst declared a sample of Nestle dairy whitener unsafe", "unverified",
+                       speaker="a food analyst"), responded_by=[2], responds_to=[], conflicts_with=[])
+    resp = dict(_item(2, "Nestle India says its dairy whitener is safe", "unverified", speaker="Nestle India"),
+                responds_to=[1], responded_by=[], conflicts_with=[])
+    return {1: claim, 2: resp}
+
+
+def test_a_response_never_stands_without_what_it_answers():
+    """The essay kept "Nestle India denied this" after the sentence it answered was dropped."""
+    from nishpaksh.narrative import _also, _check_paragraphs
+    by = _resp_items()
+    para = [{"text": "A food analyst declared a sample of Nestle dairy whitener unsafe, said 5 officials.", "ids": [1]},
+            {"text": "Nestle India denied this, saying its dairy whitener is safe.", "ids": [2]}]
+    paras, failed, rejected = _check_paragraphs([para], by, set(), [])
+    assert paras == [] and rejected == 2 and len(failed) == 1      # the denial fell with its claim
+    also = _also(list(by.values()), set(), by, [])
+    assert len(also) == 1 and also[0]["ids"] == [1, 2] and "Nestle India says" in also[0]["text"]
+    # written properly, the pair stays
+    ok = [{"text": "A food analyst declared a sample of Nestle dairy whitener unsafe.", "ids": [1]},
+          {"text": "Nestle India said its dairy whitener is safe.", "ids": [2]}]
+    paras, failed, rejected = _check_paragraphs([ok], by, set(), [])
+    assert rejected == 0 and len(paras[0]) == 2
+
+
+def test_unrelated_statements_are_not_joined_in_one_sentence():
+    from nishpaksh.narrative import _validate
+    by = {1: _item(1, "A sample of cumin powder was drawn from Riverside Resorts in Goa"),
+          2: _item(2, "Creative Bakers had hygiene deficiencies including cobwebs and flies")}
+    s = {"text": "According to reports, a sample was drawn from Riverside Resorts in Goa, and Creative Bakers had "
+                 "hygiene deficiencies including cobwebs and flies.", "ids": [1, 2]}
+    assert _validate(s, by, set(), []) is None
+
+
+def test_also_reported_skips_what_the_essay_already_says():
+    from nishpaksh.narrative import _also
+    i = _item(7, "Creative Bakers and Confectioners had severe hygiene deficiencies")
+    essay = ["Creative Bakers and Confectioners had hygiene deficiencies including dirt, cobwebs and severe pest infestation."]
+    assert _also([i], set(), {7: i}, essay) == []
+    j = _item(8, "Everest has 15 days to report the recall status")
+    assert len(_also([j], set(), {8: j}, essay)) == 1
+
+
+def test_context_is_kept_apart_from_the_story_event_and_written_after_it():
+    from nishpaksh.narrative import essay_ok, ordered_items
+    core = [dict(_item(1, "FSSAI ordered the recall of Everest cumin powder", "corroborated"), n_articles=5, minor=False)]
+    ctx = [dict(_item(2, "A food analyst declared a Nestle whitener sample unsafe"), role="related",
+                related_event="FSSAI finding on Nestle whitener, 4 October", n_articles=2, minor=False)]
+    p = {"timeline": [], "undated": [], "established": core, "contested": [], "context": ctx}
+    assert [i["id"] for i in ordered_items(p)] == [1, 2]
+    nar = {"model": "gemini-3.8-flash", "paragraphs": [[{"ids": [1]}]], "covers": [1], "rejected": 0}
+    assert essay_ok(nar, p)                                           # context is welcome, not required
+
+
+def test_extraction_keeps_context_marked(store):
+    from nishpaksh.extract import normalize_extraction, store_extraction
+    from nishpaksh.db import claims as Cl
+    ex = normalize_extraction({"signature": "FSSAI orders recall", "events": [{"id": "e1", "text": "FSSAI ordered a recall"}],
+                               "context": [{"id": "x1", "type": "related", "text": "A Nestle sample was found unsafe",
+                                            "event": "Nestle finding, 4 Oct", "start": "2026-10-04"},
+                                           {"id": "x2", "type": "nonsense", "text": "dropped"}]})
+    assert len(ex["context"]) == 1
+    aid = store.insert_returning_id(articles, dict(url="https://x.in/1", outlet="X", title="t", text="b",
+                                                   published_at=NOW, fetched_at=NOW))
+    store_extraction(store, aid, None, ex)
+    rows = {r["text"]: r for r in store.rows(select(Cl))}
+    assert rows["A Nestle sample was found unsafe"]["rel"] == {"context": "related", "event": "Nestle finding, 4 Oct"}
+    assert rows["A Nestle sample was found unsafe"]["kind"] == "event" and rows["FSSAI ordered a recall"]["rel"] is None
+
+
+def test_names_that_differ_keep_a_statement_from_green(store):
+    from nishpaksh import verify
+    sid, cid = _origin_story(store, [("Outlet A", None, None), ("Outlet B", None, None), ("Outlet C", None, None)])
+    store.exec(update(canonical).where(canonical.c.id == cid).values(
+        checkable=True, origins={"outlets": 3, "n_origins": 3, "origins": ["a", "b", "c"]}))
+    store.exec(update(stories).where(stories.c.id == sid).values(analysis={"name_conflicts": {str(cid): ["A Ltd", "B Ltd"]}}))
+    verify.base_verdicts(store, sid)
+    assert store.one(select(canonical.c.verdict).where(canonical.c.id == cid))["verdict"] == "unverified"
+
+
+def test_consolidation_turns_a_response_out_of_a_contradiction(store):
+    """A company's statement that its product is safe made the analyst's finding amber. Marked as a
+    response, the pair is no longer a contradiction."""
+    from nishpaksh.consolidate import consolidate_story
+    from nishpaksh.match import _add_conflict
+    sid, c1 = _origin_story(store, [("Outlet A", None, "food analyst"), ("Outlet B", None, "food analyst")])
+    c2 = store.insert_returning_id(canonical, dict(story_id=sid, kind="claim", text="Nestle says the whitener is safe", conflicts=[]))
+    from nishpaksh.db import claims as Cl
+    store.exec(update(canonical).where(canonical.c.id == c1).values(text="An analyst declared the whitener sample unsafe"))
+    store.exec(insert(Cl).values(story_id=sid, article_id=1, kind="claim", text="x", stance="attributes",
+                                 attributed_to="Nestle", evidence="none", canonical_id=c2))
+    _add_conflict(store, c1, c2)
+
+    class R:
+        def call(self, tier, prompt, **kw):
+            from nishpaksh.router import LLMResult
+            return LLMResult("", {"same": [], "conflicts": [[c1, c2]], "names": {}, "speaker": {},
+                                  "responses": [[c1, c2]], "role": {}, "name_conflicts": []}, "m", [], 1)
+    consolidate_story(store, R(), sid)
+    assert store.one(select(canonical.c.conflicts).where(canonical.c.id == c1))["conflicts"] == []
+    an = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
+    assert an["responses"] == [[c1, c2]]

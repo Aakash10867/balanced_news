@@ -133,6 +133,9 @@ def base_verdicts(store: Store, story_id: int) -> int:
     """Recompute the code verdicts; returns how many changed (the page is rebuilt if any did)."""
     story, agroup, gpersp, arts, canon, members = _story_context(store, story_id)
     mode = (story["analysis"] or {}).get("mode")
+    # the reports do not agree WHO did it (a different company or person named for the same fact):
+    # whatever else holds, that statement is not established
+    name_conf = set((story["analysis"] or {}).get("name_conflicts") or {})
     now = utcnow()
     changed = 0
     for cid, c in canon.items():
@@ -142,7 +145,8 @@ def base_verdicts(store: Store, story_id: int) -> int:
         contested = bool(s["deny_groups"] and s["support_groups"] or conflict_live)
         # the 6-hour clock starts when the rule is first met, and restarts if it stops being met
         o = dict(c.get("origins") or {})
-        meets = not contested and bool(s["support_groups"]) and meets_rule(c, s, mode)
+        meets = (not contested and bool(s["support_groups"]) and meets_rule(c, s, mode)
+                 and str(cid) not in name_conf)
         if meets and not o.get("met_at"):
             o["met_at"] = now.isoformat(timespec="minutes")
         elif not meets and o.get("met_at"):
@@ -154,6 +158,8 @@ def base_verdicts(store: Store, story_id: int) -> int:
             v = "disputed"
         elif not s["support_groups"]:
             v = "unverified"  # only denials: the denial itself is the claim on record
+        elif str(cid) in name_conf:
+            v = "unverified"  # the reports name different actors: not established, not even developing
         else:
             v = established(c, s, mode, now) or "unverified"
         keep = (c["verdict"] in ("false", "confirmed")

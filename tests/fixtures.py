@@ -148,6 +148,9 @@ class FakeBackend:
             lines = re.findall(r"^(\d+) \| (.*?) \| (.*)$", prompt, flags=re.M)
             speaker = {n: by for n, _, by in lines if by not in ("article", "unnamed source") and "," not in by}
             return json.dumps({"same": [], "conflicts": [], "names": {}, "speaker": speaker}), [], 100
+        if "These sentences failed the newsroom's" in prompt:
+            n = len(re.findall(r"^\d+\. ", prompt.split("Statements:")[0], flags=re.M))
+            return json.dumps({"fixes": [{"n": k + 1, "text": "", "ids": []} for k in range(n)]}), [], 50
         if "loaded or emotive word or phrase from a Hindi news report" in prompt:
             items = re.findall(r"^(\d+)\. (.*)$", prompt, flags=re.M)
             return json.dumps({"items": [{"n": int(n), "en": f"concept-{n}"} for n, _ in items]}), [], 50

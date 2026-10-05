@@ -44,6 +44,19 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   only on a material change (`needs_rewrite`). Rejected sentences are dropped, not patched; what the
   essay does not carry is listed under it ("Also reported"). A fallback headline never goes live.
   Writer failures per statement set are kept in `stories.analysis.writer_failures` (3 tries max).
+- **Story layers (Oct 5 2026, owner):** a story has its own event (core) and CONTEXT: background,
+  related events (a separate event the reports connect to this one: written as separate, never
+  blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),
+  consolidation can re-label statements (`analysis.roles`). Headline, timeline and essay_ok use the
+  core only; context is written after it and coloured like everything else.
+- **Three relations:** same / contradiction (both cannot be true as facts: amber) / RESPONSE (a party
+  answers a claim or finding: both true as reports, written together, never amber). "No denial" in
+  the green rule means nobody denies the EVENT happened, not that a party objects to it.
+- **Essay integrity:** a sentence leaning on the previous one ("He added", "denied this") falls with
+  it; a statement and its contradiction/response are both in the essay or both under it; statements
+  joined in one sentence must share a subject; "Also reported" skips what the essay already says;
+  one repair call rewrites failed sentences before anything is dropped. Headlines must keep who did
+  what (`compose._actor_problem`). Reports naming different actors for one fact block green.
 - **Attribution like a newspaper:** name a speaker once, continue with "he said" in the same
   paragraph (validator honours the paragraph's speaker scope); "reports said" at most once per
   paragraph, as a leading "According to reports,"; a dispute states both versions and whose they

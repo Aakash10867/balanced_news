@@ -138,6 +138,36 @@ def _headline_problem(h: str, facts: list[str], source: str, banned: set[str]) -
     if not facts and not any(m in low for m in ("alleg", "reported", "claim", "accus", "say", "said", "denies",
                                                 "deny", "question", "probe", "differ", "seek", "demand")):
         return "nothing is established, so it must attribute or hedge (e.g. 'reportedly', 'alleges')"
+    return _actor_problem(h, source)
+
+
+HEADLINE_STOP = {"the", "and", "for", "with", "from", "over", "into", "after", "amid", "its", "his", "her", "their"}
+
+
+def _actor_problem(h: str, source: str) -> str | None:
+    """Who did it must match the statements (Oct 2026: "FSSAI recalls Everest cumin powder" when the
+    statements say FSSAI ORDERED the recall; Everest recalls). Checked for the headline's first verb in
+    the present tense ("recalls", "arrests"): where the statements use that verb, someone named before
+    it in the headline must be its actor there, not "the recall" ordered by them. A verb the
+    statements never use (a paraphrase) is not judged here."""
+    words = re.findall(r"[A-Za-z'&.-]+", h)
+    for k, w in enumerate(words):
+        if k == 0 or not re.fullmatch(r"[a-z]{3,}s", w) or w in ("was", "has", "is", "its", "his", "says"):
+            continue
+        stem = w[:-2] if w.endswith(("ches", "shes", "sses", "xes")) else w[:-1]
+        subject = {x.lower().strip("'s.") for x in words[:k] if len(x) >= 3} - HEADLINE_STOP
+        forms = list(re.finditer(rf"\b{re.escape(stem.lower())}(?:s|es|ed|d|ing)?\b", source))
+        if not forms or not subject:
+            return None
+        for m in forms:
+            before = re.findall(r"[a-z'&.-]+", source[max(0, m.start() - 60):m.start()])[-4:]
+            if before and before[-1] in ("the", "a", "an", "its", "his", "her", "their"):
+                continue   # "ordered the recall": a noun, someone else's action on it
+            if subject & {b.strip("'s.") for b in before}:
+                return None
+        m = forms[0]
+        snippet = source[max(0, m.start() - 50):m.end() + 30].strip()
+        return f"it says '{' '.join(words[:k + 1])}', but the statements say \"...{snippet}...\": keep who did what"
     return None
 
 
@@ -179,8 +209,31 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                articles.c.found_by).where(articles.c.story_id == story_id))}
     texts = {cid: c["text"] for cid, c in canon.items()}
 
-    speakers = (story["analysis"] or {}).get("speakers") or {}
-    departures = (story["analysis"] or {}).get("departures") or {}
+    analysis_ = story["analysis"] or {}
+    speakers = analysis_.get("speakers") or {}
+    departures = analysis_.get("departures") or {}
+    roles = analysis_.get("roles") or {}
+    related_event = analysis_.get("related_event") or {}
+    name_conf = analysis_.get("name_conflicts") or {}
+    responds_to: dict[int, list[int]] = defaultdict(list)
+    responded_by: dict[int, list[int]] = defaultdict(list)
+    for a_, b_ in analysis_.get("responses") or []:
+        if a_ in canon and b_ in canon:
+            responded_by[a_].append(b_)
+            responds_to[b_].append(a_)
+
+    def _role(cid: int) -> tuple[str, str]:
+        """'core' or a context role, and the related event's name. Consolidation's reading of the
+        whole story wins; otherwise the reports' own: context only if every report gave it as context."""
+        rows_ = members.get(cid, [])
+        ctx = [((r.get("rel") or {}) if r["kind"] != "relation" else {}).get("context") for r in rows_]
+        label = related_event.get(str(cid)) or next(
+            (((r.get("rel") or {}).get("event") or "") for r in rows_ if (r.get("rel") or {}).get("event")), "")
+        if str(cid) in roles:
+            return roles[str(cid)], label
+        if rows_ and all(ctx):
+            return Counter(ctx).most_common(1)[0][0], label
+        return "core", ""
 
     def _persp_of(aid: int) -> str:
         """An article that departs from its outlet's perspective shows its own (marked †)."""
@@ -222,12 +275,22 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "sources": sorted(srcs, key=lambda x: (x["perspective"], x["outlet"])),
             "check": check, "minor": s["n_articles"] <= 1,
             "speaker": speakers.get(str(cid)),
+            "role": _role(cid)[0], "related_event": _role(cid)[1] or None,
+            "responds_to": [x for x in responds_to.get(cid, []) if members.get(x)],
+            "responded_by": [x for x in responded_by.get(cid, []) if members.get(x)],
+            "name_conflict": name_conf.get(str(cid)),
             "origins": (c.get("origins") or {}).get("origins", []),
             "n_origins": (c.get("origins") or {}).get("n_origins", 0),
             "n_outlets": (c.get("origins") or {}).get("outlets", 0),
         }
 
-    items = {cid: item(cid) for cid in canon if members.get(cid)}
+    all_items = {cid: item(cid) for cid in canon if members.get(cid)}
+    # the story's own event drives the timeline, sections and headline; context (background, related
+    # events, explanation, reactions, what next) is carried separately and written after it
+    items = {cid: i for cid, i in all_items.items() if i["role"] == "core" or i["kind"] == "relation"}
+    ROLE_ORDER = {"background": 0, "related": 1, "explanation": 2, "reaction": 3, "next": 4}
+    context = sorted([i for i in all_items.values() if i["id"] not in items],
+                     key=lambda i: (ROLE_ORDER.get(i["role"], 9), -i["n_articles"], i["id"]))
     est_events = [i for i in items.values() if i["kind"] == "event" and i["verdict"] in ESTABLISHED]
     est_ids = {i["id"] for i in est_events}
     rel_edges = []
@@ -341,13 +404,14 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         "established": established,
         "contested": contested,
         "framing": framing,
+        "context": context,
         "sources": sources,
         "loaded_words": sorted(banned),
         "counts": {"articles": len(full_arts), "independent_sources": len(analysis.get("groups") or {}),
                    "outlets": len({a["outlet"] for a in full_arts.values()})},
         # a suicide story carries a helpline note (responsible-reporting guidelines)
         "suicide": any(re.search(r"(?i)suicide|took (his|her|their) own life|आत्महत्या|ख़ुदकुशी|खुदकुशी", i["text"])
-                       for i in items.values()),
+                       for i in all_items.values()),
     }
 
 
@@ -369,6 +433,10 @@ def _collect_strings(payload: dict) -> list[str]:
                 out.append(i["time"]["when_text"])
     for f in payload["framing"]:
         out.append(f["text"])
+    for i in payload.get("context", []):
+        out.append(i["text"])
+        if i.get("related_event"):
+            out.append(i["related_event"])
     out += [x["headline"] for x in payload.get("parents", []) + payload.get("children", []) if x.get("headline")]
     out += [b["text"] for b in payload.get("background", [])]
     for para in (payload.get("narrative") or {}).get("paragraphs", []):
@@ -418,6 +486,10 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
                 i["time"]["when_text"] = tr(i["time"]["when_text"])
     for f in hi["framing"]:
         f["text"] = tr(f["text"])
+    for i in hi.get("context", []):
+        i["text"] = tr(i["text"])
+        if i.get("related_event"):
+            i["related_event"] = tr(i["related_event"])
     for x in hi.get("parents", []) + hi.get("children", []):
         x["headline"] = tr(x["headline"])
     for b in hi.get("background", []):

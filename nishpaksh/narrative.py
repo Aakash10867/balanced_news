@@ -23,11 +23,12 @@ import hashlib
 import json
 import logging
 import re
+import threading
 
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
-WRITER_VERSION = 6   # part of the cache key: pages written by an older writer are rewritten once
+WRITER_VERSION = 7   # part of the cache key: pages written by an older writer are rewritten once
 
 RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "disputed": 3, "false": 4}
 CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "disputed", 4: "false"}
@@ -38,16 +39,23 @@ WRITER_PROMPT = """You are a senior news editor. Write the story below as ONE ne
 readers, the way a good newspaper reports it: clear, calm, flowing paragraphs. Not a list.
 
 You may use ONLY the statements given. Each has an id and a status, may say who makes it ("said by"),
-when it happened, and which statements contradict or deny it.
+when it happened, which statements contradict it, and which statements are a party's response to it.
+Statements marked CONTEXT are not the story's own event: background, a separate related event,
+an explanation, a reaction, or what happens next.
 
 Structure:
 1. Opening paragraph (1-2 sentences): who, where, what happened, and when, from the most important
-   statements.
+   statements of the story's own event.
 2. Then what happened, in time order.
-3. Then each side's account: give each speaker their own paragraph where they have several statements.
-4. Last paragraph: where accounts differ, if they do.
-Group related statements into paragraphs of 2-4 sentences. Combine statements into one sentence where
-natural. Say each fact ONCE: if two statements say the same thing, write it once and cite both ids.
+3. Then each party's account and response: a speaker with several statements gets their own paragraph.
+4. Then CONTEXT: background and related events, each clearly as a SEPARATE event with its own time
+   ("The order came a day after a food analyst declared a sample of Nestle's dairy whitener unsafe;
+   Nestle India says the product is safe."); explanations; what happens next.
+5. Last, where accounts of the facts differ, if they do.
+Organise paragraphs by SUBJECT: one subject per paragraph, 2-4 sentences. Never group statements
+because they share a status, and never join two statements in one sentence unless they are about the
+same person, body, place or thing. Say each fact ONCE: if two statements say the same thing, write it
+once and cite both ids. Length: about {length} sentences, as the material allows; do not pad.
 
 Attribution, the way a good newspaper does it (important):
 - NEVER name a newspaper, channel or website. Do not write "X reported", "according to X" for an outlet.
@@ -58,11 +66,16 @@ Attribution, the way a good newspaper does it (important):
   still that speaker. No empty set-up sentences ("X set out their position."). Name
   the next speaker when the speaker changes. Do not end every sentence with "according to <name>".
   An accusation must always name who makes it.
-- REPORTED without "said by": not confirmed. Put such statements together and hedge ONCE for the
-  paragraph ("Reports also said that..."). Never end sentences with "reports said".
-- DISPUTED: write the disagreement itself, both versions, and whose they are where known: "The police
-  put the toll at 40; the families say 50." For a statement others deny: "X said ...; Y denied it."
-  NEVER write "other reports differ" or "accounts differ" without saying what the other account is.
+- REPORTED without "said by": not confirmed. Hedge ONCE for the paragraph, at its start
+  ("According to reports, ..."). Never end sentences with "reports said".
+- RESPONSE: write the claim or finding and the party's response together, each pinned on its source:
+  "A food analyst declared the sample unsafe; Nestle India said its product is safe." A response is
+  not a contradiction: do not write "accounts differ" for it.
+- DISPUTED (contradicted): write the disagreement itself, both versions, and whose they are where
+  known: "The police put the toll at 40; the families say 50." NEVER write "other reports differ" or
+  "accounts differ" without saying what the other account is.
+- NAMES DIFFER: when a statement says the reports name different actors, name both ("Creative Bakers,
+  named in some reports as Sugarr & Spice"), never pick one.
 - FALSE: say who claimed it and that the evidence shows it is false, citing the evidence given.
 
 Never add any fact, name, number, place, cause, motive, adjective or opinion that is not in the
@@ -70,16 +83,31 @@ statements. Events may be told in order ("after", "later", "then"), but never li
 ("because", "due to", "led to") unless a statement says so. Use "said", "alleged", "claimed", "denied"
 only for the person or body a statement names in "said by"; never invent a speaker. When a statement
 is itself reported speech ("A said that B claimed X"), keep it reported: never make A the author of X.
-No headings, no bullet points.
+Every sentence must make sense on its own: never write "denied this" unless the sentence just before
+says what was denied. No headings, no bullet points.
 Never use any of these words: {banned}
 Every sentence lists in "ids" every statement it uses. Use every statement at least once; minor
 statements (marked "minor") may be left out if they add nothing.
 
-{background}Statements, events in time order first:
+{background}Statements, the story's own event first, then CONTEXT:
 {statements}
 
 Reply with JSON only:
 {{"paragraphs": [[{{"text": "...", "ids": [3, 7]}}, {{"text": "...", "ids": [5]}}], [ ... ]]}}"""
+
+REPAIR_PROMPT = """You wrote a news article from numbered statements. These sentences failed the newsroom's
+checks. Rewrite each so that it passes, using ONLY the statements listed (same rules as before: no
+outlet names, no number or speaker that the statements do not have, disputes give both versions,
+allegations name who makes them, no cause words unless a statement has them, nothing loaded:
+{banned}). If a sentence cannot be fixed, return an empty "text" for it.
+
+Failed sentences:
+{failed}
+
+Statements:
+{statements}
+
+Reply with JSON only: {{"fixes": [{{"n": 1, "text": "...", "ids": [3]}}]}}"""
 
 FALSE_MARKERS = ("false", "untrue", "not true", "contradict", "evidence shows", "disproved", "incorrect",
                  "no evidence", "refut")
@@ -172,7 +200,12 @@ def ordered_items(p: dict) -> list[dict]:
     order = {"false": 0, "disputed": 1}
     add(sorted([i for i in contested if i["kind"] != "event"],
                key=lambda i: (i["minor"], order.get(i["verdict"], 2), -i["n_articles"])))
+    add(p.get("context") or [])          # background, related events, explanation, reactions, next
     return out
+
+
+def is_core(i: dict) -> bool:
+    return (i.get("role") or "core") == "core"
 
 
 def sections_from_payload(p: dict) -> dict[str, list[dict]]:  # kept for the cache key
@@ -183,8 +216,16 @@ def _statement_line(i: dict) -> str:
     line = f'#{i["id"]} {STATUS_LABEL.get(i["verdict"], "REPORTED")} | "{i["text"]}"'
     if i.get("minor"):
         line += " | minor"
+    if not is_core(i):
+        line += f" | CONTEXT: {i['role']}" + (f" ({i['related_event']})" if i.get("related_event") else "")
     if i.get("speaker"):
         line += f" | said by: {i['speaker']}"
+    if i.get("responds_to"):
+        line += " | response to: " + ", ".join(f"#{x}" for x in i["responds_to"])
+    if i.get("responded_by"):
+        line += " | answered by: " + ", ".join(f"#{x}" for x in i["responded_by"])
+    if i.get("name_conflict"):
+        line += " | NAMES DIFFER in the reports: " + " / ".join(i["name_conflict"])
     if i.get("conflicts_with"):
         line += " | contradicted by: " + ", ".join(f"#{x}" for x in i["conflicts_with"])
     deniers = sorted({s.get("attributed_to") or "" for s in i.get("sources") or [] if s.get("stance") == "denies"} - {""})
@@ -215,11 +256,19 @@ def _numbers(s: str) -> set[str]:
     return set(re.findall(r"\d+(?:[.,]\d+)?", s))
 
 
-REJECT_REASONS: dict[str, int] = {}
+_TL = threading.local()   # essays are written in parallel: reasons are kept per thread
+
+
+def _reasons() -> dict[str, int]:
+    if not hasattr(_TL, "reasons"):
+        _TL.reasons = {}
+    return _TL.reasons
 
 
 def _no(reason: str):
-    REJECT_REASONS[reason] = REJECT_REASONS.get(reason, 0) + 1
+    r = _reasons()
+    r[reason] = r.get(reason, 0) + 1
+    _TL.last = reason
     return None
 
 
@@ -288,7 +337,47 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
     for c in CAUSAL:
         if re.search(rf"\b{c}\b", low) and c not in source_text.lower():
             return _no("cause not in statements")
+    # statements joined in one sentence must share a subject (a name, place, number or key word);
+    # two businesses and two findings glued together because both were unconfirmed read as one fact
+    if len(ids) > 1 and not _connected([by_id[i] for i in ids]):
+        return _no("unrelated statements joined")
     return ids
+
+
+SUBJECT_STOP = {"which", "their", "there", "these", "those", "about", "after", "before", "while", "would",
+                "could", "should", "other", "under", "against", "between", "during", "where", "being",
+                "since", "added", "stated", "according", "reports", "report", "people"}
+
+
+PRONOUN_START = re.compile(r"^(he|she|they|it|his|her|their|its|this|these|those)\b", re.I)
+
+
+def _subject_words(text: str) -> set[str]:
+    from .textmatch import key_tokens
+    words = {w.lower() for w in re.findall(r"[A-Za-z]{4,}", text)} - SUBJECT_STOP
+    return words | {t.lower() for t in key_tokens(text)}
+
+
+def _connected(stmts: list[dict]) -> bool:
+    """Are these statements about one subject? Linked when they share a name, number or key word,
+    when one is a contradiction of or response to the other, or when one refers back by pronoun."""
+    sets = [_subject_words(i["text"]) for i in stmts]
+    ids = [i["id"] for i in stmts]
+
+    def linked(a: int, b: int) -> bool:
+        if sets[a] & sets[b]:
+            return True
+        if ids[b] in _partners(stmts[a]) or ids[a] in _partners(stmts[b]):
+            return True
+        return bool(PRONOUN_START.match(stmts[a]["text"].strip()) or PRONOUN_START.match(stmts[b]["text"].strip()))
+    seen, todo = {0}, [0]
+    while todo:
+        k = todo.pop()
+        for j in range(len(stmts)):
+            if j not in seen and linked(k, j):
+                seen.add(j)
+                todo.append(j)
+    return len(seen) == len(stmts)
 
 
 def _needs_hedge(sent: dict, by_id: dict[int, dict]) -> bool:
@@ -356,42 +445,133 @@ def _named_speaker(text: str, ids: list[int], by_id: dict[int, dict]) -> set[str
     return set()
 
 
-def _check_paragraphs(drafted: list[list], by_id, banned, outlets) -> tuple[list[list[dict]], list[int], int]:
-    """Validated sentences only; a rejected sentence is dropped, never patched with plain wording
-    (patchwork read badly: Oct 2026). Returns paragraphs, ids of rejected sentences, and the count."""
-    paragraphs, dropped, rejected = [], [], 0
-    for para in drafted:
-        out, scope = [], set()
-        for s in para:
-            ids = _validate(s, by_id, banned, outlets, scope) if isinstance(s, dict) else None
-            if ids is None:
-                rejected += 1
-                for x in (s.get("ids") or []) if isinstance(s, dict) else []:
-                    m = re.search(r"-?\d+", str(x))
-                    if m:
-                        dropped.append(int(m.group(0)))
-                continue
-            named = _named_speaker(s["text"], ids, by_id)
-            if named:
-                scope = named
-            out.append({"text": re.sub(r"\.{2,}$", ".", s["text"].strip()), "ids": ids})
+LEANS_BACK = re.compile(
+    r"^(he|she|they|it|this|that|these|those|his|her|their|its|both|the (?:company|firm|minister|ministry|"
+    r"police|court|party|agency|regulator|government|department|official|officials|accused|victim|family|"
+    r"actor|board|institute|university|bench|judge|spokesperson|group))\b"
+    r"|\b(?:denied|rejected|disputed|refuted|dismissed|responded to|countered) (?:this|it|that|them|the "
+    r"(?:claim|claims|allegation|allegations|finding|findings|report|reports|charge|charges))\b", re.I)
+
+
+def _partners(i: dict) -> set[int]:
+    return {x for x in (i.get("conflicts_with") or []) + (i.get("responds_to") or []) + (i.get("responded_by") or [])
+            if isinstance(x, int) and x >= 0}
+
+
+def _check_paragraphs(drafted: list[list], by_id, banned, outlets) -> tuple[list[list[dict]], list[dict], int]:
+    """Validated sentences only. Sentences that depend on each other stand or fall together
+    (Oct 2026: "Nestle India denied this" survived while the claim it denied was dropped):
+      - a sentence that leans on the one before it ("He added", "The company denied this") is tied to it;
+      - a statement and its contradiction or response must both be in the essay, or neither is.
+    A rejected sentence is dropped, never patched with plain wording. Returns the paragraphs, the
+    sentences that failed a check themselves (with the reason, for the repair pass), and how many
+    sentences left the essay."""
+    flat: list[tuple[int, int, dict]] = []
+    for p, para in enumerate(drafted):
+        for k, sent in enumerate(para):
+            flat.append((p, k, sent))
+    n = len(flat)
+    leans_on: dict[int, int] = {}       # sentence -> the sentence before it that it depends on
+
+    ok_ids: list[list[int] | None] = [None] * n
+    failed: list[dict] = []
+    scope: set[str] = set()
+    for idx, (p, k, sent) in enumerate(flat):
+        if k == 0:
+            scope = set()
+        if k > 0 and isinstance(sent, dict) and LEANS_BACK.search(str(sent.get("text") or "")):
+            leans_on[idx] = idx - 1
+        _TL.last = None
+        ids = _validate(sent, by_id, banned, outlets, scope) if isinstance(sent, dict) else None
+        if ids is None:
+            failed.append({"p": p, "k": k, "sentence": sent if isinstance(sent, dict) else {},
+                           "reason": getattr(_TL, "last", None) or "not a sentence"})
+            continue
+        ok_ids[idx] = ids
+        named = _named_speaker(sent["text"], ids, by_id)
+        if named:
+            scope = named
+    # a sentence that leans on a dropped sentence goes with it ("He added..." without its "he");
+    # then a statement whose partner (contradiction or response) is in the story but nowhere in the
+    # essay takes its sentence out too, and so on until nothing changes
+    alive = [ok_ids[i] is not None for i in range(n)]
+
+    def drop_units():
+        for i in range(n):   # in order, so chains of "He said... He added..." fall together
+            if alive[i] and i in leans_on and not alive[leans_on[i]]:
+                alive[i] = False
+    drop_units()
+    while True:
+        covered = {x for i in range(n) if alive[i] for x in ok_ids[i]}
+        orphan = [i for i in range(n) if alive[i]
+                  and any(_partners(by_id[x]) & set(by_id) and not (_partners(by_id[x]) & covered)
+                          for x in ok_ids[i])]
+        if not orphan:
+            break
+        for i in orphan:
+            alive[i] = False
+        drop_units()
+    paragraphs: list[list[dict]] = []
+    for p, para in enumerate(drafted):
+        out = [{"text": re.sub(r"\.{2,}$", ".", flat[i][2]["text"].strip()), "ids": ok_ids[i]}
+               for i in range(n) if flat[i][0] == p and alive[i]]
         if out:
             paragraphs.append(out)
-    return paragraphs, dropped, rejected
+    return paragraphs, failed, sum(1 for a in alive if not a)
 
 
-def _also(items: list[dict], covered: set[int], by_id: dict[int, dict]) -> list[dict]:
+def _said_in(item: dict, sentences: list[str]) -> bool:
+    """Does the essay already say this statement, in other words? All its names and numbers and most
+    of its key words in one sentence (Oct 2026: near-duplicates the writer had merged were listed
+    again under the essay)."""
+    from .textmatch import key_tokens
+    toks = {t.lower() for t in key_tokens(item["text"])}
+    words = _subject_words(item["text"])
+    if not words:
+        return False
+    for s_ in sentences:
+        low = s_.lower()
+        if toks and not all(t in low for t in toks):
+            continue
+        sw = _subject_words(s_)
+        if len(words & sw) >= (0.6 if toks else 0.75) * len(words):
+            return True
+    return False
+
+
+def _response_sentence(i: dict) -> str:
+    text = i["text"].strip().rstrip(".")
+    sp = i.get("speaker")
+    if sp and not _speaker_is_subject(sp, text):
+        return f"{sp} said {_soft_lower(text)}."
+    return text + "."
+
+
+def _also(items: list[dict], covered: set[int], by_id: dict[int, dict], essay: list[str] | None = None) -> list[dict]:
     """Statements the essay does not carry, listed under it in plain words ("Also reported"), so
-    nothing is silently dropped and the essay itself stays the writer's prose."""
+    nothing is silently dropped and the essay itself stays the writer's prose. A statement the essay
+    already says in other words is not listed again; a claim and its response, or two contradicting
+    statements, are listed together."""
     out, done = [], set(covered)
+    essay = essay or []
     for i in items:
         if i["id"] in done:
             continue
+        if _said_in(i, essay) and not _partners(i):
+            done.add(i["id"])
+            continue
         partner = next((by_id[o] for o in i.get("conflicts_with") or []
                         if o in by_id and o not in done and o >= 0), None)
+        answer = next((by_id[o] for o in i.get("responded_by") or [] if o in by_id and o >= 0), None)
+        asked = next((by_id[o] for o in i.get("responds_to") or [] if o in by_id and o >= 0), None)
         if i["verdict"] == "disputed" and partner:
             out.append({"text": disputed_pair(i, partner), "ids": [i["id"], partner["id"]]})
             done.update({i["id"], partner["id"]})
+        elif answer is not None or asked is not None:
+            claim, resp = (i, answer) if answer is not None else (asked, i)
+            out.append({"text": f"{plain_sentence(claim)} {_response_sentence(resp)}",
+                        "ids": [claim["id"], resp["id"]]})
+            done.update({claim["id"], resp["id"]})
         else:
             text = plain_sentence(i)
             if _needs_hedge({"ids": [i["id"]]}, by_id) and not any(m in text.lower() for m in HEDGE_MARKERS):
@@ -433,25 +613,83 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
 
 
 def essay_ok(nar: dict, payload: dict) -> bool:
-    """Good enough to publish as the story: written by the writer, it carries most of the story (60%
-    of the statements that are not minor; what a rejected sentence leaves uncovered counts against
-    this), and the writer was not badly off task (no more than half its sentences rejected)."""
+    """Good enough to publish as the story: written by the writer, it carries most of the story's own
+    event (60% of its statements that are not minor; context is welcome but optional), and the
+    writer was not badly off task (no more than half its sentences left the essay)."""
     if not nar.get("model") or not nar.get("paragraphs"):
         return False
     sents = sum(len(p) for p in nar["paragraphs"])
     if nar.get("rejected", 0) > sents:
         return False
-    major = [i["id"] for i in ordered_items(payload) if not i.get("minor")]
+    major = [i["id"] for i in ordered_items(payload) if not i.get("minor") and is_core(i)]
     if not major:
         return True
     return len(set(major) & set(nar.get("covers") or [])) >= 0.6 * len(major)
+
+
+def _target_length(items: list[dict]) -> str:
+    """Roughly how long the article should be: it follows the material, never padded."""
+    major = sum(1 for i in items if not i.get("minor"))
+    ctx = sum(1 for i in items if not is_core(i))
+    lo = max(4, min(30, int(0.6 * major + 0.4 * ctx)))
+    return f"{lo}-{lo + max(2, lo // 3)}"
+
+
+def _call_writer(router: Router, prompt: str) -> tuple[list[list[dict]], str | None, str | None]:
+    """(paragraphs, model, failure)."""
+    try:
+        # at most 3 tries per run: when Flash is overloaded, 8 tries burned a quarter of an hour's
+        # writer calls on one story; the story is simply tried again next run
+        res = router.call("writer", prompt, json_out=True, max_output_tokens=7000, max_attempts=3)
+    except QuotaExhausted as e:
+        log.info("narrative: writer quota used up for now (%s)", e)
+        return [], None, "quota"
+    except ValueError as e:
+        log.info("narrative: writer reply unusable (%s)", e)
+        return [], None, "unparseable reply"
+    except Exception as e:  # noqa: BLE001
+        log.warning("narrative failed: %s", e)
+        return [], None, f"error: {str(e)[:80]}"
+    paras = (res.data or {}).get("paragraphs") if isinstance(res.data, dict) else None
+    drafted = [p for p in paras if isinstance(p, list)] if isinstance(paras, list) else []
+    return drafted, res.model, None if drafted else "no paragraphs in reply"
+
+
+def _repair(router: Router, drafted: list[list[dict]], failed: list[dict], banned: set[str],
+            statements: str) -> bool:
+    """One pass in which the writer rewrites only the sentences that failed a check, told why
+    (Oct 2026: 5 of 11 sentences of one essay were simply deleted). Fixed sentences replace the
+    failed ones in place; the whole essay is then checked again. Returns whether anything changed."""
+    lines = "\n".join(f'{n + 1}. "{str(f["sentence"].get("text") or "")}" | ids: {f["sentence"].get("ids")} | '
+                      f'problem: {f["reason"]}' for n, f in enumerate(failed))
+    prompt = REPAIR_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", failed=lines, statements=statements)
+    try:
+        res = router.call("writer", prompt, json_out=True, max_output_tokens=2500, max_attempts=2)
+    except Exception as e:  # noqa: BLE001
+        log.info("narrative: repair pass not done (%s)", str(e)[:120])
+        return False
+    changed = False
+    for fx in (res.data or {}).get("fixes", []) if isinstance(res.data, dict) else []:
+        try:
+            n = int(fx.get("n")) - 1
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if not 0 <= n < len(failed):
+            continue
+        f = failed[n]
+        para = drafted[f["p"]]
+        if f["k"] < len(para):
+            para[f["k"]] = {"text": str(fx.get("text") or ""), "ids": fx.get("ids") or f["sentence"].get("ids") or []}
+            changed = True
+    return changed
 
 
 def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> dict:
     items, background, by_id, outlets, banned = _context(payload, banned)
     drafted: list[list[dict]] = []
     model, failure = None, None
-    REJECT_REASONS.clear()
+    _reasons().clear()
+    statements = "\n".join(_statement_line(i) for i in items)
     if router is not None and items:
         bg = ""
         if background:
@@ -460,49 +698,40 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
                   "citing their ids (they are optional; do not repeat them later):\n"
                   + "\n".join(_statement_line(b) for b in background) + "\n\n")
         prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg,
-                                      statements="\n".join(_statement_line(i) for i in items))
-        try:
-            # at most 3 tries per run: when Flash is overloaded, 8 tries burned a quarter of an
-            # hour's writer calls on one story; the story is simply tried again next run
-            res = router.call("writer", prompt, json_out=True, max_output_tokens=6000, max_attempts=3)
-            model = res.model
-            paras = (res.data or {}).get("paragraphs") if isinstance(res.data, dict) else None
-            if isinstance(paras, list):
-                drafted = [p for p in paras if isinstance(p, list)]
-            if not drafted:
-                failure = "no paragraphs in reply"
-        except QuotaExhausted as e:
-            failure = "quota"
-            log.info("narrative: writer quota used up for now (%s)", e)
-        except ValueError as e:
-            failure = "unparseable reply"
-            log.info("narrative: writer reply unusable (%s)", e)
-        except Exception as e:  # noqa: BLE001
-            failure = f"error: {str(e)[:80]}"
-            log.warning("narrative failed: %s", e)
+                                      statements=statements, length=_target_length(items))
+        drafted, model, failure = _call_writer(router, prompt)
 
-    paragraphs, _, rejected = _check_paragraphs(drafted, by_id, banned, outlets)
+    paragraphs, failed, rejected = _check_paragraphs(drafted, by_id, banned, outlets)
+    first_reasons = dict(_reasons())
+    repaired = False
+    if failed and model and router is not None:
+        if _repair(router, drafted, failed, banned, statements):
+            repaired = True
+            _reasons().clear()
+            paragraphs, failed, rejected = _check_paragraphs(drafted, by_id, banned, outlets)
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
-    also = _also(items, covered, by_id)
+    also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     if rejected:
-        log.info("narrative: %d sentences failed checks (%s)", rejected, dict(REJECT_REASONS))
+        log.info("narrative: %d sentences left the essay (%s)", rejected, dict(_reasons()))
     return _finish(payload, paragraphs, also, by_id,
-                   {"model": model, "rejected": rejected, "reject_reasons": dict(REJECT_REASONS), "failure": failure})
+                   {"model": model, "rejected": rejected, "reject_reasons": dict(_reasons()), "failure": failure,
+                    "first_draft_reasons": first_reasons, "repaired": repaired})
 
 
 def recolour(old: dict, payload: dict, banned: set[str]) -> dict:
     """Keep the essay as written and bring it up to date without a model call: each sentence takes
     the current colour of the statements it rests on. A sentence whose statements are gone, or that
-    no longer passes the checks (a fact that is now disputed, say), leaves the essay; statements the
-    essay does not carry are listed under it. Used when only verdicts changed, or the writer is out."""
+    no longer passes the checks (a fact that is now disputed, say), leaves the essay with every
+    sentence that depends on it; statements the essay does not carry are listed under it. Used when
+    only verdicts changed, or the writer is out."""
     items, background, by_id, outlets, banned = _context(payload, banned)
-    REJECT_REASONS.clear()
+    _reasons().clear()
     drafted = [[{"text": s.get("raw") or s["text"], "ids": [x for x in s["ids"] if x in by_id]} for s in para]
                for para in old.get("paragraphs") or []]
     drafted = [[s for s in para if s["ids"]] for para in drafted]
     paragraphs, _, rejected = _check_paragraphs([p for p in drafted if p], by_id, banned, outlets)
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
-    also = _also(items, covered, by_id)
+    also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     before = sum(len(p) for p in old.get("paragraphs") or [])
     return _finish(payload, paragraphs, also, by_id,
                    {"model": old.get("model"), "rejected": old.get("rejected", 0), "recoloured": True,
@@ -511,11 +740,12 @@ def recolour(old: dict, payload: dict, banned: set[str]) -> dict:
 
 
 def needs_rewrite(old: dict | None, payload: dict) -> bool:
-    """A rewrite is worth a writer call only for a material change: statements that are not minor
-    and that the essay does not carry, or a quarter of its sentences no longer standing."""
+    """A rewrite is worth a writer call only for a material change: statements of the story's own
+    event that are not minor and that the essay does not carry, or a quarter of its sentences no
+    longer standing."""
     if not old or not old.get("paragraphs") or not old.get("model") or old.get("writer") != WRITER_VERSION:
         return True
     covers = set(old.get("covers") or [x for p in old["paragraphs"] for s in p for x in s["ids"]])
-    new_major = [i for i in ordered_items(payload) if not i.get("minor") and i["id"] not in covers]
+    new_major = [i for i in ordered_items(payload) if not i.get("minor") and is_core(i) and i["id"] not in covers]
     sents = sum(len(p) for p in old["paragraphs"]) + old.get("dropped_since_written", 0)
     return bool(new_major) or old.get("dropped_since_written", 0) > sents // 4

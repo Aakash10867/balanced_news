@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from .config import SETTINGS
 from .db import Store, articles, claims, delete, insert, select, stories, update, utcnow
-from .router import QuotaExhausted, Router
+from .router import CallFailed, QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -27,6 +27,7 @@ EVIDENCE = {"fir", "court_record", "official_data", "video", "official_statement
             "named_witness", "unnamed_source", "none"}
 PRECISION = {"exact", "hour", "part_of_day", "day", "week", "month", "unknown"}
 REL_TYPES = {"before", "caused"}
+CONTEXT_TYPES = {"background", "related", "explanation", "reaction", "next"}
 
 EXTRACT_PROMPT = """You are a careful annotator. You do not judge truth, take sides, or add facts.
 You only record what THIS article says, in neutral language.
@@ -52,6 +53,12 @@ Return ONE JSON object with exactly these keys:
   ],
   "relations": [
     {{"from": "e1", "to": "e2", "type": "before|caused", "stance": "asserts|attributes|denies", "attributed_to": "..."}}
+  ],
+  "context": [
+    {{"id": "x1", "type": "background|related|explanation|reaction|next", "text": "...", "event": "...",
+      "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null", "end": "YYYY-MM-DDTHH:MM or null",
+      "precision": "exact|hour|part_of_day|day|week|month|unknown",
+      "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."]}}
   ]
 }}
 
@@ -82,10 +89,17 @@ Rules:
    "eyewitness", "minister", "unnamed source", ...). Write it in English.
 6. evidence: what the article cites: fir | court_record | official_data | video | official_statement |
    named_witness | unnamed_source | none.
-7. Record every factual detail about the article's core event (the "signature"), including small ones.
-   One fact per item; do not merge. If the article is a roundup or live blog covering several unrelated
-   news events, record ONLY the core event's facts and ignore the rest.
-8. Reply with the JSON only.
+7. Record every factual detail about the article's core event (the "signature") in events/claims,
+   including small ones. One fact per item; do not merge.
+8. Record in "context" what the article tells around the core event, so a reader understands it:
+   "background" = earlier events that led to this one; "related" = a SEPARATE event the article itself
+   connects to this one (put a short name of that event, with its date if given, in "event", e.g.
+   "FSSAI finding on Nestle dairy whitener, 4 October"); "explanation" = what a rule, term, number or
+   finding means; "reaction" = a person's or body's response not already recorded as a claim;
+   "next" = what happens next (deadlines, hearings, required steps). Same rules for wording,
+   stance and attribution. If the article is a roundup or live blog of UNRELATED news, ignore the
+   unrelated items entirely: context is only what the article connects to the core event.
+9. Reply with the JSON only.
 """
 
 
@@ -115,11 +129,14 @@ def _words(v) -> list[str]:
 def normalize_extraction(data: dict) -> dict | None:
     if not isinstance(data, dict):
         return None
-    out = {"signature": str(data.get("signature") or "").strip(), "events": [], "claims": [], "relations": []}
+    out = {"signature": str(data.get("signature") or "").strip(), "events": [], "claims": [], "relations": [],
+           "context": []}
     ids = set()
-    for kind in ("events", "claims"):
+    for kind in ("events", "claims", "context"):
         for i, it in enumerate(data.get(kind) or []):
             if not isinstance(it, dict) or not str(it.get("text") or "").strip():
+                continue
+            if kind == "context" and it.get("type") not in CONTEXT_TYPES:
                 continue
             local = str(it.get("id") or f"{kind[0]}{i + 1}")
             ids.add(local)
@@ -131,7 +148,10 @@ def normalize_extraction(data: dict) -> dict | None:
                 "evidence": it.get("evidence") if it.get("evidence") in EVIDENCE else "none",
                 "loaded_words": _words(it.get("loaded_words")),
             }
-            if kind == "events":
+            if kind == "context":
+                item["context"] = it["type"]
+                item["event"] = str(it.get("event") or "").strip()[:160] if it["type"] == "related" else ""
+            if kind == "events" or (kind == "context" and it.get("type") in ("background", "related")):
                 start, end = _iso_or_none(it.get("start")), _iso_or_none(it.get("end"))
                 if start and not end:
                     end = start
@@ -169,6 +189,14 @@ def store_extraction(store: Store, article_id: int, story_id: int | None, ex: di
                              text=it["text"], stance=it["stance"], attributed_to=it["attributed_to"],
                              evidence=it["evidence"], loaded_words=it["loaded_words"],
                              time=it.get("time"), rel=None))
+    for it in ex.get("context") or []:
+        # context is stored like a statement, marked in `rel` (unused for statements): background and
+        # related events are events (they have times), the rest are claims
+        kind = "event" if it["context"] in ("background", "related") else "claim"
+        rows.append(dict(story_id=story_id, article_id=article_id, local_id=it["id"], kind=kind,
+                         text=it["text"], stance=it["stance"], attributed_to=it["attributed_to"],
+                         evidence=it["evidence"], loaded_words=it["loaded_words"], time=it.get("time"),
+                         rel={"context": it["context"], "event": it.get("event") or ""}))
     for i, r in enumerate(ex["relations"]):
         rows.append(dict(story_id=story_id, article_id=article_id, local_id=f"r{i + 1}", kind="relation",
                          text="", stance=r["stance"], attributed_to=r["attributed_to"], evidence="none",
@@ -182,12 +210,16 @@ def _extract_one(store: Store, router: Router, a: dict) -> str:
     prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
                                    title=a["title"] or "", text=(a["text"] or "")[: SETTINGS.max_article_chars])
     try:
-        res = router.call("bulk", prompt, json_out=True, max_output_tokens=3000)
+        res = router.call("bulk", prompt, json_out=True, max_output_tokens=4000)
         ex = normalize_extraction(res.data)
         if ex is None:
             raise ValueError("empty extraction")
     except QuotaExhausted:
         return "quota"
+    except CallFailed as e:
+        # the model was overloaded: not the article's fault, so it keeps all its tries
+        log.info("extract: model unavailable for article %s (%s)", a["id"], str(e)[:120])
+        return "failed"
     except Exception as e:  # noqa: BLE001
         log.warning("extract failed for article %s: %s", a["id"], str(e)[:200])
         store.exec(update(articles).where(articles.c.id == a["id"])
