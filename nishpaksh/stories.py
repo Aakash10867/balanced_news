@@ -83,7 +83,11 @@ def _reset_story(store: Store, story_id: int) -> None:
 def _detach(store: Store, ids: list[int], clear_embedding: bool = False) -> None:
     """Take articles out of their stories. A story re-matches its statements only if an article
     that had already been read (and so contributed statements) left it."""
-    rows = store.rows(select(articles.c.story_id, articles.c.extracted_at).where(articles.c.id.in_(ids)))
+    rows = store.rows(select(articles.c.id, articles.c.story_id, articles.c.extracted_at).where(articles.c.id.in_(ids or [-1])))
+    # a published story is closed (editions.py): its articles and statements stay as they are
+    pub = {r["story_id"] for r in store.rows(select(published.c.story_id))}
+    rows = [r for r in rows if r["story_id"] is None or r["story_id"] not in pub]
+    ids = [r["id"] for r in rows]
     olds = sorted({r["story_id"] for r in rows if r["story_id"] is not None and r["extracted_at"]})
     for i in range(0, len(ids), 500):
         chunk = ids[i:i + 500]
@@ -291,15 +295,18 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
         .order_by(articles.c.published_at)
     )
     model = embed_model(router)
-    stale = {a["id"] for a in arts if a["embedding"] and model and a.get("embed_model") != model}
+    # published stories are closed (editions.py): their articles are never moved out or regrouped
+    pub = {r["story_id"] for r in store.rows(select(published.c.story_id))}
+    arts = [dict(a, frozen=a["story_id"] is not None and a["story_id"] in pub) for a in arts]
+    stale = {a["id"] for a in arts if a["embedding"] and model and a.get("embed_model") != model and not a.get("frozen")}
     # an unread article whose vector came from another model sits in a story chosen on meaningless
     # similarities: take it out now (cheap: it has no statements) and let it wait for a new vector
     loose = [a["id"] for a in arts if model and a["story_id"] is not None and not a["extracted_at"]
-             and a.get("embed_model") != model]
+             and a.get("embed_model") != model and not a.get("frozen")]
     if loose:
         _detach(store, loose)
         for a in arts:
-            if not a["extracted_at"] and a.get("embed_model") != model:
+            if not a["extracted_at"] and a.get("embed_model") != model and not a.get("frozen"):
                 a["story_id"] = None
         _drop_empty_stories(store)
     embedded = _embed_missing(store, router, arts)
@@ -328,13 +335,13 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
             by_story.setdefault(a["story_id"], []).append(i)
     split_moved = 0
     for sid, idx in list(by_story.items()):
-        split_moved += _split_story(store, sid, idx, arts, X)
+        if sid not in pub:          # published stories are closed: never split, never joined
+            split_moved += _split_story(store, sid, idx, arts, X)
 
     index = _Index(X)
     for i, a in enumerate(arts):
         if a["story_id"] is not None:
             index.add(a["story_id"], i)
-    pub = {r["story_id"] for r in store.rows(select(published.c.story_id))}
     # articles that need a story: new ones, and the lone unread article of a one-article story
     # (it may have arrived before its siblings); the latter keep their story unless they join one
     lone = {sid: m[0] for sid, m in index.members.items()
@@ -359,9 +366,35 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
         return store.insert_returning_id(stories, dict(created_at=utcnow(), updated_at=utcnow(),
                                                        signature=arts[i]["title"], dirty=False, qualifies=False))
 
+    candidate_of: dict[int, int] = {}
+
+    def follow_up_story(parent: int, i: int) -> int:
+        """Later reports about a published story gather in one candidate story of their own: it is
+        published only if it earns a follow-up (editions.follow_up_ok)."""
+        if parent not in candidate_of:
+            an = analyses.get(parent)
+            if an is None:
+                an = (store.one(select(stories.c.analysis).where(stories.c.id == parent)) or {}).get("analysis") or {}
+            an = dict(an)
+            ed = dict(an.get("edition") or {})
+            cand = ed.get("candidate")
+            alive = cand is not None and cand not in pub and store.one(select(stories.c.id).where(stories.c.id == cand))
+            if not alive:
+                cand = store.insert_returning_id(stories, dict(
+                    created_at=utcnow(), updated_at=utcnow(), signature=arts[i]["title"], dirty=False,
+                    qualifies=False, analysis={"edition": {"follows": parent}}))
+                ed["candidate"] = cand
+                an["edition"] = ed
+                analyses[parent] = an
+                store.exec(update(stories).where(stories.c.id == parent).values(analysis=an))
+            candidate_of[parent] = cand
+        return candidate_of[parent]
+
     def place(i: int, sid: int | None) -> None:
         """Put article i into story sid (None: a new story). A lone article keeps its own story
-        when it joins nothing."""
+        when it joins nothing. An article that belongs with a published story goes to its candidate."""
+        if sid is not None and sid in pub:
+            sid = follow_up_story(sid, i)
         own = arts[i]["story_id"]
         if sid is None:
             if own is not None:

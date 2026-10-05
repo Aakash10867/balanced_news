@@ -51,6 +51,8 @@ jobs:
     # checkpoint: it stops starting new work, finishes what is in progress, and leaves the
     # rest for the next run, so this limit should never be what ends a healthy run.
     timeout-minutes: 75
+    permissions:
+      contents: write          # push articles older than 3 days to the archive branch
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -67,3 +69,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           RUN_TRIGGER: ${{ github.event.inputs.reason || github.event_name }}
         run: python -m nishpaksh.run --time-budget 45
+      - name: Move articles older than 3 days to the archive branch
+        # a story leaves the database only after its page is pushed (nishpaksh/pagearchive.py)
+        if: ${{ !cancelled() }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/archive_pages.sh

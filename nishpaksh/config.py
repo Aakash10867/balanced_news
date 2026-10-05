@@ -61,7 +61,8 @@ class Settings:
     vectors_retention_hours: int = 96        # embeddings + MinHash: only needed inside the 72 h windows
     unread_retention_days: int = 7           # articles never sent to a model (single-source stories)
     text_retention_days: int = 14            # full text of read articles; extracted claims are kept
-    story_retention_days: int = 90           # whole stories: claims, verdicts, published pages
+    story_retention_days: int = 90           # whole stories never published (published ones: archive_after_days)
+    archive_after_days: float = 3            # a published article moves to the GitHub archive branch, then leaves the db
     storage_soft_limit_mb: int = 350         # above this, retention halves until back under
 
     # proactive search (discover.py) and Tavily (1,000 credits a month)
@@ -92,9 +93,20 @@ class Settings:
     embed_min_texts_per_run: int = 60      # Google counts each text; ~1,000 texts a day per key
     embed_reserve_per_run: int = 40        # kept back for each later run today (new arrivals)
 
+    # editions (owner, Oct 5 2026): an article is written once, when its coverage has settled, and is
+    # never changed again (only its colours mature by code). Later reporting becomes a follow-up only
+    # if it carries a lot of new information or a major development.
+    settle_quiet_hours: float = 3          # no new independent outlet for this long...
+    settle_max_hours: float = 8            # ...or this long after the publishing rule was first met
+    stale_after_hours: float = 36          # a story whose newest source is older than this is not written (old news)
+    followup_min_outlets: int = 3          # independent outlets carrying the new information
+    followup_same_day_outlets: int = 5     # on the parent's own (IST) date: a major development only, and this many
+    followup_min_new: int = 4              # "a lot of new": this many new non-minor core statements...
+    followup_new_share: float = 0.5        # ...or this share of the parent's, whichever is more
+
     # extraction: only stories covered by >= 2 independent sources; at most this many articles each
     max_extract_per_story: int = 8
-    waiting_per_run: int = 12            # waiting stories offered to the writer per run, most covered first
+    waiting_per_run: int = 12            # settled stories offered to the writer per run, most covered first
     min_sources_to_read: int = 3          # independent sources with a readable page before a story is read
 
     # claim matching (TF-IDF within a story; the middle band goes to an LLM)

@@ -136,6 +136,8 @@
 <script>
 const SUPABASE_URL = "https://mmjojuccdgmmiwyzypvh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_0Gex7dG16My6MPvW2M1Jsg_raI1lqfS";  // public, read-only: published stories
+// articles older than three days live on the repository's archive branch (nishpaksh/pagearchive.py)
+const ARCHIVE_URL = "https://raw.githubusercontent.com/Aakash10867/balanced_news/archive";
 
 const T = {
   en: {
@@ -144,7 +146,7 @@ const T = {
     sameOwner: "Outlets with the same owner, and copies of the same wire story, count as one source.",
     ongoing: "part of an ongoing story", more: "More stories", earlier: "Earlier in this story", next: "What happened next",
     helpline: "If you or someone you know is struggling, help is available: Tele-MANAS, free and confidential, 14416 or 1-800-891-4416 (24×7).",
-    updated: "updated", ago: a => `${a} ago`, back: "All stories",
+    updated: "published", ago: a => `${a} ago`, back: "All stories",
     k_established: "established", k_developing: "developing (recent)", k_disputed: "sources disagree",
     k_unverified: "not yet cross-checked", k_false: "shown false", falseTag: "FALSE",
     unreadable: "could not be read", unread: "not read (same owner as another source, or reading limit)",
@@ -167,7 +169,7 @@ const T = {
     sameOwner: "एक ही मालिक के माध्यम, और एक ही एजेंसी ख़बर की प्रतियाँ, एक स्रोत गिनी जाती हैं।",
     ongoing: "जारी ख़बर का हिस्सा", more: "और ख़बरें", earlier: "इस ख़बर में पहले", next: "इसके बाद क्या हुआ",
     helpline: "अगर आप या आपका कोई परिचित मुश्किल में है, तो मदद उपलब्ध है: टेली-मानस, निःशुल्क और गोपनीय, 14416 या 1-800-891-4416 (24×7)।",
-    updated: "अपडेट", ago: a => `${a} पहले`, back: "सभी ख़बरें",
+    updated: "प्रकाशित", ago: a => `${a} पहले`, back: "सभी ख़बरें",
     k_established: "स्थापित", k_developing: "विकसित हो रही (ताज़ा)", k_disputed: "स्रोतों में मतभेद",
     k_unverified: "अभी पुष्टि नहीं", k_false: "असत्य सिद्ध", falseTag: "असत्य",
     unreadable: "पढ़ा नहीं जा सका", unread: "नहीं पढ़ा गया (दूसरे स्रोत का ही मालिक, या पढ़ने की सीमा)",
@@ -319,12 +321,28 @@ function detailHtml(p, t) {
   return all.map(line).join("");
 }
 
+// an archived article: the page exactly as it was published, gzipped JSON
+async function archived(id) {
+  if (window.NP_DEMO || !("DecompressionStream" in window)) return null;
+  try {
+    const r = await fetch(`${ARCHIVE_URL}/pages/${encodeURIComponent(id)}.json.gz`);
+    if (!r.ok) return null;
+    const page = await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).json();
+    return {story_id: page.story_id, updated_at: page.written_at, headline_en: page.headline_en,
+            headline_hi: page.headline_hi, payload_en: page.payload_en, payload_hi: page.payload_hi};
+  } catch (e) { return null; }
+}
+
 async function story(id) {
   const t = T[lang];
   main.innerHTML = "";
   let rows;
   try { rows = await api(`published?story_id=eq.${encodeURIComponent(id)}&select=*`); }
   catch (e) { main.innerHTML = `<p class="error">${esc(t.error)}</p>`; return; }
+  if (!rows.length) {
+    const old = await archived(id);
+    if (old) rows = [old];
+  }
   if (!rows.length) { main.innerHTML = `<p class="empty">${esc(t.missing)} <a href="#/">${esc(t.back)}</a></p>`; return; }
   const row = rows[0];
   const p = lang === "hi" && row.payload_hi ? row.payload_hi : row.payload_en;

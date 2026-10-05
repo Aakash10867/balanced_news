@@ -3,7 +3,7 @@ import datetime as dt
 import numpy as np
 import pytest
 
-from nishpaksh.db import Store, articles, canonical, claims, insert, published, select, source_clusters, stories, story_pairs, update
+from nishpaksh.db import Store, articles, canonical, claims, delete, insert, published, select, source_clusters, stories, story_pairs, update
 from nishpaksh.router import ModelSlot, Router, parse_json
 from nishpaksh.timeline import build_timeline
 from nishpaksh.wire import independence_groups, jaccard, minhash
@@ -178,30 +178,28 @@ def test_end_to_end(store):
     first = next(i for tier in pub["payload_en"]["timeline"] for i in tier) if pub["payload_en"]["timeline"] else None
     cont_first = {i["text"]: i for i in pub["payload_en"]["contested"]}
     assert first is None and cont_first["A section of the Kesarganj flyover collapsed"]["verdict"] == "developing"
-    # six hours later, with nothing new: the page is re-checked and the collapse is established
+    # six hours later, with nothing new: the article is closed (written once), only its colours
+    # mature by code: the collapse is now established, in the same place on the page
     _age_rules(store)
     run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB)
     pub = store.one(select(published).where(published.c.story_id == contested["id"]))
-    assert pub["version"] == 2
+    assert pub["version"] == 1
     en, hi = pub["payload_en"], pub["payload_hi"]
     # 5 articles; the two PTI copies count once -> 4 independent sources
     assert en["counts"] == {"articles": 5, "independent_sources": 4, "outlets": 5}
 
-    timeline_text = [i["text"] for tier in en["timeline"] for i in tier]
-    assert any("collapsed" in t for t in timeline_text)
-    assert not any("rain" in t.lower() for t in timeline_text)   # one-sided: not in the timeline
+    cont = {i["text"]: i for i in en["contested"]}
+    collapse = cont["A section of the Kesarganj flyover collapsed"]
+    assert collapse["verdict"] == "corroborated" and collapse["n_origins"] >= 2 and collapse["n_outlets"] >= 3
+    assert {i["text"]: i["verdict"] for i in hi["contested"]}[f"[हिं] {collapse['text']}"] == "corroborated"
+    said = [x for para in en["narrative"]["paragraphs"] for x in para if collapse["id"] in x["ids"]]
+    assert said and all(x["class"] in ("established", "disputed", "false") for x in said)
     # four outlets report the arrest, but every one of them got it from the police: one origin
     # (the police and the PWD minister speak for the same state government), so not established
-    cont0 = {i["text"]: i for i in en["contested"]}
-    arrest = cont0["Police arrested the site engineer"]
+    arrest = cont["Police arrested the site engineer"]
     assert arrest["verdict"] == "unverified" and arrest["origins"] == ["gov:uttar pradesh"]
-    collapse = next(i for tier in en["timeline"] for i in tier if "collapsed" in i["text"])
-    assert collapse["verdict"] == "corroborated" and collapse["n_origins"] >= 2 and collapse["n_outlets"] >= 3
+    assert not any("rain" in i["text"].lower() for tier in en["timeline"] for i in tier)
 
-    est = {i["text"]: i for i in en["established"]}
-    assert any("died" in t or "killed" in t for t in est)        # paraphrases merged and corroborated
-
-    cont = {i["text"]: i for i in en["contested"]}
     sub = cont["The contractor used substandard material"]
     assert sub["verdict"] == "false"                             # both models, primary evidence
     assert sub["check"]["evidence_urls"] == ["https://example.org/order"]
@@ -219,9 +217,12 @@ def test_end_to_end(store):
     assert en["headline"].startswith("Section of Kesarganj")
     assert hi["headline"].startswith("[हिं]") and hi["translation_complete"]
 
-    # another run with nothing new: no reprocessing, no new version
+    # another run with nothing new: nothing is reprocessed or rewritten
+    text = [x["text"] for para in en["narrative"]["paragraphs"] for x in para]
     run(store=store, backend=backend, time_budget_min=30, ingest_news=False, verify_budget=VB)
-    assert store.one(select(published).where(published.c.story_id == contested["id"]))["version"] == 2
+    again = store.one(select(published).where(published.c.story_id == contested["id"]))
+    assert again["version"] == 1 and again["updated_at"] == pub["updated_at"]
+    assert [x["text"] for para in again["payload_en"]["narrative"]["paragraphs"] for x in para] == text
 
 
 def test_headline_with_loaded_word_is_rejected(store):
@@ -848,6 +849,8 @@ def test_story_grouped_on_old_vectors_is_not_published(store):
     _seed(store)
     _run_twice(store)
     assert store.rows(select(published))
+    # before it was written (a published article is closed and never regrouped)
+    store.exec(delete(published))
     store.exec(update(articles).where(articles.c.extracted_at.is_not(None)).values(embed_model="old-model"))
 
     class NoEmbed(FakeBackend):
@@ -914,6 +917,7 @@ def test_filler_is_never_published(store):
     _seed(store)
     _run_twice(store)
     sid = store.rows(select(published.c.story_id))[0]["story_id"]
+    store.exec(delete(published))       # judged before it is written
     store.exec(update(stories).where(stories.c.id == sid).values(signature="Aaj ka Rashifal"))
     an = dict(store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"])
     an.pop("importance", None)
@@ -933,7 +937,7 @@ def test_filler_is_never_published(store):
 
 def test_a_later_development_links_to_its_story_and_gets_background(store):
     """A bail hearing for the arrested engineer is a development of the flyover collapse: the new page
-    links back, opens with the new development, and the old page gains 'what happened next'."""
+    links back; the old article is closed and never touched."""
     from nishpaksh import compose, threads
     from nishpaksh.db import story_links
     _seed(store)
@@ -947,14 +951,14 @@ def test_a_later_development_links_to_its_story_and_gets_background(store):
     r.resolve()
     assert threads.find_parents(store, r, child, "Court grants bail to Kesarganj flyover site engineer",
                                 "The site engineer arrested after the Kesarganj flyover collapse got bail") == [parent]
-    assert store.rows(select(story_links)) and store.one(select(stories.c.dirty).where(stories.c.id == parent))["dirty"]
+    assert store.rows(select(story_links)) and not store.one(select(stories.c.dirty).where(stories.c.id == parent))["dirty"]
     # an unrelated story with no shared name is never linked
     other = store.insert_returning_id(stories, dict(created_at=later, updated_at=later, dirty=False, qualifies=True,
                                                    signature="Monsoon session of Lucknow assembly adjourned"))
     assert threads.find_parents(store, r, other, "Monsoon session of Lucknow assembly adjourned", "") == []
-    compose.publish_story(store, r, parent)
-    page = store.one(select(published).where(published.c.story_id == parent))["payload_en"]
-    assert page["children"] == [] or page["children"][0]["story_id"] == child   # child shows once it is published
+    before = store.one(select(published).where(published.c.story_id == parent))
+    assert compose.publish_story(store, r, parent) is False          # closed: never written again
+    assert store.one(select(published).where(published.c.story_id == parent)) == before
     assert threads.root_of(store, child) == parent
 
 
@@ -1119,40 +1123,6 @@ def test_colour_change_recolours_the_essay_without_a_rewrite():
     # a new statement that is not minor is material: worth a rewrite when the writer can afford one
     items.append(_item(3, "The state ordered an inquiry", "developing"))
     assert needs_rewrite(re2, _payload(items))
-
-
-def test_new_story_waits_for_the_writer_and_live_page_keeps_its_essay(store):
-    """No writer quota: a new story is not published as stitched sentences; a page already written
-    by the writer stays up with its essay. A page that was only ever stitched is taken down."""
-    from nishpaksh import compose
-    from nishpaksh.router import QuotaExhausted
-    _seed(store)
-    _run_twice(store)
-    row = store.rows(select(published))[0]
-    sid = row["story_id"]
-    essay = [s["text"] for p in row["payload_en"]["narrative"]["paragraphs"] for s in p]
-
-    class NoWriter(FakeBackend):
-        def generate(self, model, prompt, json_mode, grounded):
-            if "Write the story below as ONE news article" in prompt:
-                raise RuntimeError("429 RESOURCE_EXHAUSTED: GenerateRequestsPerDay")
-            return super().generate(model, prompt, json_mode, grounded)
-    r = _router(store, NoWriter())
-    # a new statement arrives (material): the rewrite fails for quota, the written essay stays
-    nar = dict(row["payload_en"]["narrative"], covers=[], hash="changed")
-    pe = dict(row["payload_en"], narrative=nar)
-    store.exec(update(published).where(published.c.story_id == sid).values(payload_en=pe))
-    assert compose.publish_story(store, r, sid)
-    kept = store.one(select(published).where(published.c.story_id == sid))["payload_en"]["narrative"]
-    assert [s["text"] for p in kept["paragraphs"] for s in p][:2] == essay[:2] and kept.get("recoloured")
-    # a page stitched by code (no writer model) is not kept: taken down until the writer can do it
-    pe = dict(row["payload_en"], narrative=dict(kept, model=None))
-    store.exec(update(published).where(published.c.story_id == sid).values(payload_en=pe))
-    assert compose.publish_story(store, r, sid) is False
-    assert store.rows(select(published).where(published.c.story_id == sid)) == []
-    assert store.one(select(stories.c.qualifies).where(stories.c.id == sid))["qualifies"] is True
-    # so is one written by Flash-Lite
-    assert compose._keepable({"model": "gemini-3.5-flash-lite", "paragraphs": [[{}]]}) is False
 
 
 def test_pacing_opens_faster_on_indian_daytime_hours():
@@ -1543,32 +1513,6 @@ def test_a_tier_that_keeps_refusing_is_skipped_for_the_run():
     assert b.n <= TIER_OVERLOAD_STREAK + 2
 
 
-def test_unchanged_page_is_not_saved_again(store):
-    """Oct 5 2026: the same few pages got a new version and "updated" time every hour though nothing
-    on them changed. Same statements and verdicts: same headline, same version, same time."""
-    from nishpaksh import compose
-    _seed(store)
-    _run_twice(store)
-    row = store.rows(select(published))[0]
-    sid = row["story_id"]
-    r = _router(store, FakeBackend())
-    assert compose.publish_story(store, r, sid) is False
-    again = store.one(select(published).where(published.c.story_id == sid))
-    assert again["version"] == row["version"] and again["updated_at"] == row["updated_at"]
-    assert again["headline_en"] == row["headline_en"]
-    # a different stored headline is kept when the statements did not change (no model rewording)
-    pe = dict(row["payload_en"], headline="Earlier written headline")
-    store.exec(update(published).where(published.c.story_id == sid).values(payload_en=pe, headline_en="Earlier written headline"))
-    compose.publish_story(store, r, sid)
-    assert store.one(select(published).where(published.c.story_id == sid))["headline_en"] == "Earlier written headline"
-    # only the front-page order changed: refreshed in place, still no new version
-    pe = dict(store.one(select(published).where(published.c.story_id == sid))["payload_en"], rank=-99)
-    store.exec(update(published).where(published.c.story_id == sid).values(payload_en=pe))
-    assert compose.publish_story(store, r, sid) is False
-    after = store.one(select(published).where(published.c.story_id == sid))
-    assert after["payload_en"]["rank"] != -99 and after["version"] == row["version"]
-
-
 def test_health_flags_a_writer_that_wrote_nothing_for_two_runs(tmp_path):
     from nishpaksh.db import runs, utcnow
     from nishpaksh.run import writer_silent
@@ -1580,3 +1524,210 @@ def test_health_flags_a_writer_that_wrote_nothing_for_two_runs(tmp_path):
     assert msg and "52 calls" in msg and "50 overloaded 5xx" in msg
     assert writer_silent(store, {"tier_calls": {"writer": {"ok": 1, "overloaded 5xx": 3}}}) is None
     assert writer_silent(store, {"tier_calls": {}}) is None   # writer not asked this run
+
+
+def test_new_story_waits_for_the_writer_and_is_then_written_once(store):
+    """No writer: a new story is not published as stitched sentences; it waits, qualified. When the
+    writer is back it is written, once."""
+    from nishpaksh import compose
+    from nishpaksh.run import run
+
+    class NoWriter(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            if "Write the story below as ONE news article" in prompt or "Revise it into the final" in prompt:
+                return '{"paragraphs": []}', [], 10      # nothing usable
+            return super().generate(model, prompt, json_mode, grounded)
+    _seed(store)
+    stats = run(store=store, backend=NoWriter(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    assert store.rows(select(published)) == [] and stats["published"] == 0 and stats["publish_attempted"] >= 1
+    sid = store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))[0]["id"]
+    stats = run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    assert stats["published"] == 1
+    row = store.one(select(published).where(published.c.story_id == sid))
+    assert row["version"] == 1 and row["payload_en"]["written_at"]
+    assert compose.publish_story(store, _router(store, FakeBackend()), sid) is False
+    assert store.one(select(published).where(published.c.story_id == sid)) == row
+    # an essay by Flash-Lite is never kept
+    assert compose._keepable({"model": "gemini-3.5-flash-lite", "paragraphs": [[{}]]}) is False
+
+
+def test_published_article_is_closed_and_only_its_colours_mature(store):
+    """Owner, Oct 5 2026: a published article is never changed; its colours catch up with the 6-hour
+    clock, by code. Text, headline, version and time stay; nothing is read or analysed for it."""
+    from nishpaksh import editions
+    from nishpaksh.run import run
+    _seed(store)
+    run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    row = store.rows(select(published))[0]
+    sid = row["story_id"]
+    pe = row["payload_en"]
+    collapse = next(i for i in pe["contested"] if i["text"] == "A section of the Kesarganj flyover collapsed")
+    assert collapse["verdict"] == "developing"
+    said = [x for para in pe["narrative"]["paragraphs"] for x in para if collapse["id"] in x["ids"]]
+    text = [x["text"] for para in pe["narrative"]["paragraphs"] for x in para]
+    assert said and all(x["class"] == "developing" for x in said if len(x["ids"]) == 1)
+    # six hours on, and a new report arrives: it does not touch the article
+    _age_rules(store)
+    store.exec(update(stories).where(stories.c.id == sid).values(dirty=True))
+    calls = []
+
+    class Counting(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            calls.append(prompt[:60])
+            return super().generate(model, prompt, json_mode, grounded)
+    stats = run(store=store, backend=Counting(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    assert stats["analysed"] == 0 and not calls                      # no model call spent on it
+    now = store.one(select(published).where(published.c.story_id == sid))
+    assert now["version"] == 1 and now["updated_at"] == row["updated_at"] and now["headline_en"] == row["headline_en"]
+    pe2 = now["payload_en"]
+    assert [x["text"] for para in pe2["narrative"]["paragraphs"] for x in para] == text
+    c2 = next(i for i in pe2["contested"] if i["id"] == collapse["id"])          # same place on the page
+    assert c2["verdict"] == "corroborated" and stats["colours_matured"] == 1
+    assert all(x["class"] == "established" for para in pe2["narrative"]["paragraphs"] for x in para
+               if x["ids"] == [collapse["id"]])
+    assert not editions.mature(store, sid)                          # nothing more to change
+
+
+@pytest.mark.settle
+def test_article_waits_for_coverage_to_settle(store):
+    """Owner, Oct 5 2026: write after most of the coverage is in. Not while new outlets are still
+    turning up (3 quiet hours), but not later than 8 hours after the publishing rule was met."""
+    from nishpaksh import editions
+    from nishpaksh.run import run
+    _seed(store)
+    stats = run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    assert stats["qualifying"] == 1 and stats["settled"] == 0 and store.rows(select(published)) == []
+    sid = store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))[0]["id"]
+    met = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]["edition"]["met_at"]
+    assert met
+    now = dt.datetime.fromisoformat(met)
+    assert not editions.settled(store, sid, now + dt.timedelta(hours=2))      # the last outlet came just now
+    assert editions.settled(store, sid, now + dt.timedelta(hours=8, minutes=1))  # the cap
+    assert not editions.settled(store, sid, now + dt.timedelta(hours=37))         # old news is not written
+    # three quiet hours: written
+    store.exec(update(articles).values(fetched_at=NOW - dt.timedelta(hours=4)))
+    store.exec(update(stories).where(stories.c.id == sid).values(dirty=True))
+    stats = run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    assert stats["settled"] == 1 and stats["published"] == 1
+
+
+def test_later_reports_of_a_published_story_gather_in_a_follow_up_candidate(store):
+    """A report that would have joined a published story goes to a fresh candidate story instead; the
+    published story keeps exactly its articles. Later reports join the same candidate."""
+    from nishpaksh.db import story_links
+    from nishpaksh.editions import link_candidate
+    from nishpaksh.stories import group_stories
+    for k in range(3):
+        _put(store, f"[A] bridge collapse {k}", _vec(0 + k * 0.5, jitter=k), hours_ago=5 - k)
+    group_stories(store, _router(store))
+    parent = store.rows(select(stories.c.id))[0]["id"]
+    store.exec(insert(published).values(story_id=parent, version=1, updated_at=NOW, headline_en="h",
+                                        headline_hi="h", payload_en={}, payload_hi={}))
+    a = _put(store, "[A] bridge collapse later 1", _vec(0.7, jitter=7), hours_ago=0.5)
+    b = _put(store, "[A] bridge collapse later 2", _vec(0.8, jitter=8), hours_ago=0.4)
+    group_stories(store, _router(store))
+    sid_of = {r["id"]: r["story_id"] for r in store.rows(select(articles.c.id, articles.c.story_id))}
+    assert sid_of[a] == sid_of[b] != parent
+    assert sum(1 for v in sid_of.values() if v == parent) == 3
+    cand = sid_of[a]
+    an = store.one(select(stories.c.analysis).where(stories.c.id == cand))["analysis"]
+    assert an["edition"]["follows"] == parent
+    link_candidate(store, cand)
+    assert store.rows(select(story_links.c.parent_id, story_links.c.child_id)) == [{"parent_id": parent, "child_id": cand}]
+
+
+def _fu_payload(texts, minor=()):
+    items = [{"id": n + 1, "text": t, "kind": "event", "minor": t in minor, "role": "core"} for n, t in enumerate(texts)]
+    return {"timeline": [], "undated": [], "established": [], "contested": items, "context": []}
+
+
+def test_follow_up_needs_a_lot_of_new_or_a_major_development(store, monkeypatch):
+    """Against its parent: 4+ new statements carried by 3+ independent outlets, or a major development
+    carried by 3+; on the parent's own date only a major development carried by 5+."""
+    import nishpaksh.verify as V
+    from nishpaksh import editions
+    parent_items = ["A bridge collapsed in Kesarganj", "Four people died", "Police arrested the site engineer"]
+    store.exec(insert(published).values(story_id=1, version=1, updated_at=NOW - dt.timedelta(days=1),
+                                        headline_en="Bridge collapses", headline_hi="h",
+                                        payload_en=dict(_fu_payload(parent_items), written_at=(NOW - dt.timedelta(days=1)).isoformat()),
+                                        payload_hi={}))
+    reach = {}
+    monkeypatch.setattr(V, "_story_context", lambda store, sid: (None, {}, {}, None, None, {}))
+    monkeypatch.setattr(V, "support_summary", lambda cid, *a: {"support_groups": reach.get(cid, [])})
+
+    def check(sid, texts, groups, now=NOW):
+        store.exec(insert(stories).values(id=sid, created_at=NOW, updated_at=NOW, dirty=False, qualifies=True, analysis={}))
+        reach.clear()
+        reach.update({n + 1: g for n, g in enumerate(groups)})
+        return editions.follow_up_ok(store, _router(store, FakeBackend()), sid, _fu_payload(texts), [1], now)
+
+    old = parent_items[:2]
+    # repeats plus two small new facts: not enough
+    assert not check(10, old + ["Rescue work ended", "Traffic was diverted"], [["a", "b", "c"]] * 4)
+    # four new facts carried by three independent outlets: a follow-up
+    four = ["Rescue work ended", "Traffic was diverted", "An inquiry panel was formed", "The contractor was blacklisted"]
+    assert check(11, old + four, [["a"], ["b"], ["c"], ["a"], ["b"], ["c"]])
+    # ... but not when only two outlets carry them
+    assert not check(12, old + four, [["a"], ["b"], ["a"], ["b"], ["a"], ["b"]])
+    # one major development carried by three outlets
+    assert check(13, old + ["A court granted bail to the site engineer"], [["a"], ["b"], ["a", "b", "c"]])
+    # on the parent's own date: a major development carried by five outlets, nothing less
+    same_day = NOW - dt.timedelta(days=1)
+    assert not check(14, old + four, [["a", "b", "c", "d", "e"]] * 6, now=same_day + dt.timedelta(hours=3))
+    assert not check(15, old + ["A court granted bail to the site engineer"], [[], [], ["a", "b", "c"]],
+                     now=same_day + dt.timedelta(hours=3))
+    assert check(16, old + ["A court granted bail to the site engineer"], [[], [], ["a", "b", "c", "d", "e"]],
+                 now=same_day + dt.timedelta(hours=3))
+    # the judgement is kept per statement set: no second model call for the same statements
+    calls = []
+
+    class Counting(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            calls.append(1)
+            return super().generate(model, prompt, json_mode, grounded)
+    reach.update({1: [], 2: [], 3: ["a", "b", "c"]})
+    assert editions.follow_up_ok(store, _router(store, Counting()), 13,
+                                 _fu_payload(old + ["A court granted bail to the site engineer"]), [1], NOW)
+    assert calls == []
+
+
+def test_published_articles_move_to_the_archive_branch_and_stay_findable(store, tmp_path, monkeypatch):
+    """After 3 days a published article is written to the archive branch; only once it is committed
+    does it leave the database. Follow-ups still find it there, and read its page."""
+    import subprocess
+    from nishpaksh import editions, pagearchive, threads
+    from nishpaksh.db import story_links
+    _seed(store)
+    _run_twice(store)
+    row = store.rows(select(published))[0]
+    sid = row["story_id"]
+    arch = tmp_path / "arch"
+    subprocess.run(["git", "init", "-q", "-b", "archive", str(arch)], check=True)
+    # not yet 3 days old: nothing moves
+    assert pagearchive.export_due(store, arch) == []
+    later = row["updated_at"] + dt.timedelta(days=3, minutes=1)
+    assert pagearchive.export_due(store, arch, now=later) == [sid]
+    page = arch / "pages" / f"{sid}.json.gz"
+    assert page.exists() and (arch / "index" / f"{row['payload_en']['written_at'][:7]}.jsonl").exists()
+    # written but not committed: it stays in the database
+    assert pagearchive.delete_archived(store, arch) == 0 and store.rows(select(published))
+    git = ["git", "-C", str(arch), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run(git + ["add", "pages", "index"], check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "archive"], check=True)
+    assert pagearchive.delete_archived(store, arch) == 1
+    assert store.rows(select(published)) == [] and store.rows(select(stories.c.id).where(stories.c.id == sid)) == []
+    # the page and the index are read back from the archive
+    monkeypatch.setenv("NISHPAKSH_ARCHIVE_URL", str(arch))
+    pagearchive._page_cache.clear()
+    pagearchive._index_cache.clear()
+    got = editions.parent_pages(store, [sid])[sid]
+    assert got["headline_en"] == row["headline_en"] and got["payload_en"]["narrative"] == row["payload_en"]["narrative"]
+    # (Postgres never reuses an id; SQLite would hand the deleted parent's id to the next story)
+    child = store.insert_returning_id(stories, dict(id=sid + 1000, created_at=later, updated_at=later, dirty=False,
+                                                   qualifies=True, signature="Court grants bail to Kesarganj flyover site engineer"))
+    assert [x["story_id"] for x in pagearchive.recent_index(60, later)] == [sid]
+    monkeypatch.setattr(threads, "utcnow", lambda: later)
+    assert threads.find_parents(store, _router(store, FakeBackend()), child,
+                                "Court grants bail to Kesarganj flyover site engineer",
+                                "The site engineer arrested after the Kesarganj flyover collapse got bail") == [sid]
+    assert store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == child)) == [{"parent_id": sid}]

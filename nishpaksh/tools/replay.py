@@ -18,7 +18,7 @@ import tempfile
 from sqlalchemy import insert as sa_insert, text as sql
 
 from ..config import database_url, gemini_api_keys, load_yaml
-from ..db import Store, articles, canonical, claims, md, published, select, stories, story_links
+from ..db import Store, articles, canonical, claims, delete, md, published, select, stories, story_links
 from ..router import GeminiBackend, Router
 
 log = logging.getLogger("replay")
@@ -62,6 +62,8 @@ def main() -> None:
         entry = {"story": sid, "old_headline": old.get(sid)}
         try:
             entry["consolidate"] = consolidate_story(local, router, sid)
+            # a published article is never rewritten; on this scratch copy it is written afresh
+            local.exec(delete(published).where(published.c.story_id == sid))
             ok = compose.publish_story(local, router, sid)
             row = local.one(select(published).where(published.c.story_id == sid))
             pe = (row or {}).get("payload_en") or {}

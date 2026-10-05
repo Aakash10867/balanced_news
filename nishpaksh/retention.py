@@ -4,7 +4,8 @@ What is kept, and for how long (all in config.Settings):
   embeddings + MinHash    ~4 days   only used inside the 72-hour grouping windows
   unread articles         7 days    single-source stories that were never sent to a model
   full text of read ones  14 days   the extracted claims carry what matters
-  whole stories           90 days   claims, verdicts, published page, its translations
+  whole stories           90 days   stories never published (claims, verdicts, translations)
+  published stories       3 days    then the page moves to the archive branch (pagearchive.py)
   source agreements       forever   tiny, and the perspective model learns from all history
 
 If the database still grows past the soft limit, every window is halved for that run.
@@ -58,32 +59,48 @@ def _apply(store: Store, scale: float) -> dict:
                                articles.c.text.is_not(None))
         .values(text=None)).rowcount or 0
 
-    # whole stories past retention, and empty stories nobody will revisit
+    # whole stories past retention, and empty stories nobody will revisit. Published stories are
+    # never deleted here: they leave only after their page is on the archive branch (pagearchive.py)
+    live = {r["story_id"] for r in store.rows(select(published.c.story_id))}
     old = [r["id"] for r in store.rows(select(stories.c.id).where(
-        stories.c.updated_at < days(SETTINGS.story_retention_days)))]
+        stories.c.updated_at < days(SETTINGS.story_retention_days))) if r["id"] not in live]
     with store.engine.connect() as c:
-        live = {r[0] for r in c.execute(select(articles.c.story_id).where(articles.c.story_id.is_not(None)).distinct())}
+        has_articles = {r[0] for r in c.execute(select(articles.c.story_id).where(articles.c.story_id.is_not(None)).distinct())}
     empty = [r["id"] for r in store.rows(select(stories.c.id).where(
-        stories.c.updated_at < days(SETTINGS.unread_retention_days))) if r["id"] not in live]
+        stories.c.updated_at < days(SETTINGS.unread_retention_days)))
+        if r["id"] not in has_articles and r["id"] not in live]
     doomed = sorted(set(old) | set(empty))
-    if doomed:
-        from .compose import _collect_strings, _key
-        keys = []
-        for p in store.rows(select(published.c.payload_en).where(published.c.story_id.in_(doomed))):
-            if p["payload_en"]:
-                keys += [_key(s) for s in _collect_strings(p["payload_en"])]
-        for i in range(0, len(keys), 500):
-            store.exec(delete(translations).where(translations.c.key.in_(keys[i:i + 500])))
-        for i in range(0, len(doomed), 500):
-            chunk = doomed[i:i + 500]
-            store.exec(delete(claims).where(claims.c.story_id.in_(chunk)))
-            store.exec(delete(canonical).where(canonical.c.story_id.in_(chunk)))
-            store.exec(delete(published).where(published.c.story_id.in_(chunk)))
-            store.exec(delete(articles).where(articles.c.story_id.in_(chunk)))
-            store.exec(delete(stories).where(stories.c.id.in_(chunk)))
+    delete_stories(store, doomed)
     out["stories_deleted"] = len(doomed)
     _ = story_pairs  # kept on purpose: small, and the perspective model learns from all of it
     return out
+
+
+def delete_stories(store: Store, doomed: list[int], keep_links: bool = False) -> int:
+    """A story and everything about it: statements, verdicts, page, its translations, articles.
+    Thread links are kept for archived stories (a follow-up still names its parent)."""
+    if not doomed:
+        return 0
+    from .compose import _collect_strings, _key
+    from .db import story_links
+    keys = []
+    for p in store.rows(select(published.c.payload_en).where(published.c.story_id.in_(doomed))):
+        try:
+            keys += [_key(s) for s in _collect_strings(p["payload_en"])] if p["payload_en"] else []
+        except (KeyError, TypeError):
+            pass    # a page of an older shape: its translations are left (the cache is small)
+    for i in range(0, len(keys), 500):
+        store.exec(delete(translations).where(translations.c.key.in_(keys[i:i + 500])))
+    for i in range(0, len(doomed), 500):
+        chunk = doomed[i:i + 500]
+        store.exec(delete(claims).where(claims.c.story_id.in_(chunk)))
+        store.exec(delete(canonical).where(canonical.c.story_id.in_(chunk)))
+        store.exec(delete(published).where(published.c.story_id.in_(chunk)))
+        store.exec(delete(articles).where(articles.c.story_id.in_(chunk)))
+        store.exec(delete(stories).where(stories.c.id.in_(chunk)))
+        if not keep_links:
+            store.exec(delete(story_links).where(story_links.c.parent_id.in_(chunk) | story_links.c.child_id.in_(chunk)))
+    return len(doomed)
 
 
 def enforce(store: Store) -> dict:

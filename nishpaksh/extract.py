@@ -251,8 +251,12 @@ def select_for_extraction(store: Store) -> list[dict]:
                articles.c.extract_failures, articles.c.extracted_at, articles.c.text_source)
         .where(articles.c.story_id.is_not(None), articles.c.text.is_not(None))
     )
+    from .editions import frozen_ids
+    closed = frozen_ids(store)       # a published story is never read again (editions.py)
     by_story: dict[int, list[dict]] = {}
     for r in rows:
+        if r["story_id"] in closed:
+            continue
         if ROUNDUP.search(r["title"] or ""):
             continue   # live blogs and news roundups mix unrelated events into one story
         by_story.setdefault(r["story_id"], []).append(r)
@@ -320,9 +324,12 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5) -> int:
                              articles.c.story_id, articles.c.text_source, articles.c.extracted_at, articles.c.published_at,
                              articles.c.extract_failures, articles.c.author)
                       .where(articles.c.story_id.is_not(None), articles.c.published_at >= utcnow() - dt.timedelta(hours=48)))
+    from .editions import frozen_ids
+    closed = frozen_ids(store)       # no credits on a published story (editions.py)
     by_story: dict[int, list[dict]] = {}
     for r in rows:
-        by_story.setdefault(r["story_id"], []).append(r)
+        if r["story_id"] not in closed:
+            by_story.setdefault(r["story_id"], []).append(r)
     wanted: list[tuple[int, dt.datetime, dict]] = []
     for sid, arts in by_story.items():
         groups = independence_groups(arts)

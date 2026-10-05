@@ -38,12 +38,27 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   never invent a speaker; "allegedly" stays as long as the outlets say it. Suicide stories get the
   Tele-MANAS helpline note.
 - **Only the writer produces prose (Oct 2026).** A new story is published only with a good essay
-  (`narrative.essay_ok`: written by a Flash model, covers 60% of non-minor statements); otherwise it
-  waits. Code-stitched pages and Flash-Lite essays are never kept (`compose._keepable`). A live
-  essay is recoloured by code when only verdicts change (`narrative.recolour`); a rewrite is spent
-  only on a material change (`needs_rewrite`). Rejected sentences are dropped, not patched; what the
-  essay does not carry is listed under it ("Also reported"). A fallback headline never goes live.
-  Writer failures per statement set are kept in `stories.analysis.writer_failures` (3 tries max).
+  (`narrative.essay_ok`: written by a Flash model); otherwise it waits. Code-stitched pages and
+  Flash-Lite essays are never kept (`compose._keepable`). Rejected sentences are dropped, not
+  patched. A fallback headline never goes live. Writer failures per statement set are kept in
+  `stories.analysis.writer_failures` (3 tries max).
+- **Editions: written once, like a newspaper (owner, Oct 5 2026; `editions.py`).**
+  - An article is written when coverage has SETTLED: publishing rule met, then no new independent
+    outlet for 3 h, or 8 h after the rule was first met (`analysis.edition.met_at`). On Oct 1-5 data a
+    3 h wait saw 86% of a story's outlets. A story whose newest source is >36 h old is not written.
+  - A published article is CLOSED: text, headline, statements, sections, perspectives never change;
+    no article joins it, nothing is read or analysed for it, no model call is spent on it. Only its
+    colours mature by code (`editions.mature`: the 6-hour clock on the evidence it was written with).
+    The parent is never corrected: a follow-up carries any dispute.
+  - Later reports of a published event go to a CANDIDATE story (`stories.py` redirects joins;
+    `analysis.edition.follows`). It is read like any story and published only as a follow-up when,
+    against its parent (`follow_up_ok`, one Flash-Lite call per statement set): 4+ new non-minor core
+    statements (or half the parent's) carried by 3+ independent outlets, or a MAJOR development
+    (arrest, FIR/charges, court order/verdict/bail, deaths, resignation/sacking, official decision,
+    result) carried by 3+. On the parent's IST date: only a major development carried by 5+.
+  - After 3 days the article moves to the `archive` branch (`pagearchive.py`, step in hourly.yml:
+    `pages/<id>.json.gz`, `index/<YYYY-MM>.jsonl`) and is deleted from Supabase only after the push.
+    The site and follow-ups read archived parents from the branch (raw.githubusercontent.com).
 - **Story layers (Oct 5 2026, owner):** a story has its own event (core) and CONTEXT: background,
   related events (a separate event the reports connect to this one: written as separate, never
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),
@@ -65,8 +80,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 - **Everything in the article (owner, Oct 5 2026):** no "Also reported" list. After the first draft, one
   revision call works in every missing non-minor statement and fixes failed sentences (whole article
   back, kept only if it covers at least as much); essay_ok needs 75% of the core's non-minor
-  statements. If recolouring a live essay loses a non-minor fact, it is rewritten. Leftovers stay in
-  `narrative.not_in_essay` and the page's statement list only. Recolouring applies truth checks only.
+  statements. Leftovers stay in `narrative.not_in_essay` and the page's statement list only.
+  (`narrative.recolour`/`needs_rewrite` are no longer used for publishing: articles are closed.)
 - **Introductions:** every person and body at first mention with the fullest name and role the
   statements give (`narrative._people` lists them for the writer); extraction names people in full.
 - **Attribution like a newspaper:** name a speaker once, continue with "he said" in the same
@@ -78,7 +93,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 - **Headlines:** ≤12 words, one hammer-blow fact, people introduced by role, hook from the facts, no
   "reports say", no tacked-on "reportedly".
 - **Threads:** a later development links to its earlier story (parent → daughter, many-to-many).
-  Daughter opens with the new development + ≤2 background sentences + "Earlier in this story".
+  Daughter opens with the new development + ≤2 background sentences + "Earlier in this story"; the
+  parent gains no link (it is closed). Archived parents are found through the branch index.
   Front page: one entry per thread (its latest development), ranked by importance; top 20, then
   "More stories". Filler is never published. A thread timeline page is a possible later step.
 - **Grouping:** one embedding model only (`gemini-embedding-001`, chosen on 216 labelled real pairs);
@@ -92,9 +108,10 @@ ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavil
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
 read articles (`extract.py`, Flash-Lite) → per story: match statements → consolidate
 (`consolidate.py`: merge duplicates, contradictions, one spelling per name, who says what) →
-perspectives → origins + fact/characterisation → verdicts (`verify.py`) → page (`compose.py`:
-importance, threads, headline; `narrative.py`: the essay) → Hindi → retention → health checks in
-`runs.stats.health`.
+perspectives → origins + fact/characterisation → verdicts (`verify.py`) → settled? follow-up?
+(`editions.py`) → page, written once (`compose.py`: importance, threads, headline; `narrative.py`: the
+essay) → Hindi → colours of published articles mature → retention → health checks in
+`runs.stats.health` → (workflow step) articles older than 3 days to the archive branch.
 
 ## Known quotas and facts learned from real data
 - Google counts **each text in an embedding batch** as one request: ~1,000 texts/day per key.
@@ -160,9 +177,8 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Writer validator rejects Hindi in English text, and reported speech ("A said that B claimed X")
   turned into a fact or pinned on A.
 - `compose.tidy` removes "X (X)" duplicates.
-- An unchanged page is not saved again (`compose._same_page`): no new version or "updated" time, and
-  a story whose statements and verdicts are unchanged keeps its headline. Run stats: `published` =
-  pages written, `publish_attempted` = tries, `live_pages`; health flags a writer with 0 successes
-  in 2 runs (`run.writer_silent`, from `tier_calls`).
+- Run stats: `published` = articles written, `publish_attempted` = tries, `settled`,
+  `colours_matured`, `live_pages`; health flags a writer with 0 successes in 2 runs
+  (`run.writer_silent`, from `tier_calls`). `published.updated_at` is the publication time.
 - The headline model gets statements dated and newest first (`compose._newest_first`); sorted by support,
   old background outranked the new development and got tied to it with "after".

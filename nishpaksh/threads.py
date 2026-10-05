@@ -68,6 +68,16 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
                       .where(published.c.story_id != story_id, published.c.updated_at >= since))
     created = {r["id"]: r["created_at"] for r in store.rows(select(stories.c.id, stories.c.created_at)
                                                              .where(stories.c.id.in_([r["story_id"] for r in rows] or [-1])))}
+    # parents that already moved to the archive branch (pagearchive.py) are candidates too
+    from . import pagearchive
+    have = {r["story_id"] for r in rows}
+    for x in pagearchive.recent_index(window_days):
+        if x.get("story_id") not in have and x.get("story_id") != story_id:
+            rows.append({"story_id": x["story_id"], "headline_en": x.get("headline_en"),
+                         "payload_en": {"headline": x.get("headline_en"),
+                                        "narrative": {"paragraphs": [[{"text": x.get("summary") or ""}]]}},
+                         "updated_at": None})
+            created.setdefault(x["story_id"], _when(x.get("written_at")))
     mine = _words(headline + " " + summary)
     my_names = _names(headline + " " + summary)
     cands = []
@@ -104,13 +114,19 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
         if pid not in existing:
             store.exec(insert(story_links).values(parent_id=pid, child_id=story_id, created_at=utcnow(),
                                                   reason=json.dumps(sorted(next(c[3] for c in cands if c[1] == pid)))))
-            # the parent's page gains a "what happened next" link
-            store.exec(update(stories).where(stories.c.id == pid).values(dirty=True))
+            # the parent is a closed article (editions.py): it is not touched
     analysis["thread_checked"] = headline
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis))
     if found:
         log.info("threads: story %s develops %s", story_id, found)
     return sorted(existing | set(found))
+
+
+def _when(ts) -> dt.datetime | None:
+    try:
+        return dt.datetime.fromisoformat(str(ts)) if ts else None
+    except ValueError:
+        return None
 
 
 def relatives(store: Store, story_id: int) -> tuple[list[int], list[int]]:

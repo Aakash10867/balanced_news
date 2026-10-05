@@ -99,16 +99,16 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     # time plan: reading stops 20 minutes before the deadline; the story stage gets the rest
     stats["extracted"] = extract.extract_pending(store, router, deadline - 20 * 60)
 
-    # pages published before the readable story existed get rewritten once
+    # published stories are closed (editions.py): never re-analysed, re-read or rewritten
+    from . import editions
     from .db import articles as _articles, published as _published
-    for row in store.rows(select(_published.c.story_id, _published.c.payload_en)):
-        pe = row["payload_en"] or {}
-        # missing or old format; "qualified_by" marks pages built under the origins rules
-        from .narrative import WRITER_VERSION
-        if (not (pe.get("narrative") or {}).get("paragraphs") or "qualified_by" not in pe
-                or (pe.get("narrative") or {}).get("writer") != WRITER_VERSION):
-            store.exec(update(stories).where(stories.c.id == row["story_id"]).values(dirty=True))
+    frozen = editions.frozen_ids(store)
     dirty = [s["id"] for s in store.rows(select(stories.c.id).where(stories.c.dirty.is_(True)))]
+    if frozen & set(dirty):
+        ids = sorted(frozen & set(dirty))
+        for i in range(0, len(ids), 500):
+            store.exec(update(stories).where(stories.c.id.in_(ids[i:i + 500])).values(dirty=False))
+    dirty = [sid for sid in dirty if sid not in frozen]
     # most-covered stories first, so the stories readers most likely want are never the ones cut
     with store.engine.connect() as c:
         size = dict(c.execute(select(_articles.c.story_id, func.count())
@@ -128,34 +128,25 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
                  for w in (r["loaded_words"] or [])}
         return concepts.map_new(store, router, words)
     stats["concepts_mapped"] = step("concepts", _concepts)
-    live_now = {r["story_id"] for r in store.rows(select(_published.c.story_id))}
 
     def analyse(sid):
         match.match_story(store, router, sid)
         # merge duplicate statements, mark contradictions, one spelling per name: only for stories
         # that can be published (it costs a model call)
-        if sid in live_now or origins.independent_read_outlets(store, sid) >= SETTINGS.qualify_min_outlets:
+        if origins.independent_read_outlets(store, sid) >= SETTINGS.qualify_min_outlets:
             consolidate_story(store, router, sid)
         perspectives.analyze_story(store, sid)
         if origins.assess_story(store, router, sid):
             # interim rule while perspectives are unknown: 3+ independent outlets, 2+ origins
             perspectives.mark_qualified(store, sid, "interim")
     analysed = _parallel(dirty, analyse, deadline - 12 * 60, workers)
-    before = {r["id"]: (r["analysis"] or {}).get("groups") for r in store.rows(
-        select(stories.c.id, stories.c.analysis).where(stories.c.id.in_(sorted(live_now) or [-1])))}
     stats["global_clusters"] = perspectives.recompute_global(store)
-    relabelled: set[int] = set()
-    # labels may have changed (or the clusters gone): re-label analysed stories and every live page,
-    # so no page keeps showing perspectives that no longer exist (code only, no model calls)
-    for sid in sorted(set(analysed) | live_now):
+    # labels may have changed (or the clusters gone): re-label analysed stories (code only). A
+    # published article keeps the perspectives it was written with.
+    for sid in sorted(analysed):
         perspectives.analyze_story(store, sid)
         if origins.assess_story(store, None, sid):
             perspectives.mark_qualified(store, sid, "interim")
-        if sid in before:
-            after = ((store.one(select(stories.c.analysis).where(stories.c.id == sid)) or {}).get("analysis") or {}).get("groups")
-            if after != before[sid]:
-                relabelled.add(sid)
-    stats["relabelled_pages"] = len(relabelled)
 
     # a story whose read articles were grouped on another embedding model's vectors cannot be
     # trusted to be one event (real data: one such "story" mixed GST, a temple and a phone launch);
@@ -165,53 +156,51 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         untrusted = {r["story_id"] for r in store.rows(
             select(_articles.c.story_id).where(_articles.c.story_id.is_not(None), _articles.c.extracted_at.is_not(None),
                                                (_articles.c.embed_model.is_(None)) | (_articles.c.embed_model != model))
-            .distinct())}
+            .distinct())} - frozen
         if untrusted:
             ids = sorted(untrusted)
             for i in range(0, len(ids), 500):
                 store.exec(update(stories).where(stories.c.id.in_(ids[i:i + 500]), stories.c.qualifies.is_(True))
                            .values(qualifies=False))
         stats["stories_awaiting_regroup"] = len(untrusted)
-    qualifying = {r["id"] for r in store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))}
-    with store.engine.connect() as c:
-        live = {r[0] for r in c.execute(select(_published.c.story_id))}
-    to_publish = [sid for sid in analysed if sid in qualifying or sid in live]  # live: may need taking down
+    qualifying = {r["id"] for r in store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))} - frozen
     # stories that cannot be published yet spend no verdict or writing calls; they are
     # re-examined when another of their articles is read
-    idle = [sid for sid in analysed if sid not in qualifying and sid not in live]
+    idle = [sid for sid in analysed if sid not in qualifying]
     for i in range(0, len(idle), 500):
         store.exec(update(stories).where(stories.c.id.in_(idle[i:i + 500])).values(dirty=False))
+    # the 8-hour cap counts from when a story first met the publishing rule
+    editions.note_rule(store, qualifying, sorted(set(analysed) | qualifying))
 
     budget = dict(verify_budget) if verify_budget else {
         "grounded": router.per_run_budget("grounded"), "judge": router.per_run_budget("judge")}
     stats["verify_budget"] = dict(budget)
     checked = 0
-    for sid in to_publish:
+    for sid in analysed:
         if sid not in qualifying:
             continue
         verify.base_verdicts(store, sid)
         if SETTINGS.model_verdicts and time.time() < deadline - 6 * 60 and (budget.get("judge", 0) > 0):
             checked += verify.verify_story(store, router, sid, budget)
-    # pages not touched this run still age: a "developing" statement becomes established once it has
-    # stood 6 hours, and the clock is code-only (no model calls), so every live page is re-checked
-    # stories that qualify but wait for an essay (the writer was refused or failed) are offered to the
-    # writer again without being re-analysed, the most-covered first, a few per run: re-analysing all
-    # of them every hour took the whole run (Oct 5 2026: 118 waiting stories, 62-minute runs)
-    waiting = sorted(qualifying - live - set(to_publish), key=lambda sid: -size.get(sid, 0))
-    to_publish.extend(waiting[:SETTINGS.waiting_per_run])
-    for sid in sorted(live - set(to_publish)):
-        if sid not in qualifying:
-            to_publish.append(sid)          # no longer qualifies: publish_story takes the page down
-        elif verify.base_verdicts(store, sid) or sid in relabelled:
-            to_publish.append(sid)
-    written: list[int] = []   # pages actually written (new or changed); "attempted" counts tries
+    # written once, when coverage has settled (no new independent outlet for 3 hours, or 8 hours after
+    # the rule was met); most covered first, a limited number per run (the writer is the scarce tier)
+    settled = [sid for sid in qualifying if editions.settled(store, sid)]
+    settled.sort(key=lambda sid: -size.get(sid, 0))
+    to_publish = settled[:SETTINGS.waiting_per_run]
+    for sid in to_publish:
+        if sid not in analysed:
+            verify.base_verdicts(store, sid)     # the 6-hour clock moved since it was analysed
+    written: list[int] = []   # articles actually written; "attempted" counts tries
 
     def _publish(sid):
         if compose.publish_story(store, router, sid):
             written.append(sid)
     attempted = _parallel(to_publish, _publish, deadline, workers)
-    stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(to_publish),
-                 claims_checked=checked, publish_attempted=len(attempted), published=len(written),
+    # published articles: only their colours mature, by code (the 6-hour clock)
+    matured = sum(1 for sid in sorted(frozen) if editions.mature(store, sid))
+    stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(qualifying),
+                 settled=len(settled), claims_checked=checked, publish_attempted=len(attempted),
+                 published=len(written), colours_matured=matured,
                  live_pages=len(store.rows(select(_published.c.story_id))),
                  left_for_next_run=len(dirty) - len(analysed) + len(to_publish) - len(attempted))
     from . import positions

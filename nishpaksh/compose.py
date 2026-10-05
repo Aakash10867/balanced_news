@@ -19,7 +19,7 @@ import logging
 import re
 from collections import Counter, defaultdict
 
-from .db import Store, articles, delete, published, select, stories, update, utcnow, insert
+from .db import Store, articles, published, select, stories, update, utcnow, insert
 from .router import QuotaExhausted, Router
 from .timeline import build_timeline
 from .verify import _story_context, relation_text, support_summary
@@ -328,11 +328,10 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     # threads first: a development of an earlier story is headlined as the new development
     from . import importance as imp, threads
     main_facts = (facts + unsettled)[:8]
+    from .editions import link_candidate, parent_pages
+    link_candidate(store, story_id)      # later reports of a published story develop it
     parent_ids = threads.find_parents(store, router, story_id, story["signature"] or "", " ".join(main_facts[:4]))
-    _, child_ids = threads.relatives(store, story_id)
-    live = {r["story_id"]: r for r in store.rows(select(published.c.story_id, published.c.headline_en,
-                                                        published.c.payload_en, published.c.updated_at)
-                                                 .where(published.c.story_id.in_(parent_ids + child_ids or [-1])))}
+    live = parent_pages(store, parent_ids)   # live, or already on the archive branch
     thread_ctx = "; ".join(live[p]["headline_en"] for p in parent_ids if p in live)
     # The headline model sees each statement's date, newest first. Sorted by support alone, old
     # background that every report retells (a January protest) outranked this week's arrest, and the
@@ -372,7 +371,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
 
     # threads: earlier stories this one develops, and later ones that develop it (published only)
     parents = [{"story_id": p, "headline": live[p]["headline_en"]} for p in parent_ids if p in live]
-    children = [{"story_id": c, "headline": live[c]["headline_en"]} for c in child_ids if c in live]
+    children: list[dict] = []    # an article is written once, before anything develops it
     # background for the essay: the parents' established facts, with their sources (at most 4)
     background = []
     for p in parent_ids:
@@ -508,93 +507,40 @@ def _keepable(nar: dict | None) -> bool:
 
 
 def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
-    """Only the writer produces prose. A new story is published once it has a good essay; until then
-    it waits. A live page keeps its essay, recoloured by code, unless the change is material and the
-    writer can afford a rewrite. A page with no keepable essay is taken down, not shown as stitched
-    sentences (Oct 2026: 85 of 91 live pages were code-stitched and read like he-said-she-said).
-    Returns True only when a page was written: an unchanged page is not saved again."""
-    from .narrative import (essay_ok, input_hash, is_core, needs_rewrite, ordered_items, recolour,
-                            sections_from_payload, write_narrative)
+    """Write the article, once (editions.py, owner Oct 5 2026). Only the writer produces prose: a story
+    is published with a good essay or not at all (it waits; Oct 2026: 85 of 91 live pages were
+    code-stitched and read like he-said-she-said). A published article is closed: this never changes
+    it again (its colours mature by code, editions.mature). A development of an earlier article is
+    published only if it earns a follow-up (editions.follow_up_ok). Returns True when written."""
+    from .editions import follow_up_ok
+    from .narrative import essay_ok, input_hash, sections_from_payload, write_narrative
+    if store.one(select(published.c.story_id).where(published.c.story_id == story_id)):
+        return False
     payload = build_payload(store, router, story_id)
     store.exec(update(stories).where(stories.c.id == story_id).values(dirty=False))
-    prev = store.one(select(published).where(published.c.story_id == story_id))
-    if payload is None:
-        # no longer meets the bar (e.g. after a rule change): take the page down, not leave it stale
-        store.exec(delete(published).where(published.c.story_id == story_id))
+    if payload is None or payload.get("headline_is_fallback"):
+        log.info("story %s waits: %s", story_id, "no longer qualifies" if payload is None else "no written headline")
         return False
-    old = ((prev or {}).get("payload_en") or {}).get("narrative")
-    old = old if _keepable(old) else None
+    parents = [x["story_id"] for x in payload.get("parents") or []]
+    if parents and not follow_up_ok(store, router, story_id, payload, parents):
+        return False
     h = input_hash(sections_from_payload(payload), payload.get("background"))
-    nar = None
     banned = set(payload["loaded_words"])
-    kept = None
-    if old and old.get("hash") == h:
-        nar = old  # same statements, same verdicts: keep the story as written
-    elif old and not needs_rewrite(old, payload):
-        kept = recolour(old, payload, banned)
-        # a verdict change can take a sentence out (a fact now disputed or shown false, written as
-        # plain fact): everything belongs in the article, so losing a statement that matters is
-        # worth a rewrite (it is no longer anywhere on the page but the statement list)
-        lost = [i for i in ordered_items(payload) if not i.get("minor") and is_core(i)
-                and i["id"] not in set(kept.get("covers") or [])]
-        if kept["paragraphs"] and not lost:
-            nar = kept
-    if nar is None and router is not None and _writer_attempt_allowed(store, story_id, h):
-        fresh = write_narrative(router, payload, banned)
-        if essay_ok(fresh, payload) and _keepable(fresh):
-            nar = fresh
-        else:
-            _note_writer_failure(store, story_id, h, fresh)
-    if nar is None and old:
-        nar = kept or recolour(old, payload, banned)
-        if not nar["paragraphs"]:
-            nar = None
-    if prev and (payload.get("headline_is_fallback") or (nar is old and old is not None)):
-        # a written headline beats the code fallback; and a story whose statements and verdicts
-        # are unchanged keeps its headline (the model words it differently each run)
-        payload["headline"] = prev["headline_en"]
-        payload["headline_is_fallback"] = False
-    if nar is None or payload.get("headline_is_fallback"):
-        # nothing worth reading yet: wait for the writer. The story stays qualified and is offered to
-        # the writer again in a later run (run.py "waiting"); it is re-analysed only when new reports arrive
-        if prev:
-            store.exec(delete(published).where(published.c.story_id == story_id))
-        log.info("story %s waits for a written essay%s", story_id, " (taken down)" if prev else "")
+    if router is None or not _writer_attempt_allowed(store, story_id, h):
+        return False
+    nar = write_narrative(router, payload, banned)
+    if not (essay_ok(nar, payload) and _keepable(nar)):
+        _note_writer_failure(store, story_id, h, nar)
+        log.info("story %s waits for a written essay", story_id)
         return False
     payload["narrative"] = nar
-    if prev and _same_page(prev["payload_en"], payload):
-        # nothing a reader would see has changed: no new version, no new "updated" time (Oct 5 2026:
-        # the same few pages were re-saved every hour and looked freshly updated). Only the front
-        # page ordering is refreshed in place.
-        if any((prev["payload_en"] or {}).get(k) != payload.get(k) for k in _ORDER_KEYS):
-            pe, ph = dict(prev["payload_en"]), dict(prev["payload_hi"] or {})
-            for k in _ORDER_KEYS:
-                pe[k] = ph[k] = payload.get(k)
-            store.exec(update(published).where(published.c.story_id == story_id)
-                       .values(payload_en=pe, payload_hi=ph))
-        return False
+    now = utcnow()
+    payload["written_at"] = now.isoformat(timespec="seconds")
     hi = translate_payload(store, router, payload)
-    version = (prev["version"] if prev else 0) + 1
-    payload["version"] = hi["version"] = version
-    values = dict(version=version, updated_at=utcnow(), headline_en=payload["headline"],
-                  headline_hi=hi["headline"], payload_en=payload, payload_hi=hi)
-    if prev:
-        store.exec(update(published).where(published.c.story_id == story_id).values(**values))
-    else:
-        store.exec(insert(published).values(story_id=story_id, **values))
+    payload["version"] = hi["version"] = 1
+    store.exec(insert(published).values(story_id=story_id, version=1, updated_at=now, headline_en=payload["headline"],
+                                        headline_hi=hi["headline"], payload_en=payload, payload_hi=hi))
     return True
-
-
-_ORDER_KEYS = ("rank", "importance")   # front-page ordering, not content
-_SKIP_KEYS = ("version",) + _ORDER_KEYS
-
-
-def _same_page(prev_payload: dict | None, payload: dict) -> bool:
-    """Would a reader see the same page? Compared as stored JSON, ignoring version and ordering."""
-    def norm(p):
-        return json.dumps({k: v for k, v in (p or {}).items() if k not in _SKIP_KEYS},
-                          sort_keys=True, default=str, ensure_ascii=False)
-    return bool(prev_payload) and norm(json.loads(norm(prev_payload))) == norm(json.loads(norm(payload)))
 
 
 WRITER_TRIES = 3   # failed writes of the same statements before waiting for new ones
