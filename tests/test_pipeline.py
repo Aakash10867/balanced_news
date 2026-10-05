@@ -1167,3 +1167,63 @@ def test_noise_does_not_become_perspectives(store):
         c.execute(insert(story_pairs), rows)
     assert recompute_global(store) == 0
     assert store.rows(select(source_clusters)) == []
+
+
+def _sided_story(store, side_of: dict[str, str], authors: dict[str, str] | None = None):
+    """A story with four contested facts: side 'A' asserts 1-2 and denies 3-4, side 'B' the reverse."""
+    from nishpaksh.db import claims as Cl
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, signature="s", dirty=True, qualifies=False))
+    cids = [store.insert_returning_id(canonical, dict(story_id=sid, kind="claim", text=f"fact {k}", conflicts=[]))
+            for k in range(4)]
+    aids = {}
+    for k, (outlet, side) in enumerate(side_of.items()):
+        aid = store.insert_returning_id(articles, dict(
+            url=f"https://{outlet.lower()}.in/a{sid}", outlet=outlet, title="t", text="body", text_source="full",
+            published_at=NOW, extracted_at=NOW, story_id=sid, wire_group=5000 + sid * 20 + k,
+            author=(authors or {}).get(outlet)))
+        aids[outlet] = aid
+        for j, cid in enumerate(cids):
+            pos = (j < 2) == (side == "A")
+            store.exec(insert(Cl).values(story_id=sid, article_id=aid, kind="claim", text=f"fact {j}",
+                                         stance="asserts" if pos else "denies", attributed_to="article",
+                                         evidence="none", canonical_id=cid))
+    return sid, aids
+
+
+def test_clusters_are_outlets_but_an_article_can_depart_and_a_repeat_author_is_split(store):
+    """Owner's design, Oct 2026: perspectives are clustered over outlets; an article that clearly
+    sides with another perspective is shown there (†); an author who keeps doing it becomes a unit."""
+    from nishpaksh import perspectives as P
+    P.SPLIT_AUTHORS.clear()
+    with store.engine.begin() as c:
+        c.execute(insert(source_clusters), [dict(source=o, cluster=0 if o.startswith("A") else 1, updated_at=NOW)
+                                            for o in ("A1", "A2", "A3", "B1", "B2")])
+    # two authors of one outlet are one unit
+    assert P.source_key({"outlet": "A3", "author": "Ravi Kumar"}) == P.source_key({"outlet": "A3", "author": "Sita Rao"}) == "A3"
+    sides = {"A1": "A", "A2": "A", "A3": "B", "B1": "B", "B2": "B"}     # A3's article sides with B
+    for _ in range(5):
+        sid, aids = _sided_story(store, sides, authors={"A3": "Ravi Kumar"})
+        an = P.analyze_story(store, sid)
+        assert an["mode"] == "global"
+        d = an["departures"][str(aids["A3"])]
+        assert d["from"] == "A" and d["to"] == "B" and d["evidence"] >= 3
+        assert str(aids["A1"]) not in an["departures"]                  # the others stay with their outlet
+    units = P.refresh_units(store)
+    assert units["split_authors"] == ["A3::ravi kumar"]
+    assert P.source_key({"outlet": "A3", "author": "Ravi Kumar"}) == "A3::ravi kumar"   # now its own unit
+    assert P.source_key({"outlet": "A3", "author": "Sita Rao"}) == "A3"
+    assert "A3" in units["outlets_departing_often"]                     # health sees it too
+    P.SPLIT_AUTHORS.clear()
+
+
+def test_one_odd_article_does_not_depart_on_thin_evidence(store):
+    from nishpaksh import perspectives as P
+    from nishpaksh.db import claims as Cl
+    with store.engine.begin() as c:
+        c.execute(insert(source_clusters), [dict(source=o, cluster=0 if o.startswith("A") else 1, updated_at=NOW)
+                                            for o in ("A1", "A2", "A3", "B1", "B2")])
+    sid, aids = _sided_story(store, {"A1": "A", "A2": "A", "A3": "A", "B1": "B", "B2": "B"})
+    # A3 reports just one fact differently from the rest of A: not enough to move it
+    store.exec(update(Cl).where(Cl.c.article_id == aids["A3"], Cl.c.text == "fact 0").values(stance="denies"))
+    an = P.analyze_story(store, sid)
+    assert str(aids["A3"]) not in an["departures"]

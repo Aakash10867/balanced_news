@@ -103,8 +103,15 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Perspective clusters flipped because they were noise (Oct 5 2026: 32 sources, 21% of pairs
   observed, 1,020 of 1,164 pairs seen once, agreement centred on 0, silhouette 0.04-0.07, resample
   ARI 0.02-0.68). Now shown only if stable under resampling (`global_min_stability`), and live pages
-  are relabelled when clusters change. Open: a richer signal (owner's call): outlet-level units
-  instead of outlet::author, and stance-bearing evidence beyond omissions.
+  are relabelled when clusters change.
+- **Perspective units and evidence (owner, Oct 5 2026):** clustered over OUTLETS; each article is
+  still scored on its own and departs from its outlet's perspective only on strong evidence
+  (margin 0.5, 3+ items; shown with †); an author with 3 of their last 5 assessed articles departing
+  becomes their own unit (`refresh_units`); outlets whose articles depart ≥30% are flagged in health.
+  Evidence, strongest first: stance on contested facts (1), whose named voices are carried (0.5),
+  loaded words for the same fact (0.5), omission (0.15). Never anything about the outlet itself.
+  At outlet level on the old omission-heavy signal: silhouette 0.07, resample ARI ~0.35 (still noise,
+  gated off); the voices/words signals are new, judge them after a few days of data.
 - Writer failures on big stories: the reason is now split ("empty sentence" / "no valid ids" / "too
   long", plus reply-level `failure`); read `stories.analysis.writer_failures` before shortening input.
 - Fallback sentences append `when_text` that can be relative to another event ("on Thursday, a day

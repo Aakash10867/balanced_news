@@ -180,6 +180,12 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     texts = {cid: c["text"] for cid, c in canon.items()}
 
     speakers = (story["analysis"] or {}).get("speakers") or {}
+    departures = (story["analysis"] or {}).get("departures") or {}
+
+    def _persp_of(aid: int) -> str:
+        """An article that departs from its outlet's perspective shows its own (marked †)."""
+        d = departures.get(str(aid))
+        return f"{d['to']}†" if d else (gpersp.get(agroup.get(aid)) or "–")
 
     def item(cid: int) -> dict:
         c = canon[cid]
@@ -190,7 +196,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             a = full_arts.get(r["article_id"])
             if not a:
                 continue
-            p = gpersp.get(agroup.get(a["id"])) or "–"
+            p = _persp_of(a["id"])
             for w in r["loaded_words"] or []:
                 framing[p].add(w)
             if a["url"] in seen:
@@ -276,8 +282,12 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     persp = defaultdict(set)
     for g, info in (analysis.get("groups") or {}).items():
         persp[info.get("perspective") or "–"].update(info.get("outlets", []))
+    for aid, d in departures.items():
+        a = full_arts.get(int(aid))
+        if a:
+            persp[d["to"]].add(f"{a['outlet']} († this article differs from the outlet's usual perspective)")
     sources = sorted([{"outlet": a["outlet"], "title": a["title"], "url": a["url"], "lang": a["lang"],
-                       "role": a["role"], "perspective": gpersp.get(agroup.get(a["id"])) or "–",
+                       "role": a["role"], "perspective": _persp_of(a["id"]),
                        # option B: an article we could not read is listed, never used for facts
                        "read": bool(a["extracted_at"]) and a["text_source"] != "summary",
                        "readable": a["text_source"] != "summary",

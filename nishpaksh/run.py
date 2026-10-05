@@ -118,6 +118,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     from . import origins
 
     from .consolidate import consolidate_story
+    stats["units"] = step("units", lambda: perspectives.refresh_units(store))
     live_now = {r["story_id"] for r in store.rows(select(_published.c.story_id))}
 
     def analyse(sid):
@@ -262,6 +263,8 @@ def health(store: Store, stats: dict) -> dict:
         if dead:
             out["problems"].append(f"daily quota used up for: {', '.join(dead)} (resets 00:00 Pacific)")
         out.update(stalled(store, stats))
+        for o, rate in ((stats.get("units") or {}).get("outlets_departing_often") or {}).items():
+            out["problems"].append(f"{o}: {rate:.0%} of assessed articles fall outside its perspective")
         if stats.get("errors"):
             out["problems"].append(f"{len(stats['errors'])} steps failed")
     except Exception as e:  # noqa: BLE001

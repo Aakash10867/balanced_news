@@ -106,6 +106,15 @@ class Settings:
     global_min_sources: int = 6
     global_min_silhouette: float = 0.10
     global_min_stability: float = 0.6   # mean ARI against 80% resamples of the stories
+    # an article leaves its outlet's perspective only on strong evidence
+    departure_margin: float = 0.5
+    departure_min_evidence: int = 3
+    # an author is split off when 3 of their last 5 assessed articles departed
+    split_author_window: int = 5
+    split_author_departures: int = 3
+    # health: an outlet whose articles depart this often (with this many assessed) is flagged
+    departure_watch_rate: float = 0.3
+    departure_watch_min: int = 5
 
     # verdicts
     min_articles_to_verify: int = 2

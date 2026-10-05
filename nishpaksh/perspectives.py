@@ -31,11 +31,80 @@ LETTERS = "ABCDEFGH"
 GENERIC_AUTHOR = re.compile(r"(?i)\b(staff|desk|bureau|team|news|web|correspondent|reporter|online|editor|agencies)\b")
 
 
-def source_key(a: dict) -> str:
+def author_key(a: dict) -> str | None:
     author = (a.get("author") or "").strip()
     if author and not a.get("agency") and len(author) <= 60 and not GENERIC_AUTHOR.search(author):
         return f"{a['outlet']}::{author.lower()}"
+    return None
+
+
+# authors whose articles keep falling outside their outlet's perspective: their own unit (refresh_units)
+SPLIT_AUTHORS: set[str] = set()
+
+
+def source_key(a: dict) -> str:
+    """The unit perspectives are clustered over: the outlet (an editorial line pools all its articles'
+    evidence), except an author the data has split off (Oct 2026, owner's decision)."""
+    ak = author_key(a)
+    return ak if ak and ak in SPLIT_AUTHORS else a["outlet"]
+
+
+def _unit(key: str) -> str:
+    """A stored pair key in today's units: rows written when every author was a unit read as their
+    outlet unless that author is split off."""
+    return key if "::" not in key or key in SPLIT_AUTHORS else key.split("::", 1)[0]
+
+
+def outlet_key(a: dict) -> str:
     return a["outlet"]
+
+
+# ---- evidence of a perspective (owner-approved, Oct 2026), strongest first:
+#   stance on contested facts (asserts vs denies, sides of a contradiction)       weight 1
+#   whose voices are carried (named sources quoted)                                weight 0.5
+#   loaded words used for the same fact                                            weight 0.5
+#   omission of a widely reported fact (mostly article length: weak)               weight 0.15
+# Never: anything about the outlet itself (owner, reputation, assumed leaning).
+VOICE_W, WORDS_W, OMISSION_W = 0.5, 0.5, 0.15
+
+
+def _profile(stance: dict[int, float], voices: Counter, words: dict[int, set]) -> dict:
+    return {"stance": stance, "voices": voices, "words": words}
+
+
+def agreement(pa: dict, pb: dict, informative: set[int], notable: set[int], conflicts: set) -> tuple[float, float, int]:
+    """Signed agreement in [-1, 1] between two profiles in one story, its total weight, and how
+    many evidence items it rests on."""
+    vals: list[tuple[float, float]] = []
+    ga, gb = pa["stance"], pb["stance"]
+    for c in informative:
+        x, y = ga.get(c, 0.0), gb.get(c, 0.0)
+        if x and y:
+            vals.append((1.0 if x * y > 0 else -1.0, 1.0))
+        elif c in notable and (x > 0 or y > 0):
+            # an omission is a weak hint (it mostly reflects article length and what was read), so
+            # it carries little weight rather than a small value at full weight: on real data the
+            # many omissions drowned the rare real contradictions and agreement centred on zero
+            vals.append((-1.0, OMISSION_W))
+    for c1, c2 in conflicts:
+        if (ga.get(c1, 0) > 0 and gb.get(c2, 0) > 0) or (ga.get(c2, 0) > 0 and gb.get(c1, 0) > 0):
+            vals.append((-1.0, 1.0))
+    va, vb = pa["voices"], pb["voices"]
+    if sum(va.values()) >= 2 and sum(vb.values()) >= 2:
+        keys = set(va) | set(vb)
+        inter = sum(min(va[k], vb[k]) for k in keys)
+        union = sum(max(va[k], vb[k]) for k in keys)
+        vals.append((2 * inter / union - 1, VOICE_W))      # same voices +1, disjoint voices -1
+    for c in set(pa["words"]) & set(pb["words"]):
+        wa, wb = pa["words"][c], pb["words"][c]
+        if wa and wb:
+            vals.append((1.0 if wa & wb else -1.0, WORDS_W))
+        elif wa or wb:
+            vals.append((-0.5, WORDS_W))                   # one frames the fact, the other does not
+    if not vals:
+        return 0.0, 0.0, 0
+    tw = sum(w for _, w in vals)
+    return sum(v * w for v, w in vals) / tw, tw, len(vals)
 
 
 def _split(W: np.ndarray) -> tuple[np.ndarray | None, float, float]:
@@ -86,23 +155,39 @@ def analyze_story(store: Store, story_id: int) -> dict:
     by_id = {a["id"]: a for a in arts}
     gmap = independence_groups(arts)
     groups = sorted(set(gmap.values()))
-    rows = store.rows(select(claims.c.article_id, claims.c.canonical_id, claims.c.stance)
-                      .where(claims.c.story_id == story_id, claims.c.canonical_id.is_not(None)))
 
+    old_analysis = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
+    amap = old_analysis.get("attribution_map") or {}
+    rows = store.rows(select(claims.c.article_id, claims.c.canonical_id, claims.c.stance, claims.c.attributed_to,
+                             claims.c.loaded_words)
+                      .where(claims.c.story_id == story_id, claims.c.canonical_id.is_not(None)))
     per_article: dict[int, dict[int, float]] = defaultdict(dict)
+    art_voices: dict[int, Counter] = defaultdict(Counter)
+    art_words: dict[int, dict[int, set]] = defaultdict(lambda: defaultdict(set))
     for r in rows:
         v = STANCE_VAL.get(r["stance"], 0.0)
         cur = per_article[r["article_id"]].get(r["canonical_id"])
         if cur is None or abs(v) > abs(cur):
             per_article[r["article_id"]][r["canonical_id"]] = v
+        m = amap.get(r["attributed_to"] or "") or {}
+        if m.get("key") and m.get("kind") not in ("own", "anonymous", "unresolved", None):
+            art_voices[r["article_id"]][m["key"]] += 1
+        art_words[r["article_id"]][r["canonical_id"]] |= {w.lower() for w in (r["loaded_words"] or [])}
     M: dict[str, dict[int, float]] = {}
+    prof: dict[str, dict] = {}
     for g in groups:
         members = [aid for aid, gg in gmap.items() if gg == g]
         acc: dict[int, list[float]] = defaultdict(list)
+        voices: Counter = Counter()
+        words: dict[int, set] = defaultdict(set)
         for aid in members:
             for c, v in per_article.get(aid, {}).items():
                 acc[c].append(v)
+            voices.update(art_voices.get(aid, {}))
+            for c, ws in art_words.get(aid, {}).items():
+                words[c] |= ws
         M[g] = {c: float(np.mean(v)) for c, v in acc.items()}
+        prof[g] = _profile(M[g], voices, dict(words))
 
     support_count = Counter(c for g in groups for c, v in M[g].items() if v > 0)
     notable = {c for c, n in support_count.items() if n >= 2}
@@ -126,19 +211,9 @@ def analyze_story(store: Store, story_id: int) -> dict:
     overlap = np.zeros((n, n), dtype=int)
     for i in range(n):
         for j in range(i + 1, n):
-            gi, gj = M[groups[i]], M[groups[j]]
-            vals = []
-            for c in informative:
-                x, y = gi.get(c, 0.0), gj.get(c, 0.0)
-                if x and y:
-                    vals.append(1.0 if x * y > 0 else -1.0)
-                elif c in notable and (x > 0 or y > 0):
-                    vals.append(-SETTINGS.omission_penalty)
-            for c1, c2 in conflicts:
-                if (gi.get(c1, 0) > 0 and gj.get(c2, 0) > 0) or (gi.get(c2, 0) > 0 and gj.get(c1, 0) > 0):
-                    vals.append(-1.0)
-            W[i, j] = W[j, i] = float(np.mean(vals)) if vals else 0.0
-            overlap[i, j] = overlap[j, i] = len(vals)
+            w, _, k = agreement(prof[groups[i]], prof[groups[j]], informative, notable, conflicts)
+            W[i, j] = W[j, i] = w
+            overlap[i, j] = overlap[j, i] = k
     side, inter, intra = _split(W)
     if side is not None and not _direct_conflict(side, groups, M, conflicts):
         side = None
@@ -168,6 +243,41 @@ def analyze_story(store: Store, story_id: int) -> dict:
         mode = "none"
         labels = {g: None for g in groups}
 
+    # An article may depart from its outlet's perspective (owner, Oct 2026: "1 in X times"). Each
+    # article is scored against the other groups of each perspective in this story; it leaves its
+    # outlet's perspective only on strong evidence (a clear margin, 3+ evidence items), never on one
+    # odd quote. Measured against the OUTLET's perspective always, so a split-off author keeps being
+    # tested the same way (refresh_units).
+    departures: dict[str, dict] = {}
+    assessed: dict[str, dict] = {}
+    if mode == "global":
+        for aid, g in gmap.items():
+            a = by_id[aid]
+            own = gclus.get(outlet_key(a))
+            if own is None or aid not in per_article:
+                continue
+            ap = _profile(per_article[aid], art_voices.get(aid, Counter()), dict(art_words.get(aid, {})))
+            score: dict[int, list[tuple[float, float]]] = defaultdict(list)
+            evidence = 0
+            for h in groups:
+                if h == g or group_global.get(h) is None:
+                    continue
+                w, tw, k = agreement(ap, prof[h], informative, notable, conflicts)
+                if tw:
+                    score[group_global[h]].append((w, tw))
+                    evidence += k
+            if own not in score or len(score) < 2:
+                continue          # nothing of its own outlet's perspective here to compare with
+            mean = {c: sum(w * t for w, t in v) / sum(t for _, t in v) for c, v in score.items()}
+            best = max(mean, key=mean.get)
+            entry = {"outlet": outlet_key(a), "author": author_key(a), "evidence": evidence}
+            if evidence >= SETTINGS.departure_min_evidence:
+                assessed[str(aid)] = entry
+                if (best != own and mean[best] > 0
+                        and mean[best] - mean[own] >= SETTINGS.departure_margin):
+                    departures[str(aid)] = dict(entry, **{"from": LETTERS[own % len(LETTERS)],
+                                                          "to": LETTERS[best % len(LETTERS)]})
+
     # A split found inside one story is only trusted with >= 3 independent sources: between two
     # outlets, any discrepancy (a different casualty count, say) would look like two "sides".
     # Stable cross-story perspectives (global mode) carry their own evidence, so 2 is enough there.
@@ -192,8 +302,10 @@ def analyze_story(store: Store, story_id: int) -> dict:
             c.execute(insert(story_pairs), [dict(story_id=story_id, a=a, b=b, value=float(v))
                                             for (a, b), v in pair_rows.items()])
 
-    old = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
+    old = old_analysis
     analysis = {
+        "departures": departures,
+        "assessed": assessed,
         # kept across re-analysis: work done by origins.py and consolidate.py
         **{k: old[k] for k in ("attribution_map", "consolidated", "speakers", "names", "not_same") if k in old},
         "qualified_by": "perspectives" if qualifies else None,
@@ -243,7 +355,9 @@ def _stability(store: Store, sources: list[str], labels, rounds: int = 10, share
     from sklearn.metrics import adjusted_rand_score
     by_story: dict[int, list] = defaultdict(list)
     for r in store.rows(select(story_pairs.c.story_id, story_pairs.c.a, story_pairs.c.b, story_pairs.c.value)):
-        by_story[r["story_id"]].append((r["a"], r["b"], r["value"]))
+        a, b = sorted((_unit(r["a"]), _unit(r["b"])))
+        if a != b:
+            by_story[r["story_id"]].append((a, b, r["value"]))
     ids = sorted(by_story)
     rng = random.Random(0)
     k = int(max(labels)) + 1
@@ -267,7 +381,9 @@ def recompute_global(store: Store) -> int:
 
     agg: dict[tuple[str, str], list[float]] = defaultdict(list)
     for r in store.rows(select(story_pairs.c.a, story_pairs.c.b, story_pairs.c.value)):
-        agg[(r["a"], r["b"])].append(r["value"])
+        a, b = sorted((_unit(r["a"]), _unit(r["b"])))
+        if a != b:
+            agg[(a, b)].append(r["value"])
     known = {k: float(np.mean(v)) for k, v in agg.items() if len(v) >= 2}
     deg = Counter()
     for a, b in known:
@@ -335,3 +451,32 @@ def recompute_global(store: Store) -> int:
                                             for s, l in zip(sources, labels)])
     log.info("global perspectives: %d sources in %d clusters (silhouette %.2f)", len(sources), k_new, best[0])
     return k_new
+
+
+def refresh_units(store: Store) -> dict:
+    """Decide which authors are their own unit, from every stored story's per-article assessments:
+    an author whose last 5 assessed articles left the outlet's perspective 3+ times is split off.
+    Also measures, per outlet, how often its articles depart: if that is not rare, the outlet is not
+    one perspective (or the perspectives are wrong) and health says so."""
+    per_author: dict[str, list[tuple[int, bool]]] = defaultdict(list)
+    per_outlet: dict[str, list[bool]] = defaultdict(list)
+    for r in store.rows(select(stories.c.analysis).where(stories.c.analysis.is_not(None))):
+        a = r["analysis"] or {}
+        dep = a.get("departures") or {}
+        for aid, e in (a.get("assessed") or {}).items():
+            gone = aid in dep
+            per_outlet[e["outlet"]].append(gone)
+            if e.get("author"):
+                per_author[e["author"]].append((int(aid), gone))
+    split = set()
+    for au, xs in per_author.items():
+        last = [g for _, g in sorted(xs)[-SETTINGS.split_author_window:]]
+        if sum(last) >= SETTINGS.split_author_departures:
+            split.add(au)
+    SPLIT_AUTHORS.clear()
+    SPLIT_AUTHORS.update(split)
+    often = {o: round(sum(v) / len(v), 2) for o, v in per_outlet.items()
+             if len(v) >= SETTINGS.departure_watch_min and sum(v) / len(v) >= SETTINGS.departure_watch_rate}
+    return {"split_authors": sorted(split), "outlets_departing_often": often,
+            "assessed_articles": sum(len(v) for v in per_outlet.values()),
+            "departures": sum(sum(v) for v in per_outlet.values())}
