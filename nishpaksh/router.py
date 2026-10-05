@@ -13,6 +13,7 @@ import logging
 import re
 import threading
 import time
+from collections import Counter as _Counter
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
@@ -245,6 +246,7 @@ class Router:
         # so refusal rates can be compared by hour of day (owner, Oct 5 2026)
         self.call_log: dict[str, _C] = {}
         self.tier_streak: dict[str, int] = {}   # consecutive overload refusals per tier
+        self.tier_log: dict[str, _C] = {}       # outcomes per tier ("writer" -> {"ok": 0, "overloaded 5xx": 40})
         # One slot per (key, model), shared by every tier that lists the model, so a model used by
         # two tiers is never counted against two separate quotas. `keep` lets a tier stop using a
         # model while that many requests remain today, leaving them for the other tiers.
@@ -461,6 +463,7 @@ class Router:
                     self._record(slot, 0)
                     self.error_log[f"{tier} | {slot.id} | {kind}"] += 1
                     self._outcome(slot, kind)
+                    self.tier_log.setdefault(tier, _Counter())[kind] += 1
                     if kind in ("overloaded 5xx", "timeout"):
                         self.tier_streak[tier] = self.tier_streak.get(tier, 0) + 1
                 continue
@@ -468,6 +471,7 @@ class Router:
                 slot.fail_streak = 0
                 self.tier_streak[tier] = 0
                 self._outcome(slot, "ok")
+                self.tier_log.setdefault(tier, _Counter())["ok"] += 1
                 if tokens and booked in slot.window:
                     slot.window[slot.window.index(booked)] = (booked[0], tokens)
                 self._record(slot, tokens or est)

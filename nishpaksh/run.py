@@ -9,6 +9,7 @@ import argparse
 import logging
 import os
 import time
+from collections import Counter
 
 from .config import SETTINGS, database_url, gemini_api_keys, load_yaml
 from sqlalchemy import func
@@ -203,10 +204,16 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             to_publish.append(sid)          # no longer qualifies: publish_story takes the page down
         elif verify.base_verdicts(store, sid) or sid in relabelled:
             to_publish.append(sid)
-    published = _parallel(to_publish, lambda sid: compose.publish_story(store, router, sid), deadline, workers)
+    written: list[int] = []   # pages actually written (new or changed); "attempted" counts tries
+
+    def _publish(sid):
+        if compose.publish_story(store, router, sid):
+            written.append(sid)
+    attempted = _parallel(to_publish, _publish, deadline, workers)
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(to_publish),
-                 claims_checked=checked, published=len(published),
-                 left_for_next_run=len(dirty) - len(analysed) + len(to_publish) - len(published))
+                 claims_checked=checked, publish_attempted=len(attempted), published=len(written),
+                 live_pages=len(store.rows(select(_published.c.story_id))),
+                 left_for_next_run=len(dirty) - len(analysed) + len(to_publish) - len(attempted))
     from . import positions
     pos = step("positions", lambda: positions.daily(store, until=deadline))
     if pos is not None:
@@ -218,6 +225,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     stats["quota_now"] = {t: router.remaining_now(t) for t in router.tiers}   # under the pacing curve
     stats["model_errors"] = dict(router.error_log.most_common(15))
     stats["model_calls"] = {k: dict(v) for k, v in sorted(router.call_log.items())}
+    stats["tier_calls"] = {k: dict(v) for k, v in sorted(router.tier_log.items())}
     if tavily is not None:
         stats["tavily"] = {"spent_this_run": tavily.spent_this_run, "left_today": tavily.allowance_today()}
     stats["health"] = health(store, stats)
@@ -242,6 +250,22 @@ def stalled(store: Store, stats: dict) -> dict:
     if came_in and not any(s.get("grouped") for s in window):
         out["problems"].append(f"{came_in} new articles in the last {n} runs but none grouped")
     return {"stall": out["problems"]} if out["problems"] else {}
+
+
+def writer_silent(store: Store, stats: dict) -> str | None:
+    """The writer was asked in this run and the one before and wrote nothing. No new story can go
+    live without it (Oct 5 2026: five hours of refused Flash calls read as "published: 121")."""
+    from .db import runs as R
+    prev = store.rows(select(R.c.stats).where(R.c.finished_at.is_not(None)).order_by(R.c.id.desc()).limit(1))
+    window = [stats] + [r["stats"] or {} for r in prev]
+    w = [(s.get("tier_calls") or {}).get("writer") for s in window]
+    if len(w) < 2 or any(x is None for x in w) or any(x.get("ok", 0) for x in w):
+        return None
+    refused: Counter = Counter()
+    for x in w:
+        refused.update(x)
+    return (f"writer wrote nothing in the last 2 runs ({sum(refused.values())} calls: "
+            + ", ".join(f"{n} {k}" for k, n in refused.most_common()) + "); no new story can go live")
 
 
 def health(store: Store, stats: dict) -> dict:
@@ -283,6 +307,9 @@ def health(store: Store, stats: dict) -> dict:
         if dead:
             out["problems"].append(f"daily quota used up for: {', '.join(dead)} (resets 00:00 Pacific)")
         out.update(stalled(store, stats))
+        silent = writer_silent(store, stats)
+        if silent:
+            out["problems"].append(silent)
         for o, rate in ((stats.get("units") or {}).get("outlets_departing_often") or {}).items():
             out["problems"].append(f"{o}: {rate:.0%} of assessed articles fall outside its perspective")
         if stats.get("errors"):

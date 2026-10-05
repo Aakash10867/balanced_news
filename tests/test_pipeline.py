@@ -1541,3 +1541,42 @@ def test_a_tier_that_keeps_refusing_is_skipped_for_the_run():
         except CallFailed:
             pass
     assert b.n <= TIER_OVERLOAD_STREAK + 2
+
+
+def test_unchanged_page_is_not_saved_again(store):
+    """Oct 5 2026: the same few pages got a new version and "updated" time every hour though nothing
+    on them changed. Same statements and verdicts: same headline, same version, same time."""
+    from nishpaksh import compose
+    _seed(store)
+    _run_twice(store)
+    row = store.rows(select(published))[0]
+    sid = row["story_id"]
+    r = _router(store, FakeBackend())
+    assert compose.publish_story(store, r, sid) is False
+    again = store.one(select(published).where(published.c.story_id == sid))
+    assert again["version"] == row["version"] and again["updated_at"] == row["updated_at"]
+    assert again["headline_en"] == row["headline_en"]
+    # a different stored headline is kept when the statements did not change (no model rewording)
+    pe = dict(row["payload_en"], headline="Earlier written headline")
+    store.exec(update(published).where(published.c.story_id == sid).values(payload_en=pe, headline_en="Earlier written headline"))
+    compose.publish_story(store, r, sid)
+    assert store.one(select(published).where(published.c.story_id == sid))["headline_en"] == "Earlier written headline"
+    # only the front-page order changed: refreshed in place, still no new version
+    pe = dict(store.one(select(published).where(published.c.story_id == sid))["payload_en"], rank=-99)
+    store.exec(update(published).where(published.c.story_id == sid).values(payload_en=pe))
+    assert compose.publish_story(store, r, sid) is False
+    after = store.one(select(published).where(published.c.story_id == sid))
+    assert after["payload_en"]["rank"] != -99 and after["version"] == row["version"]
+
+
+def test_health_flags_a_writer_that_wrote_nothing_for_two_runs(tmp_path):
+    from nishpaksh.db import runs, utcnow
+    from nishpaksh.run import writer_silent
+    store = Store(f"sqlite:///{tmp_path}/w.db")
+    store.init()
+    store.insert_returning_id(runs, dict(started_at=utcnow(), finished_at=utcnow(),
+                                         stats={"tier_calls": {"writer": {"overloaded 5xx": 30}}}))
+    msg = writer_silent(store, {"tier_calls": {"writer": {"overloaded 5xx": 20, "rate limit 429": 2}}})
+    assert msg and "52 calls" in msg and "50 overloaded 5xx" in msg
+    assert writer_silent(store, {"tier_calls": {"writer": {"ok": 1, "overloaded 5xx": 3}}}) is None
+    assert writer_silent(store, {"tier_calls": {}}) is None   # writer not asked this run

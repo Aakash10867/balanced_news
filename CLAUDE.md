@@ -160,5 +160,9 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Writer validator rejects Hindi in English text, and reported speech ("A said that B claimed X")
   turned into a fact or pinned on A.
 - `compose.tidy` removes "X (X)" duplicates.
+- An unchanged page is not saved again (`compose._same_page`): no new version or "updated" time, and
+  a story whose statements and verdicts are unchanged keeps its headline. Run stats: `published` =
+  pages written, `publish_attempted` = tries, `live_pages`; health flags a writer with 0 successes
+  in 2 runs (`run.writer_silent`, from `tier_calls`).
 - The headline model gets statements dated and newest first (`compose._newest_first`); sorted by support,
   old background outranked the new development and got tied to it with "after".

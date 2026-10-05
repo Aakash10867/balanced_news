@@ -511,7 +511,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     """Only the writer produces prose. A new story is published once it has a good essay; until then
     it waits. A live page keeps its essay, recoloured by code, unless the change is material and the
     writer can afford a rewrite. A page with no keepable essay is taken down, not shown as stitched
-    sentences (Oct 2026: 85 of 91 live pages were code-stitched and read like he-said-she-said)."""
+    sentences (Oct 2026: 85 of 91 live pages were code-stitched and read like he-said-she-said).
+    Returns True only when a page was written: an unchanged page is not saved again."""
     from .narrative import (essay_ok, input_hash, is_core, needs_rewrite, ordered_items, recolour,
                             sections_from_payload, write_narrative)
     payload = build_payload(store, router, story_id)
@@ -548,8 +549,10 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         nar = kept or recolour(old, payload, banned)
         if not nar["paragraphs"]:
             nar = None
-    if prev and payload.get("headline_is_fallback"):
-        payload["headline"] = prev["headline_en"]   # a written headline beats the code fallback
+    if prev and (payload.get("headline_is_fallback") or (nar is old and old is not None)):
+        # a written headline beats the code fallback; and a story whose statements and verdicts
+        # are unchanged keeps its headline (the model words it differently each run)
+        payload["headline"] = prev["headline_en"]
         payload["headline_is_fallback"] = False
     if nar is None or payload.get("headline_is_fallback"):
         # nothing worth reading yet: wait for the writer. The story stays qualified and is offered to
@@ -559,6 +562,17 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         log.info("story %s waits for a written essay%s", story_id, " (taken down)" if prev else "")
         return False
     payload["narrative"] = nar
+    if prev and _same_page(prev["payload_en"], payload):
+        # nothing a reader would see has changed: no new version, no new "updated" time (Oct 5 2026:
+        # the same few pages were re-saved every hour and looked freshly updated). Only the front
+        # page ordering is refreshed in place.
+        if any((prev["payload_en"] or {}).get(k) != payload.get(k) for k in _ORDER_KEYS):
+            pe, ph = dict(prev["payload_en"]), dict(prev["payload_hi"] or {})
+            for k in _ORDER_KEYS:
+                pe[k] = ph[k] = payload.get(k)
+            store.exec(update(published).where(published.c.story_id == story_id)
+                       .values(payload_en=pe, payload_hi=ph))
+        return False
     hi = translate_payload(store, router, payload)
     version = (prev["version"] if prev else 0) + 1
     payload["version"] = hi["version"] = version
@@ -569,6 +583,18 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     else:
         store.exec(insert(published).values(story_id=story_id, **values))
     return True
+
+
+_ORDER_KEYS = ("rank", "importance")   # front-page ordering, not content
+_SKIP_KEYS = ("version",) + _ORDER_KEYS
+
+
+def _same_page(prev_payload: dict | None, payload: dict) -> bool:
+    """Would a reader see the same page? Compared as stored JSON, ignoring version and ordering."""
+    def norm(p):
+        return json.dumps({k: v for k, v in (p or {}).items() if k not in _SKIP_KEYS},
+                          sort_keys=True, default=str, ensure_ascii=False)
+    return bool(prev_payload) and norm(json.loads(norm(prev_payload))) == norm(json.loads(norm(payload)))
 
 
 WRITER_TRIES = 3   # failed writes of the same statements before waiting for new ones
