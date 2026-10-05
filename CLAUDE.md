@@ -57,6 +57,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   joined in one sentence must share a subject; "Also reported" skips what the essay already says;
   one repair call rewrites failed sentences before anything is dropped. Headlines must keep who did
   what (`compose._actor_problem`). Reports naming different actors for one fact block green.
+- **Everything in the article (owner, Oct 5 2026):** no "Also reported" list. After the first draft, one
+  revision call works in every missing non-minor statement and fixes failed sentences (whole article
+  back, kept only if it covers at least as much); essay_ok needs 75% of the core's non-minor
+  statements. If recolouring a live essay loses a non-minor fact, it is rewritten. Leftovers stay in
+  `narrative.not_in_essay` and the page's statement list only. Recolouring applies truth checks only.
+- **Introductions:** every person and body at first mention with the fullest name and role the
+  statements give (`narrative._people` lists them for the writer); extraction names people in full.
 - **Attribution like a newspaper:** name a speaker once, continue with "he said" in the same
   paragraph (validator honours the paragraph's speaker scope); "reports said" at most once per
   paragraph, as a leading "According to reports,"; a dispute states both versions and whose they

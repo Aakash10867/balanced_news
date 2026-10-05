@@ -84,30 +84,45 @@ statements. Events may be told in order ("after", "later", "then"), but never li
 only for the person or body a statement names in "said by"; never invent a speaker. When a statement
 is itself reported speech ("A said that B claimed X"), keep it reported: never make A the author of X.
 Every sentence must make sense on its own: never write "denied this" unless the sentence just before
-says what was denied. No headings, no bullet points.
+says what was denied. Introduce every person and body at first mention with the fullest name and role
+the statements give ("AAP Delhi chief Saurabh Bharadwaj", "Supreme Court judge Ujjal Bhuyan"); after
+that, the surname or a short form. Never use a surname alone for someone not yet introduced.
+No headings, no bullet points.
 Never use any of these words: {banned}
 Every sentence lists in "ids" every statement it uses. Use every statement at least once; minor
 statements (marked "minor") may be left out if they add nothing.
 
-{background}Statements, the story's own event first, then CONTEXT:
+{people}{background}Statements, the story's own event first, then CONTEXT:
 {statements}
 
 Reply with JSON only:
 {{"paragraphs": [[{{"text": "...", "ids": [3, 7]}}, {{"text": "...", "ids": [5]}}], [ ... ]]}}"""
 
-REPAIR_PROMPT = """You wrote a news article from numbered statements. These sentences failed the newsroom's
-checks. Rewrite each so that it passes, using ONLY the statements listed (same rules as before: no
-outlet names, no number or speaker that the statements do not have, disputes give both versions,
-allegations name who makes them, no cause words unless a statement has them, nothing loaded:
-{banned}). If a sentence cannot be fixed, return an empty "text" for it.
+REVISE_PROMPT = """You wrote the news article below from numbered statements. Revise it into the final
+article. Everything a reader should know must be IN the article: there is no list of extra facts under it.
+1. Work in EVERY missing statement listed below, each where it belongs by subject (a new paragraph if
+   needed). Only a minor statement that adds nothing new may be left out.
+2. Rewrite each failed sentence so it passes the check named, or drop it if it cannot pass.
+3. Keep every other sentence as it is.
+Same rules as before: only the statements given; no outlet named as a source; no number or speaker the
+statements do not have; allegations name who makes them; a claim and the response to it together;
+disputes give both versions; no cause words unless a statement has them; nothing loaded: {banned}.
+Introduce every person and body at first mention with the fullest name and role the statements give.
+
+Current article (each sentence with its statement ids):
+{article}
 
 Failed sentences:
 {failed}
 
-Statements:
+Missing statements:
+{missing}
+
+All statements:
 {statements}
 
-Reply with JSON only: {{"fixes": [{{"n": 1, "text": "...", "ids": [3]}}]}}"""
+Reply with JSON only, the whole revised article:
+{{"paragraphs": [[{{"text": "...", "ids": [3, 7]}}], [ ... ]]}}"""
 
 FALSE_MARKERS = ("false", "untrue", "not true", "contradict", "evidence shows", "disproved", "incorrect",
                  "no evidence", "refut")
@@ -394,7 +409,7 @@ COMMON_FIRST = {"the", "a", "an", "police", "officials", "authorities", "protest
                 "several", "many", "some", "two", "three", "four", "five", "an", "his", "her", "their", "its"}
 
 
-def _hedge(text: str) -> str:
+def _hedge(text: str, proper: set[str] | None = None) -> str:
     """One hedge for the paragraph, at the front: 'According to reports, ...'. A leading adverbial
     keeps its place ("Previously, according to reports, ..."); a common first word is lower-cased,
     a name is not (seen: "According to reports, Police are...")."""
@@ -403,8 +418,12 @@ def _hedge(text: str) -> str:
     if m:
         return f"{m.group(1)}, according to reports, {m.group(2)}"
     first = re.match(r"^(\w+)", t)
-    if first and first.group(1).lower() in COMMON_FIRST:
-        t = t[0].lower() + t[1:]
+    if first:
+        w = first.group(1)
+        # lower-case a common first word; keep a name ("According to reports, Such" seen on a live page)
+        is_name = (w in proper) if proper is not None else w.lower() not in COMMON_FIRST
+        if not is_name and not w.isupper():
+            t = t[0].lower() + t[1:]
     return "According to reports, " + t
 
 
@@ -585,13 +604,15 @@ def _also(items: list[dict], covered: set[int], by_id: dict[int, dict], essay: l
 
 
 def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict) -> dict:
-    """Hedges, source numbers and colours for the essay and the also-reported list."""
+    """Hedges, source numbers and colours for the essay and the statements it does not carry."""
+    # names: capitalised words the statements use mid-sentence (so "Police" at a sentence start is not one)
+    proper = {w for i in by_id.values() for w in re.findall(r"(?<=[a-z,;] )[A-Z][\w'-]+", i.get("text") or "")}
     for para in paragraphs:
         if any(_needs_hedge(x, by_id) for x in para) and not any(
                 m in x["text"].lower() for x in para for m in HEDGE_MARKERS):
             first = next(x for x in para if _needs_hedge(x, by_id))
             first["raw"] = first["text"]          # the hedge is code's: dropped again if no longer needed
-            first["text"] = _hedge(first["text"])
+            first["text"] = _hedge(first["text"], proper)
     numbering: dict[str, int] = {}
     for sent in [x for para in paragraphs for x in para] + also:
         for x in sent["ids"]:
@@ -611,7 +632,7 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
                    for url, n in sorted(numbering.items(), key=lambda kv: kv[1])]
     background = [b for b in payload.get("background") or [] if b.get("id") is not None]
     return dict(meta, hash=input_hash(sections_from_payload(payload), background), writer=WRITER_VERSION,
-                paragraphs=paragraphs, also=also, sources=source_list,
+                paragraphs=paragraphs, not_in_essay=also, sources=source_list,
                 covers=sorted({x for para in paragraphs for s in para for x in s["ids"]}))
 
 
@@ -627,7 +648,7 @@ def essay_ok(nar: dict, payload: dict) -> bool:
     major = [i["id"] for i in ordered_items(payload) if not i.get("minor") and is_core(i)]
     if not major:
         return True
-    return len(set(major) & set(nar.get("covers") or [])) >= 0.6 * len(major)
+    return len(set(major) & set(nar.get("covers") or [])) >= 0.75 * len(major)
 
 
 def _target_length(items: list[dict]) -> str:
@@ -658,33 +679,60 @@ def _call_writer(router: Router, prompt: str) -> tuple[list[list[dict]], str | N
     return drafted, res.model, None if drafted else "no paragraphs in reply"
 
 
-def _repair(router: Router, drafted: list[list[dict]], failed: list[dict], banned: set[str],
-            statements: str) -> bool:
-    """One pass in which the writer rewrites only the sentences that failed a check, told why
-    (Oct 2026: 5 of 11 sentences of one essay were simply deleted). Fixed sentences replace the
-    failed ones in place; the whole essay is then checked again. Returns whether anything changed."""
-    lines = "\n".join(f'{n + 1}. "{str(f["sentence"].get("text") or "")}" | ids: {f["sentence"].get("ids")} | '
-                      f'problem: {f["reason"]}' for n, f in enumerate(failed))
-    prompt = REPAIR_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", failed=lines, statements=statements)
+NAME_LEAD_STOP = {"The", "A", "An", "In", "On", "At", "By", "For", "From", "According", "After", "Before",
+                  "Reports", "Some", "Other", "Meanwhile", "Later", "Earlier"}
+
+
+def _people(items: list[dict]) -> str:
+    """The fullest form in which the statements name each person or body ("AAP Delhi Chief Bharadwaj",
+    "Ravindra Wakode"), so the writer introduces them properly (Oct 2026: "Bharadwaj and Jha were
+    detained" with no first name, role or context)."""
+    best: dict[str, str] = {}
+    texts = [i["text"] for i in items] + [i.get("speaker") or "" for i in items]
+    for t in texts:
+        for m in re.finditer(r"(?:[A-Z][\w.&'-]*\s+){1,5}[A-Z][a-z]{3,}", t):
+            phrase = m.group(0).strip()
+            words = phrase.split()
+            while words and words[0] in NAME_LEAD_STOP:
+                words = words[1:]
+            if len(words) < 2:
+                continue
+            key = words[-1]
+            phrase = " ".join(words)
+            if len(phrase) > len(best.get(key, "")):
+                best[key] = phrase
+    if not best:
+        return ""
+    return ("People and bodies, in the fullest form the statements name them (use it at first mention):\n"
+            + "; ".join(sorted(best.values())[:40]) + "\n\n")
+
+
+def _article_lines(drafted: list[list[dict]]) -> str:
+    out = []
+    for k, para in enumerate(drafted):
+        out.append(f"[paragraph {k + 1}]")
+        for sent in para:
+            if isinstance(sent, dict):
+                out.append(f'  "{str(sent.get("text") or "")}" | ids: {sent.get("ids")}')
+    return "\n".join(out)
+
+
+def _revise(router: Router, drafted: list[list[dict]], failed: list[dict], missing: list[dict],
+            banned: set[str], statements: str) -> list[list[dict]] | None:
+    """One more writer call: the whole article back, with every missing statement worked in and every
+    failed sentence fixed (owner, Oct 2026: everything in the article, no list of extras under it)."""
+    failed_lines = "\n".join(f'- "{str(f["sentence"].get("text") or "")}" | problem: {f["reason"]}' for f in failed) or "(none)"
+    missing_lines = "\n".join(_statement_line(i) for i in missing) or "(none)"
+    prompt = REVISE_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", article=_article_lines(drafted),
+                                  failed=failed_lines, missing=missing_lines, statements=statements)
     try:
-        res = router.call("writer", prompt, json_out=True, max_output_tokens=2500, max_attempts=2)
+        res = router.call("writer", prompt, json_out=True, max_output_tokens=8000, max_attempts=2)
     except Exception as e:  # noqa: BLE001
-        log.info("narrative: repair pass not done (%s)", str(e)[:120])
-        return False
-    changed = False
-    for fx in (res.data or {}).get("fixes", []) if isinstance(res.data, dict) else []:
-        try:
-            n = int(fx.get("n")) - 1
-        except (TypeError, ValueError, AttributeError):
-            continue
-        if not 0 <= n < len(failed):
-            continue
-        f = failed[n]
-        para = drafted[f["p"]]
-        if f["k"] < len(para):
-            para[f["k"]] = {"text": str(fx.get("text") or ""), "ids": fx.get("ids") or f["sentence"].get("ids") or []}
-            changed = True
-    return changed
+        log.info("narrative: revision not done (%s)", str(e)[:120])
+        return None
+    paras = (res.data or {}).get("paragraphs") if isinstance(res.data, dict) else None
+    out = [p for p in paras if isinstance(p, list)] if isinstance(paras, list) else []
+    return out or None
 
 
 def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> dict:
@@ -701,17 +749,27 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
                   "citing their ids (they are optional; do not repeat them later):\n"
                   + "\n".join(_statement_line(b) for b in background) + "\n\n")
         prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg,
-                                      statements=statements, length=_target_length(items))
+                                      statements=statements, length=_target_length(items), people=_people(items))
         drafted, model, failure = _call_writer(router, prompt)
 
     paragraphs, failed, rejected = _check_paragraphs(drafted, by_id, banned, outlets)
     first_reasons = dict(_reasons())
     repaired = False
-    if failed and model and router is not None:
-        if _repair(router, drafted, failed, banned, statements):
-            repaired = True
+    covered = {x for para in paragraphs for s_ in para for x in s_["ids"]}
+    essay_text = [x["text"] for para in paragraphs for x in para]
+    missing = [i for i in items if i["id"] not in covered and not i.get("minor") and not _said_in(i, essay_text)]
+    if (failed or missing) and model and router is not None:
+        revised = _revise(router, drafted, failed, missing, banned, statements)
+        if revised:
+            saved = dict(_reasons())
             _reasons().clear()
-            paragraphs, failed, rejected = _check_paragraphs(drafted, by_id, banned, outlets)
+            p2, f2, r2 = _check_paragraphs(revised, by_id, banned, outlets)
+            cov2 = {x for para in p2 for s_ in para for x in s_["ids"]}
+            if len(cov2) >= len(covered):          # keep the revision only if it carries at least as much
+                paragraphs, failed, rejected, repaired = p2, f2, r2, True
+            else:
+                _reasons().clear()
+                _reasons().update(saved)
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     if rejected:

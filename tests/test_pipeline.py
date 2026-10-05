@@ -357,19 +357,23 @@ def test_narrative_is_checked_and_coloured(store):
     assert "shoddy" not in text.lower() and "5 people" not in text     # bad sentences rejected
     assert "Daily Alpha" not in text and "Beta News" not in text        # outlets are never named in the text
     # rejected: loaded word, invented number, an outlet named, and the red sentence that never said "false"
-    assert nar["rejected"] == 4
+    # the first draft had 4 bad sentences; the revision pass fixed them (the page may since have been
+    # recoloured, which keeps the revised essay)
+    assert nar["rejected"] <= 1
     # an allegation with a known speaker names the speaker; nothing unconfirmed reads as plain fact
     for para in paras:
         if any(x["class"] in ("unverified", "developing") for x in para):
             assert any(w in " ".join(x["text"].lower() for x in para)
                        for w in ("reportedly", "reports said", "said", "alleg", "according to"))
-    assert all(x["class"] == "established" for x in paras[0])            # essay opens with what is settled
+    # what is settled is in the essay (the page written in the first run is recoloured, not rewritten)
+    assert any(x["class"] == "established" for x in sents)
     # the red statement's sentence never said "false": rejected, so the statement is listed under the
     # essay in plain words (rejected sentences are dropped, never patched into the prose)
-    also = nar["also"]
-    false_s = [x for x in sents + also if x["class"] == "false"]
+    # the red statement's first sentence never said "false": the revision pass wrote it again,
+    # properly, so it is in the essay (everything belongs in the article; nothing listed under it)
+    also = nar["not_in_essay"]
+    false_s = [x for x in sents if x["class"] == "false"]
     assert false_s and "substandard" in false_s[0]["text"] and "false" in false_s[0]["text"]
-    assert not [x for x in sents if x["class"] == "false"]
     assert all(x["sources"] for x in sents + also)                       # every sentence cites sources
     sents = sents + also
     # every statement in the story appears somewhere: in the essay or listed under it
@@ -1110,7 +1114,7 @@ def test_colour_change_recolours_the_essay_without_a_rewrite():
     items[1]["verdict"] = "disputed"
     re2 = recolour(re, _payload(items), set())
     assert [s["ids"] for p in re2["paragraphs"] for s in p] == [[1]]
-    assert re2["also"][0]["ids"] == [2] and "denied" in re2["also"][0]["text"]
+    assert re2["not_in_essay"][0]["ids"] == [2] and "denied" in re2["not_in_essay"][0]["text"]
     # a new statement that is not minor is material: worth a rewrite when the writer can afford one
     items.append(_item(3, "The state ordered an inquiry", "developing"))
     assert needs_rewrite(re2, _payload(items))
@@ -1473,3 +1477,17 @@ def test_an_outlet_the_story_is_about_may_be_named():
                      by, set(), ["The Wire"]) == [1]
     by2 = {1: _item(1, "Police detained two protesters")}
     assert _validate({"text": "The Wire reported that police detained two protesters.", "ids": [1]}, by2, set(), ["The Wire"]) is None
+
+
+def test_people_are_listed_in_their_fullest_form_for_the_writer():
+    from nishpaksh.narrative import _people
+    items = [_item(1, "AAP Delhi Chief Saurabh Bharadwaj and Jha were detained by police"),
+             _item(2, "Bharadwaj shared a video on X"), _item(3, "The Supreme Court heard the case in New Delhi")]
+    out = _people(items)
+    assert "AAP Delhi Chief Saurabh Bharadwaj" in out and "Supreme Court" in out
+
+
+def test_the_paragraph_hedge_keeps_names_and_lowercases_ordinary_words():
+    from nishpaksh.narrative import _hedge
+    assert _hedge("Such accreditation requires five years.", {"Bharadwaj"}).startswith("According to reports, such")
+    assert _hedge("Bharadwaj was detained.", {"Bharadwaj"}) == "According to reports, Bharadwaj was detained."

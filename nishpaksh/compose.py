@@ -441,7 +441,6 @@ def _collect_strings(payload: dict) -> list[str]:
     out += [b["text"] for b in payload.get("background", [])]
     for para in (payload.get("narrative") or {}).get("paragraphs", []):
         out += [x["text"] for x in para]
-    out += [x["text"] for x in (payload.get("narrative") or {}).get("also", [])]
     return [s for s in dict.fromkeys(out) if s]
 
 
@@ -497,8 +496,6 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
     for para in (hi.get("narrative") or {}).get("paragraphs", []):
         for x in para:
             x["text"] = tr(x["text"])
-    for x in (hi.get("narrative") or {}).get("also", []):
-        x["text"] = tr(x["text"])
     hi["translation_complete"] = all(_key(s) in cache for s in strings)
     return hi
 
@@ -515,7 +512,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     it waits. A live page keeps its essay, recoloured by code, unless the change is material and the
     writer can afford a rewrite. A page with no keepable essay is taken down, not shown as stitched
     sentences (Oct 2026: 85 of 91 live pages were code-stitched and read like he-said-she-said)."""
-    from .narrative import essay_ok, input_hash, needs_rewrite, recolour, sections_from_payload, write_narrative
+    from .narrative import (essay_ok, input_hash, is_core, needs_rewrite, ordered_items, recolour,
+                            sections_from_payload, write_narrative)
     payload = build_payload(store, router, story_id)
     store.exec(update(stories).where(stories.c.id == story_id).values(dirty=False))
     prev = store.one(select(published).where(published.c.story_id == story_id))
@@ -527,16 +525,27 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     old = old if _keepable(old) else None
     h = input_hash(sections_from_payload(payload), payload.get("background"))
     nar = None
+    banned = set(payload["loaded_words"])
+    kept = None
     if old and old.get("hash") == h:
         nar = old  # same statements, same verdicts: keep the story as written
-    elif needs_rewrite(old, payload) and router is not None and _writer_attempt_allowed(store, story_id, h):
-        fresh = write_narrative(router, payload, set(payload["loaded_words"]))
+    elif old and not needs_rewrite(old, payload):
+        kept = recolour(old, payload, banned)
+        # a verdict change can take a sentence out (a fact now disputed or shown false, written as
+        # plain fact): everything belongs in the article, so losing a statement that matters is
+        # worth a rewrite (it is no longer anywhere on the page but the statement list)
+        lost = [i for i in ordered_items(payload) if not i.get("minor") and is_core(i)
+                and i["id"] not in set(kept.get("covers") or [])]
+        if kept["paragraphs"] and not lost:
+            nar = kept
+    if nar is None and router is not None and _writer_attempt_allowed(store, story_id, h):
+        fresh = write_narrative(router, payload, banned)
         if essay_ok(fresh, payload) and _keepable(fresh):
             nar = fresh
         else:
             _note_writer_failure(store, story_id, h, fresh)
     if nar is None and old:
-        nar = recolour(old, payload, set(payload["loaded_words"]))
+        nar = kept or recolour(old, payload, banned)
         if not nar["paragraphs"]:
             nar = None
     if prev and payload.get("headline_is_fallback"):

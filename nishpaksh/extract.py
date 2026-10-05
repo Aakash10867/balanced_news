@@ -74,7 +74,9 @@ Rules:
    emotive or judging word (for example: lynched, mob, brutal, so-called, terrorist, provoked, clashed,
    hate, radical, thug, martyr) out of "text" and into "loaded_words", copied exactly as the article
    wrote it, in the article's own language.
-2. Write "text" in English even when the article is in Hindi. Keep names as written.
+2. Write "text" in English even when the article is in Hindi. Keep names as written, and name people
+   in full with the role or title the article gives them ("AAP Delhi chief Saurabh Bharadwaj", not
+   "Bharadwaj"), in every item, so each statement can be understood on its own.
 3. Times: write the article's time words in English in "when_text" ("26 September", "Tuesday night"). Fill start/end ONLY when they follow from the
    text and the publish date (for example "Tuesday night" -> that Tuesday 18:00 to 23:59). Never guess.
    If unclear use null and precision "unknown".
