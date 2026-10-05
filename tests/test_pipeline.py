@@ -98,7 +98,8 @@ def test_slot_waits_for_token_window():
     s = ModelSlot(id="g", rpm=30, tpm=16000, rpd=100)
     now = 1000.0
     s.window = [(now - 50, 9000), (now - 10, 6000)]
-    assert s.wait_time(4000, now) == pytest.approx(10.2, abs=0.01)   # oldest call must age out
+    # 90% of the 16,000 token limit (stay just under it): the oldest call must age out, plus 1 s
+    assert s.wait_time(4000, now) == pytest.approx(11.0, abs=0.01)
     assert s.wait_time(20000, now) is None                           # can never fit
 
 
@@ -285,8 +286,8 @@ def test_router_respects_limits_under_parallel_calls():
     th = [threading.Thread(target=go) for _ in range(8)]
     [t.start() for t in th]
     [t.join() for t in th]
-    assert len(b.starts) == 4                 # never more than rpm calls in the minute
-    assert results.count({"ok": 1}) == 4 and results.count("QuotaExhausted") == 4
+    assert len(b.starts) == 3                 # one under the rpm limit of 4, never more in the minute
+    assert results.count({"ok": 1}) == 3 and results.count("QuotaExhausted") == 5
 
 
 def test_retention_keeps_recent_and_drops_old(store):

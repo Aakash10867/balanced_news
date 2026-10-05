@@ -116,22 +116,34 @@ class ModelSlot:
     def wait_time(self, est_tokens: int, now: float, units: int = 1) -> float | None:
         """Seconds until this model can take the call; None if it cannot today. `units` is how many
         requests Google counts for the call (an embedding batch counts one per text)."""
-        if self.disabled or self.used_today + units > self.rpd or est_tokens > self.tpm or units > self.rpm:
+        rpm, tpm = self.rpm_cap, self.tpm_cap
+        if self.disabled or self.used_today + units > self.rpd or est_tokens > tpm or units > rpm:
             return None
         self.window = [(t, k) for t, k in self.window if now - t < 60]
         wait = max(0.0, self.cooldown_until - now)
-        over = len(self.window) + units - self.rpm
+        over = len(self.window) + units - rpm
         if over > 0:
-            wait = max(wait, 60 - (now - self.window[over - 1][0]) + 0.2)
+            wait = max(wait, 60 - (now - self.window[over - 1][0]) + 1.0)
         used = sum(k for _, k in self.window)
-        if used + est_tokens > self.tpm:
+        if used + est_tokens > tpm:
             remaining = used
             for t, k in self.window:
                 remaining -= k
-                if remaining + est_tokens <= self.tpm:
-                    wait = max(wait, 60 - (now - t) + 0.2)
+                if remaining + est_tokens <= tpm:
+                    wait = max(wait, 60 - (now - t) + 1.0)
                     break
         return wait
+
+    # Stay just under Google's per-minute limits (owner, Oct 5 2026): the dashboard showed Flash-Lite
+    # at 16 of 15 requests a minute. Our minute and Google's are measured at different moments
+    # (network, clock), so we aim one request (10% for large limits) and 10% of tokens below.
+    @property
+    def rpm_cap(self) -> int:
+        return max(1, self.rpm - max(1, self.rpm // 10))
+
+    @property
+    def tpm_cap(self) -> int:
+        return int(self.tpm * 0.9)
 
 
 @dataclass
@@ -150,7 +162,9 @@ class GeminiBackend:
         from google import genai
         from google.genai import types
         # without a timeout a stuck call to an overloaded model can hang the whole run
-        self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=timeout_s * 1000))
+        # no hidden retries inside the SDK: every request Google sees is one the router counted
+        self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
+            timeout=timeout_s * 1000, retry_options=types.HttpRetryOptions(attempts=1)))
 
     def list_models(self) -> list[str]:
         return [m.name.split("/")[-1] for m in self.client.models.list()]
