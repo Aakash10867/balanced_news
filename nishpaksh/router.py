@@ -404,11 +404,11 @@ class Router:
             time.sleep(min(wait, 5.0))
 
     def call(self, tier: str, prompt: str, json_out: bool = True, grounded: bool = False,
-             max_output_tokens: int = 2500) -> LLMResult:
+             max_output_tokens: int = 2500, max_attempts: int = 8) -> LLMResult:
         est = estimate_tokens(prompt) + max_output_tokens
         json_retry_used = False
         errors: list[str] = []
-        for _ in range(8):
+        for _ in range(max_attempts):
             try:
                 slot = self._reserve(tier, est)
             except QuotaExhausted:
@@ -422,10 +422,16 @@ class Router:
             except Exception as e:  # noqa: BLE001
                 short = f"{slot.id}: {str(e)[:120]}"
                 errors.append(short)
+                kind = _error_kind(str(e))
                 with self._lock:
                     self._handle_error(slot, e)
+                    if kind in ("overloaded 5xx", "timeout") and slot.used_today < slot.rpd:
+                        # the server refused for load: not a request served, so it does not use up
+                        # the day's allowance (Oct 5 2026: 27 of 30 writer calls were 503 "high
+                        # demand", and counting them throttled the writer by our own pacing)
+                        slot.used_today = max(0, slot.used_today - 1)
                     self._record(slot, 0)
-                    self.error_log[f"{tier} | {slot.id} | {_error_kind(str(e))}"] += 1
+                    self.error_log[f"{tier} | {slot.id} | {kind}"] += 1
                 continue
             with self._lock:
                 slot.fail_streak = 0

@@ -1311,3 +1311,24 @@ def test_paragraph_hedge_reads_naturally():
     assert _hedge("Police are examining CCTV footage.") == "According to reports, police are examining CCTV footage."
     assert _hedge("Previously, the CJP held a protest.") == "Previously, according to reports, the CJP held a protest."
     assert _hedge("Gyanesh Kumar met officials.") == "According to reports, Gyanesh Kumar met officials."
+
+
+def test_overloaded_calls_do_not_use_up_the_days_allowance():
+    from nishpaksh.router import CallFailed
+
+    class Overloaded:
+        def generate(self, model, prompt, json_mode, grounded):
+            raise RuntimeError("503 UNAVAILABLE: high demand")
+    r = Router({"t": [dict(id="m1", rpm=100, tpm=10**6, rpd=100)]}, Overloaded(), max_wait=0.1)
+    with pytest.raises(CallFailed):
+        r.call("t", "x", max_attempts=3)
+    assert r.tiers["t"][0].used_today == 0
+
+
+def test_reanalysis_keeps_work_of_other_stages(store):
+    from nishpaksh import perspectives as P
+    sid, _ = _sided_story(store, {"A1": "A", "A2": "A", "B1": "B"})
+    store.exec(update(stories).where(stories.c.id == sid).values(analysis={
+        "writer_failures": {"n": 1}, "importance": {"score": 4}, "thread_checked": "h"}))
+    an = P.analyze_story(store, sid)
+    assert an["writer_failures"] == {"n": 1} and an["importance"] == {"score": 4} and an["thread_checked"] == "h"

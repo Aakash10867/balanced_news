@@ -462,7 +462,9 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
         prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg,
                                       statements="\n".join(_statement_line(i) for i in items))
         try:
-            res = router.call("writer", prompt, json_out=True, max_output_tokens=6000)
+            # at most 3 tries per run: when Flash is overloaded, 8 tries burned a quarter of an
+            # hour's writer calls on one story; the story is simply tried again next run
+            res = router.call("writer", prompt, json_out=True, max_output_tokens=6000, max_attempts=3)
             model = res.model
             paras = (res.data or {}).get("paragraphs") if isinstance(res.data, dict) else None
             if isinstance(paras, list):
