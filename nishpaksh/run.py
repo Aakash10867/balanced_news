@@ -210,6 +210,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     stats.update(storage=retention.enforce(store), seconds=round(time.time() - t0))
     stats["quota_left"] = {t: router.remaining_today(t) for t in router.tiers}
     stats["quota_now"] = {t: router.remaining_now(t) for t in router.tiers}   # under the pacing curve
+    stats["model_errors"] = dict(router.error_log.most_common(15))
     if tavily is not None:
         stats["tavily"] = {"spent_this_run": tavily.spent_this_run, "left_today": tavily.allowance_today()}
     stats["health"] = health(store, stats)

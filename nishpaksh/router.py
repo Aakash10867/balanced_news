@@ -78,6 +78,20 @@ class QuotaExhausted(Exception):
     pass
 
 
+class CallFailed(RuntimeError):
+    """Every attempt errored (overload, rate limit, bad reply): not the same as no quota left."""
+
+
+def _error_kind(msg: str) -> str:
+    low = msg.lower()
+    for k, words in (("rate limit 429", ("429", "resource_exhausted")), ("overloaded 5xx", ("500", "502", "503", "504", "unavailable")),
+                     ("timeout", ("timeout", "timed out", "deadline")), ("not found", ("404", "not found")),
+                     ("bad request 400", ("400", "invalid_argument"))):
+        if any(w in low for w in words):
+            return k
+    return low[:60]
+
+
 @dataclass
 class ModelSlot:
     id: str
@@ -210,6 +224,8 @@ class Router:
         self.day = quota_day()
         self._lock = threading.Lock()
         self.bad_keys: set[int] = set()
+        from collections import Counter as _C
+        self.error_log: _C = _C()   # "tier | model | kind" -> count, written to the run's stats
         # One slot per (key, model), shared by every tier that lists the model, so a model used by
         # two tiers is never counted against two separate quotas. `keep` lets a tier stop using a
         # model while that many requests remain today, leaving them for the other tiers.
@@ -391,16 +407,25 @@ class Router:
              max_output_tokens: int = 2500) -> LLMResult:
         est = estimate_tokens(prompt) + max_output_tokens
         json_retry_used = False
+        errors: list[str] = []
         for _ in range(8):
-            slot = self._reserve(tier, est)
+            try:
+                slot = self._reserve(tier, est)
+            except QuotaExhausted:
+                if errors:   # the models failed, the quota did not run out: say so (Oct 2026 these were hidden)
+                    raise CallFailed(f"{tier}: {len(errors)} failed attempts, last: {errors[-1]}") from None
+                raise
             booked = slot.window[-1] if slot.window else None
             try:
                 text, sources, tokens = self.backends[slot.key].generate(
                     slot.id, prompt, json_mode=json_out and slot.json_mode, grounded=grounded)
             except Exception as e:  # noqa: BLE001
+                short = f"{slot.id}: {str(e)[:120]}"
+                errors.append(short)
                 with self._lock:
                     self._handle_error(slot, e)
                     self._record(slot, 0)
+                    self.error_log[f"{tier} | {slot.id} | {_error_kind(str(e))}"] += 1
                 continue
             with self._lock:
                 slot.fail_streak = 0
@@ -415,6 +440,8 @@ class Router:
                 prompt += "\n\nYour previous reply was not valid JSON. Reply with ONLY the JSON object."
                 continue
             return LLMResult(text, data, slot.id, sources, tokens)
+        if errors:
+            raise CallFailed(f"{tier}: {len(errors)} failed attempts, last: {errors[-1]}")
         raise QuotaExhausted(tier)
 
     def embed(self, texts: list[str], batch: int = 25, max_requests: int | None = None) -> list[list[float]] | None:

@@ -507,7 +507,9 @@ def _note_writer_failure(store: Store, story_id: int, h: str, nar: dict) -> None
     row = store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}
     a = dict(row.get("analysis") or {})
     w = a.get("writer_failures") or {}
-    n = w.get("n", 0) + 1 if w.get("hash") == h else 1
+    prev_n = w.get("n", 0) if w.get("hash") == h else 0
+    # an overloaded or rate-limited model is not the story's fault: recorded, but no try is used up
+    n = prev_n if str(nar.get("failure") or "").startswith("error") else prev_n + 1
     a["writer_failures"] = {"hash": h, "n": n, "model": nar.get("model"), "failure": nar.get("failure"),
                             "rejected": nar.get("rejected"), "reasons": nar.get("reject_reasons"),
                             "covers": len(nar.get("covers") or []), "at": utcnow().isoformat(timespec="minutes")}

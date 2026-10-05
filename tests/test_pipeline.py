@@ -1290,3 +1290,17 @@ def test_positions_test_finds_real_sides_and_not_noise(store):
         finally:
             positions.build_items = orig
         assert rep["signal"] is expect, rep
+
+
+def test_failed_attempts_are_not_reported_as_quota():
+    """Oct 2026: 20 writer calls gave 2 essays and no recorded failure, because eight errors in a
+    row were raised as 'quota exhausted'. Errors now say what they were, and are counted per kind."""
+    from nishpaksh.router import CallFailed
+
+    class Overloaded:
+        def generate(self, model, prompt, json_mode, grounded):
+            raise RuntimeError("503 UNAVAILABLE: high demand")
+    r = Router({"t": [dict(id="m1", rpm=100, tpm=10**6, rpd=100)]}, Overloaded(), max_wait=0.1)
+    with pytest.raises(CallFailed, match="503"):
+        r.call("t", "x")
+    assert any("overloaded" in k for k in r.error_log)
