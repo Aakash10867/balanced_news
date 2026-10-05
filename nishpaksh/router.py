@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 EMBED_DIMS = 256
 PACIFIC = ZoneInfo("America/Los_Angeles")  # Gemini daily quotas reset at midnight Pacific
 PACE_SLACK_HOURS = 2   # how far ahead of an even spread a slot may run
+OVERLOAD_STREAK = 3    # consecutive overload errors before a model is dropped for the run
 
 
 def quota_day() -> str:
@@ -71,6 +72,7 @@ class ModelSlot:
     cooldown_until: float = 0.0
     disabled: bool = False
     key: int = 0          # which API key (Google Cloud project) this slot spends
+    fail_streak: int = 0  # consecutive overload errors in this run
 
     @property
     def usage_key(self) -> str:
@@ -338,6 +340,14 @@ class Router:
         elif any(x in msg for x in ("500", "502", "503", "504")) or "unavailable" in low or "deadline" in low \
                 or "timeout" in low or "timed out" in low:
             slot.cooldown_until = time.time() + 45  # overloaded: let the other models in the tier work
+            slot.fail_streak += 1
+            if slot.fail_streak >= OVERLOAD_STREAK:
+                # Gemma on the free tier fails most calls ("high demand"): Oct 4 2026, ~840 booked
+                # Gemma requests gave 16 articles read. Each failure can hang until the timeout, so
+                # after a streak the model is dropped for the rest of the run.
+                slot.disabled = True
+                log.warning("model %s (key %d) overloaded %d times in a row; off for this run",
+                            slot.id, slot.key + 1, slot.fail_streak)
         else:
             slot.cooldown_until = time.time() + 30
         log.warning("model %s (key %d) error: %s", slot.id, slot.key + 1, msg[:200])
@@ -376,6 +386,7 @@ class Router:
                     self._record(slot, 0)
                 continue
             with self._lock:
+                slot.fail_streak = 0
                 if tokens and booked in slot.window:
                     slot.window[slot.window.index(booked)] = (booked[0], tokens)
                 self._record(slot, tokens or est)

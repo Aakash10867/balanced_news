@@ -1008,3 +1008,20 @@ def test_modelcmp_reruns_analysis_on_a_scratch_copy_and_compares(store):
     assert store.rows(select(canonical.c.id, canonical.c.verdict).where(canonical.c.story_id == sid)) == before
     page = modelcmp.page_tasks(store, modelcmp.Counting(_router(store, backend)), sid, [x["text"] for x in out[0].values()])
     assert page["headline"]
+
+
+def test_router_drops_a_model_that_keeps_failing_with_overload():
+    class B:
+        def __init__(self): self.calls = Counter()
+        def generate(self, model, prompt, json_mode, grounded):
+            self.calls[model] += 1
+            if model == "gemma":
+                raise RuntimeError("503 UNAVAILABLE: model is experiencing high demand")
+            return '{"ok": true}', [], 10
+    from collections import Counter
+    b = B()
+    r = Router({"t": [dict(id="gemma", rpm=100, tpm=10**6, rpd=1000), dict(id="fl", rpm=100, tpm=10**6, rpd=1000)]}, b)
+    for _ in range(3):
+        r.tiers["t"][0].cooldown_until = 0          # pretend the cooldown passed each time
+        r.call("t", "x")
+    assert r.tiers["t"][0].disabled and b.calls["gemma"] == 3
