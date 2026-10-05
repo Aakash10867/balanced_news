@@ -1464,3 +1464,12 @@ def test_every_request_outcome_is_counted_per_model_and_key():
     log = {k: dict(v) for k, v in r.call_log.items()}
     assert sum(v.get("ok", 0) for v in log.values()) == 1
     assert sum(v.get("overloaded 5xx", 0) for v in log.values()) == 1
+
+
+def test_an_outlet_the_story_is_about_may_be_named():
+    from nishpaksh.narrative import _validate
+    by = {1: _item(1, "Police asked The Wire journalist Mohammad Irfan to show his PIB card")}
+    assert _validate({"text": "Police asked The Wire journalist Mohammad Irfan to show his PIB card, reportedly.", "ids": [1]},
+                     by, set(), ["The Wire"]) == [1]
+    by2 = {1: _item(1, "Police detained two protesters")}
+    assert _validate({"text": "The Wire reported that police detained two protesters.", "ids": [1]}, by2, set(), ["The Wire"]) is None

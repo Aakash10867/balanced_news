@@ -273,7 +273,7 @@ def _no(reason: str):
 
 
 def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets: list[str],
-              scope: set[str] = frozenset()) -> list[int] | None:
+              scope: set[str] = frozenset(), style: bool = True) -> list[int] | None:
     """The sentence's valid statement ids, or None. `scope` holds the words of the speaker named
     earlier in the same paragraph: "He added that..." continues that speaker's attribution."""
     text = str(sentence.get("text") or "").strip()
@@ -295,8 +295,11 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
     low = text.lower()
     if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned):
         return _no("loaded word")
-    # outlet names never appear in the article (the source links carry them)
-    if any(re.search(rf"(?<!\w){re.escape(o)}(?!\w)", text) for o in outlets if len(o) >= 3):
+    # outlet names never appear in the article as sources (the source links carry them); an outlet the
+    # statements themselves name is part of the story ("The Wire journalist Mohammad Irfan was detained")
+    stmt_text = " ".join(by_id[i]["text"] for i in ids)
+    if style and any(re.search(rf"(?<!\w){re.escape(o)}(?!\w)", text) and not re.search(rf"(?<!\w){re.escape(o)}(?!\w)", stmt_text)
+                     for o in outlets if len(o) >= 3):
         return _no("names an outlet")
     source_text = " ".join(by_id[i]["text"] + " " + ((by_id[i].get("time") or {}).get("when_text") or "")
                            + " " + " ".join(by_id[i]["check"]["reasons"] if by_id[i].get("check") else [])
@@ -339,7 +342,7 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
             return _no("cause not in statements")
     # statements joined in one sentence must share a subject (a name, place, number or key word);
     # two businesses and two findings glued together because both were unconfirmed read as one fact
-    if len(ids) > 1 and not _connected([by_id[i] for i in ids]):
+    if style and len(ids) > 1 and not _connected([by_id[i] for i in ids]):
         return _no("unrelated statements joined")
     return ids
 
@@ -458,7 +461,7 @@ def _partners(i: dict) -> set[int]:
             if isinstance(x, int) and x >= 0}
 
 
-def _check_paragraphs(drafted: list[list], by_id, banned, outlets) -> tuple[list[list[dict]], list[dict], int]:
+def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool = True) -> tuple[list[list[dict]], list[dict], int]:
     """Validated sentences only. Sentences that depend on each other stand or fall together
     (Oct 2026: "Nestle India denied this" survived while the claim it denied was dropped):
       - a sentence that leans on the one before it ("He added", "The company denied this") is tied to it;
@@ -482,7 +485,7 @@ def _check_paragraphs(drafted: list[list], by_id, banned, outlets) -> tuple[list
         if k > 0 and isinstance(sent, dict) and LEANS_BACK.search(str(sent.get("text") or "")):
             leans_on[idx] = idx - 1
         _TL.last = None
-        ids = _validate(sent, by_id, banned, outlets, scope) if isinstance(sent, dict) else None
+        ids = _validate(sent, by_id, banned, outlets, scope, style) if isinstance(sent, dict) else None
         if ids is None:
             failed.append({"p": p, "k": k, "sentence": sent if isinstance(sent, dict) else {},
                            "reason": getattr(_TL, "last", None) or "not a sentence"})
@@ -729,7 +732,10 @@ def recolour(old: dict, payload: dict, banned: set[str]) -> dict:
     drafted = [[{"text": s.get("raw") or s["text"], "ids": [x for x in s["ids"] if x in by_id]} for s in para]
                for para in old.get("paragraphs") or []]
     drafted = [[s for s in para if s["ids"]] for para in drafted]
-    paragraphs, _, rejected = _check_paragraphs([p for p in drafted if p], by_id, banned, outlets)
+    # an essay already written is held to the truth checks (numbers, speakers, disputes, false claims,
+    # claim/response pairs), not to style rules added after it was written: re-checking style stripped
+    # sentences out of live essays and moved their facts under them (Oct 5 2026)
+    paragraphs, _, rejected = _check_paragraphs([p for p in drafted if p], by_id, banned, outlets, style=False)
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     before = sum(len(p) for p in old.get("paragraphs") or [])
