@@ -32,11 +32,14 @@ id | statement | who the reports attribute it to (as they wrote it; "article" = 
 
 Do seven things:
 1. "same": groups of ids that state the same fact, even if worded differently, in another language,
-   or with names spelled differently. Do NOT group statements that differ in any number, date, place
+   with names spelled differently, or told from the other side ("X filed a complaint" / "police received
+   a complaint from X"). Do NOT group statements that differ in any number, date, place
    or person, or where one adds an important new fact.
 2. "conflicts": pairs of ids that cannot both be true AS FACTS (for example different numbers, times or
-   places for the same thing, or one says something happened and the other says it did not).
-   A named party's answer to an allegation or finding is NOT a conflict (see 5).
+   places for the same thing, or one says something happened and the other says it did not), each with
+   the two incompatible values: [id, id, "40 people vs 50 people"]. If you cannot name two values that
+   cannot both be true, it is not a conflict. A named party's answer to an allegation or finding is NOT
+   a conflict (see 5). Statements that agree are never a conflict, however differently worded.
 3. "names": SPELLING variants of the same name mapped to ONE spelling (use the most common one),
    e.g. {{"Dulla": "Doolla", "Dula": "Doolla"}}. Only different spellings or transliterations of the SAME
    name. Never map an alias, a nickname, a title or a different name of the same person to another
@@ -57,12 +60,12 @@ Do seven things:
    with the names: {{"ids": [5, 9], "names": ["Company A", "Company B"]}}. Not spelling variants.
 
 Reply with JSON only:
-{{"same": [[1, 4]], "conflicts": [[2, 7]], "names": {{"Dulla": "Doolla"}}, "speaker": {{"3": "Sahil's parents"}},
+{{"same": [[1, 4]], "conflicts": [[2, 7, "40 people vs 50 people"]], "names": {{"Dulla": "Doolla"}}, "speaker": {{"3": "Sahil's parents"}},
  "responses": [[8, 9]], "role": {{"11": "related"}}, "related_event": {{"11": "FSSAI finding on Nestle whitener, 4 October"}},
  "name_conflicts": [{{"ids": [5, 9], "names": ["Company A", "Company B"]}}]}}"""
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
-CONSOLIDATE_VERSION = 2   # part of the cache key: stories are consolidated again when the task changes
+CONSOLIDATE_VERSION = 3   # part of the cache key: stories are consolidated again when the task changes
 
 NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -149,12 +152,31 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                 out.append(x)
         return out
 
-    conflicts = {tuple(sorted(p)) for p in (tuple(ids(p)) for p in data.get("conflicts") or []) if len(p) == 2 and p[0] != p[1]}
+    from .match import real_difference
+    conflicts: set[tuple[int, int]] = set()
+    for c in data.get("conflicts") or []:
+        if not isinstance(c, list) or len(c) < 2:
+            continue
+        pair = ids(c[:2])
+        if len(pair) == 2 and pair[0] != pair[1] and real_difference(
+                by_id[pair[0]]["text"], by_id[pair[1]]["text"], c[2] if len(c) > 2 else None):
+            conflicts.add(tuple(sorted(pair)))
     responses = [tuple(p) for p in (ids(p) for p in data.get("responses") or []) if len(p) == 2 and p[0] != p[1]]
     response_pairs = {tuple(sorted(p)) for p in responses}
-    for r in rows:  # contradictions already known
+    # contradictions marked earlier are re-judged here, with the whole story in view: one that is not
+    # confirmed (and is not a plain difference in numbers) is taken back (Oct 2026: two statements that
+    # agreed stayed "disputed" for good because conflicts could only ever be added)
+    from .match import _remove_conflict as _unmark
+    for r in rows:
         for o in r["conflicts"] or []:
-            conflicts.add(tuple(sorted((r["id"], o))))
+            pair = tuple(sorted((r["id"], o)))
+            if o not in by_id or pair in conflicts:
+                continue
+            a_, b_ = by_id[pair[0]]["text"], by_id[pair[1]]["text"]
+            if NUM.findall(a_) and NUM.findall(b_) and set(NUM.findall(a_)) != set(NUM.findall(b_)):
+                conflicts.add(pair)            # different numbers for one thing: kept
+            else:
+                _unmark(store, *pair)
     # a party's answer to a claim is a response, not a contradiction (Oct 2026: a company's statement
     # that its product is safe turned the analyst's finding amber): take such pairs out of conflicts
     from .match import _remove_conflict

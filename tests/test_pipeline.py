@@ -1491,3 +1491,34 @@ def test_the_paragraph_hedge_keeps_names_and_lowercases_ordinary_words():
     from nishpaksh.narrative import _hedge
     assert _hedge("Such accreditation requires five years.", {"Bharadwaj"}).startswith("According to reports, such")
     assert _hedge("Bharadwaj was detained.", {"Bharadwaj"}) == "According to reports, Bharadwaj was detained."
+
+
+def test_a_contradiction_needs_two_values_that_cannot_both_be_true():
+    """'Three journalists filed complaints' and 'police received complaints from three journalists'
+    agree; they were shown as a dispute."""
+    from nishpaksh.match import real_difference, typed_difference
+    a = "Three female journalists filed complaints alleging sexual harassment by police officers."
+    b = "Delhi Police received complaints from three female journalists alleging sexual harassment."
+    assert not (real_difference(a, b, "filed vs received") and typed_difference("filed vs received"))
+    assert not real_difference(a, b, None)
+    x, y = "Police questioned 40 people", "Police questioned 50 people"
+    assert real_difference(x, y, "40 people vs 50 people") and typed_difference("40 people vs 50 people")
+
+
+def test_consolidation_takes_back_a_contradiction_it_does_not_confirm(store):
+    from nishpaksh.consolidate import consolidate_story
+    from nishpaksh.match import _add_conflict
+    from nishpaksh.db import claims as Cl
+    sid, c1 = _origin_story(store, [("Outlet A", None, "journalists"), ("Outlet B", None, "journalists")])
+    store.exec(update(canonical).where(canonical.c.id == c1).values(text="Three journalists filed complaints"))
+    c2 = store.insert_returning_id(canonical, dict(story_id=sid, kind="claim", text="Police received complaints from three journalists", conflicts=[]))
+    store.exec(insert(Cl).values(story_id=sid, article_id=1, kind="claim", text="x", stance="attributes",
+                                 attributed_to="police", evidence="none", canonical_id=c2))
+    _add_conflict(store, c1, c2)
+
+    class R:
+        def call(self, tier, prompt, **kw):
+            from nishpaksh.router import LLMResult
+            return LLMResult("", {"same": [], "conflicts": [], "names": {}, "speaker": {}, "responses": []}, "m", [], 1)
+    consolidate_story(store, R(), sid)
+    assert store.one(select(canonical.c.conflicts).where(canonical.c.id == c1))["conflicts"] == []

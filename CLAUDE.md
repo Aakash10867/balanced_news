@@ -49,6 +49,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),
   consolidation can re-label statements (`analysis.roles`). Headline, timeline and essay_ok use the
   core only; context is written after it and coloured like everything else.
+- **A contradiction names its values (Oct 5 2026):** "contradict" only with two values that cannot both
+  be true ("40 vs 50", "Friday vs Saturday", "arrested vs not arrested"), checked in code
+  (`match.real_difference`); the quick pairwise check trusts only numbers, names, dates and negation
+  (`typed_difference`); consolidation re-judges every earlier contradiction with the whole story in
+  view and takes back what it does not confirm. The same event told from two sides is "same".
 - **Three relations:** same / contradiction (both cannot be true as facts: amber) / RESPONSE (a party
   answers a claim or finding: both true as reports, written together, never amber). "No denial" in
   the green rule means nobody denies the EVENT happened, not that a party objects to it.

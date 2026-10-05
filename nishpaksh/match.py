@@ -8,6 +8,7 @@ separate: we would rather under-corroborate than wrongly merge.
 from __future__ import annotations
 
 import logging
+import re
 
 from scipy.sparse import vstack
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -21,7 +22,8 @@ log = logging.getLogger(__name__)
 
 MATCH_PROMPT = """Each numbered line has two statements, A and B, from different news reports about the same story.
 For each line decide:
-  "same"       - A and B state the same fact (wording or tone may differ),
+  "same"       - A and B state the same fact (wording or tone may differ), including the same event told
+                 from two sides ("X filed a complaint" / "police received X's complaint"),
   "contradict" - A and B cannot both be true as facts (different numbers, times or places for the
                  same thing, or one says it happened and the other says it did not). A person's or
                  body's answer to an allegation ("the company says its product is safe") is NOT a
@@ -31,7 +33,11 @@ Judge only the facts stated, not the tone.
 
 {pairs}
 
-Reply with JSON only: {{"results": [{{"n": 1, "label": "same"}}, ...]}}"""
+For "contradict", also give "differs": the two incompatible values, as "A's value vs B's value"
+(e.g. "40 people vs 50 people", "Friday vs Saturday", "arrested vs not arrested"). If you cannot name
+two values that cannot both be true, it is not a contradiction.
+
+Reply with JSON only: {{"results": [{{"n": 1, "label": "same"}}, {{"n": 2, "label": "contradict", "differs": "40 vs 50"}}, ...]}}"""
 
 
 def _create_canonical(store: Store, story_id: int, kind: str, text: str) -> int:
@@ -60,6 +66,37 @@ def _add_conflict(store: Store, a: int, b: int) -> None:
             store.exec(update(canonical).where(canonical.c.id == x).values(conflicts=sorted((r["conflicts"] or []) + [y])))
 
 
+def real_difference(a: str, b: str, differs) -> bool:
+    """A contradiction must name two values that cannot both be true, each found in its statement
+    (Oct 2026: "three journalists filed complaints" and "police received complaints from three
+    journalists" were marked contradictory and shown as a dispute). Code checks the model's claim:
+    the two sides differ, and each shares a number or word with one statement and not only the other."""
+    if not isinstance(differs, str) or " vs " not in differs.lower():
+        return False
+    left, right = re.split(r"(?i)\s+vs\.?\s+", differs.strip(), maxsplit=1)
+    words = lambda t: {w for w in re.findall(r"[a-z0-9]+", t.lower()) if len(w) >= 2} - {"the", "and", "of", "in", "on", "at", "to", "a", "an"}  # noqa: E731
+    lw, rw, aw, bw = words(left), words(right), words(a), words(b)
+    if not lw or not rw or lw == rw:
+        return False
+    if "not" in lw ^ rw or "no" in lw ^ rw:      # "arrested vs not arrested"
+        return bool((lw | rw) & (aw | bw))
+    in_a_l, in_b_r = lw & aw - bw, rw & bw - aw
+    in_b_l, in_a_r = lw & bw - aw, rw & aw - bw
+    return bool((in_a_l and in_b_r) or (in_b_l and in_a_r))
+
+
+def typed_difference(differs) -> bool:
+    """Values a quick pairwise look can be trusted on: numbers, dates or names (capitalised), or one
+    side denying the other. Other contradictions ("murdered vs died in an accident") are left to
+    consolidation, which reads the whole story."""
+    if not isinstance(differs, str) or " vs " not in differs.lower():
+        return False
+    left, right = re.split(r"(?i)\s+vs\.?\s+", differs.strip(), maxsplit=1)
+    typed = lambda t: bool(re.search(r"\d|\b[A-Z][a-z]+", t))   # noqa: E731
+    neg = lambda t: bool(re.search(r"(?i)\b(not|no|never|didn't|did not)\b", t))   # noqa: E731
+    return (typed(left) and typed(right)) or (neg(left) != neg(right))
+
+
 def _remove_conflict(store: Store, a: int, b: int) -> None:
     for x, y in ((a, b), (b, a)):
         r = store.one(select(canonical).where(canonical.c.id == x))
@@ -85,8 +122,12 @@ def _llm_pairs(router: Router | None, pairs: list[tuple[str, str]]) -> list[str]
         for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
             try:
                 n = int(item["n"]) - 1
-                if 0 <= n < len(chunk) and item.get("label") in ("same", "contradict", "different"):
-                    labels[start + n] = item["label"]
+                label = item.get("label")
+                if (0 <= n < len(chunk) and label == "contradict"
+                        and not (real_difference(*chunk[n], item.get("differs")) and typed_difference(item.get("differs")))):
+                    label = "different"   # no concrete incompatible values: not shown as a dispute
+                if 0 <= n < len(chunk) and label in ("same", "contradict", "different"):
+                    labels[start + n] = label
             except (KeyError, ValueError, TypeError):
                 continue
     return labels
