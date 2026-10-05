@@ -1304,3 +1304,10 @@ def test_failed_attempts_are_not_reported_as_quota():
     with pytest.raises(CallFailed, match="503"):
         r.call("t", "x")
     assert any("overloaded" in k for k in r.error_log)
+
+
+def test_paragraph_hedge_reads_naturally():
+    from nishpaksh.narrative import _hedge
+    assert _hedge("Police are examining CCTV footage.") == "According to reports, police are examining CCTV footage."
+    assert _hedge("Previously, the CJP held a protest.") == "Previously, according to reports, the CJP held a protest."
+    assert _hedge("Gyanesh Kumar met officials.") == "According to reports, Gyanesh Kumar met officials."

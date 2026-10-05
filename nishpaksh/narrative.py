@@ -53,8 +53,9 @@ Attribution, the way a good newspaper does it (important):
 - NEVER name a newspaper, channel or website. Do not write "X reported", "according to X" for an outlet.
 - ESTABLISHED: state plainly as fact, with no attribution.
 - A statement with "said by": name the speaker ONCE, at the start of the run of their statements
-  ("Ukraine's foreign minister Andrii Sybiha set out Kyiv's position."), then continue in the same
-  paragraph with "he said", "he added", "the minister said" while it is still that speaker. Name
+  ("Ukraine's foreign minister Andrii Sybiha said India's proposal was the most comprehensive."),
+  then continue in the same paragraph with "he said", "he added", "the minister said" while it is
+  still that speaker. No empty set-up sentences ("X set out their position."). Name
   the next speaker when the speaker changes. Do not end every sentence with "according to <name>".
   An accusation must always name who makes it.
 - REPORTED without "said by": not confirmed. Put such statements together and hedge ONCE for the
@@ -296,10 +297,23 @@ def _needs_hedge(sent: dict, by_id: dict[int, dict]) -> bool:
                and by_id[x]["verdict"] != "disputed" for x in sent["ids"])
 
 
+COMMON_FIRST = {"the", "a", "an", "police", "officials", "authorities", "protesters", "students", "residents",
+                "villagers", "locals", "workers", "farmers", "troops", "security", "it", "this", "these", "there",
+                "several", "many", "some", "two", "three", "four", "five", "an", "his", "her", "their", "its"}
+
+
 def _hedge(text: str) -> str:
-    """One hedge for the paragraph, at the front: 'According to reports, ...'."""
+    """One hedge for the paragraph, at the front: 'According to reports, ...'. A leading adverbial
+    keeps its place ("Previously, according to reports, ..."); a common first word is lower-cased,
+    a name is not (seen: "According to reports, Police are...")."""
     t = text.strip()
-    return "According to reports, " + (_soft_lower(t) if t else t)
+    m = re.match(r"^([A-Z][a-z]+),\s+(.*)$", t)
+    if m:
+        return f"{m.group(1)}, according to reports, {m.group(2)}"
+    first = re.match(r"^(\w+)", t)
+    if first and first.group(1).lower() in COMMON_FIRST:
+        t = t[0].lower() + t[1:]
+    return "According to reports, " + t
 
 
 def input_hash(sections: dict[str, list[dict]], background: list[dict] | None = None) -> str:
