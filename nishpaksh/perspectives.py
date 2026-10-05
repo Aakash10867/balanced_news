@@ -222,6 +222,43 @@ def mark_qualified(store: Store, story_id: int, rule: str) -> None:
     store.exec(update(stories).where(stories.c.id == story_id).values(qualifies=True, analysis=analysis))
 
 
+def _affinity_clusters(rows: list[tuple[str, str, float]], sources: list[str], k: int):
+    from sklearn.cluster import SpectralClustering
+    agg: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for a, b, v in rows:
+        agg[(a, b)].append(v)
+    idx = {s: i for i, s in enumerate(sources)}
+    A = np.full((len(sources), len(sources)), 0.5)
+    np.fill_diagonal(A, 1.0)
+    for (a, b), v in agg.items():
+        if len(v) >= 2 and a in idx and b in idx:
+            A[idx[a], idx[b]] = A[idx[b], idx[a]] = (float(np.mean(v)) + 1) / 2
+    return SpectralClustering(n_clusters=k, affinity="precomputed", random_state=0).fit_predict(A)
+
+
+def _stability(store: Store, sources: list[str], labels, rounds: int = 10, share: float = 0.8) -> float:
+    """Mean adjusted Rand index between the clustering and clusterings of random 80% subsets of the
+    stories: near 1 when the perspectives are real, near 0 when they are noise."""
+    import random
+    from sklearn.metrics import adjusted_rand_score
+    by_story: dict[int, list] = defaultdict(list)
+    for r in store.rows(select(story_pairs.c.story_id, story_pairs.c.a, story_pairs.c.b, story_pairs.c.value)):
+        by_story[r["story_id"]].append((r["a"], r["b"], r["value"]))
+    ids = sorted(by_story)
+    rng = random.Random(0)
+    k = int(max(labels)) + 1
+    scores = []
+    for _ in range(rounds):
+        pick = rng.sample(ids, max(1, int(len(ids) * share)))
+        try:
+            lab = _affinity_clusters([x for sid in pick for x in by_story[sid]], sources, k)
+        except Exception:  # noqa: BLE001
+            scores.append(0.0)
+            continue
+        scores.append(adjusted_rand_score(list(labels), list(lab)))
+    return float(np.mean(scores)) if scores else 0.0
+
+
 def recompute_global(store: Store) -> int:
     """Cluster sources by their average agreement across all stories."""
     from scipy.optimize import linear_sum_assignment
@@ -258,9 +295,15 @@ def recompute_global(store: Store) -> int:
             continue
         if best is None or sil > best[0]:
             best = (sil, lab)
-    if best is None or best[0] < SETTINGS.global_min_silhouette:
-        log.info("global perspectives: no clear structure yet (best silhouette %s)",
-                 None if best is None else round(best[0], 3))
+    stab = None
+    if best is not None and best[0] >= SETTINGS.global_min_silhouette:
+        stab = _stability(store, sources, best[1])
+    if best is None or best[0] < SETTINGS.global_min_silhouette or stab < SETTINGS.global_min_stability:
+        # Oct 2026: silhouette 0.04-0.07 and resampling agreement (ARI) 0.02-0.68 on real data: the
+        # clusters were noise crossing the threshold now and then, so perspectives flipped between
+        # runs. Shown only when they also survive resampling of the stories.
+        log.info("global perspectives: no stable structure yet (silhouette %s, stability %s)",
+                 None if best is None else round(best[0], 3), None if stab is None else round(stab, 2))
         store.exec(delete(source_clusters))
         return 0
 

@@ -105,6 +105,7 @@ class Settings:
     split_margin: float = 0.25
     global_min_sources: int = 6
     global_min_silhouette: float = 0.10
+    global_min_stability: float = 0.6   # mean ARI against 80% resamples of the stories
 
     # verdicts
     min_articles_to_verify: int = 2

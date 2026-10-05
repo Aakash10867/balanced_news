@@ -131,12 +131,21 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             # interim rule while perspectives are unknown: 3+ independent outlets, 2+ origins
             perspectives.mark_qualified(store, sid, "interim")
     analysed = _parallel(dirty, analyse, deadline - 12 * 60, workers)
+    before = {r["id"]: (r["analysis"] or {}).get("groups") for r in store.rows(
+        select(stories.c.id, stories.c.analysis).where(stories.c.id.in_(sorted(live_now) or [-1])))}
     stats["global_clusters"] = perspectives.recompute_global(store)
-    if stats["global_clusters"]:
-        for sid in analysed:  # labels may have changed
-            perspectives.analyze_story(store, sid)
-            if origins.assess_story(store, None, sid):
-                perspectives.mark_qualified(store, sid, "interim")
+    relabelled: set[int] = set()
+    # labels may have changed (or the clusters gone): re-label analysed stories and every live page,
+    # so no page keeps showing perspectives that no longer exist (code only, no model calls)
+    for sid in sorted(set(analysed) | live_now):
+        perspectives.analyze_story(store, sid)
+        if origins.assess_story(store, None, sid):
+            perspectives.mark_qualified(store, sid, "interim")
+        if sid in before:
+            after = ((store.one(select(stories.c.analysis).where(stories.c.id == sid)) or {}).get("analysis") or {}).get("groups")
+            if after != before[sid]:
+                relabelled.add(sid)
+    stats["relabelled_pages"] = len(relabelled)
 
     # a story whose read articles were grouped on another embedding model's vectors cannot be
     # trusted to be one event (real data: one such "story" mixed GST, a temple and a phone launch);
@@ -178,7 +187,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     for sid in sorted(live - set(to_publish)):
         if sid not in qualifying:
             to_publish.append(sid)          # no longer qualifies: publish_story takes the page down
-        elif verify.base_verdicts(store, sid):
+        elif verify.base_verdicts(store, sid) or sid in relabelled:
             to_publish.append(sid)
     published = _parallel(to_publish, lambda sid: compose.publish_story(store, router, sid), deadline, workers)
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(to_publish),

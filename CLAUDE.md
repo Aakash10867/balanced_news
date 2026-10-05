@@ -100,7 +100,11 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 ## Open items
 - Green rule may be too strict (own-voice reporting rarely counts as an origin); revisit with data.
 - Thread timeline page (later). Weak fallback headlines when the model fails twice.
-- Perspective clusters appear but flip between runs; watch stability.
+- Perspective clusters flipped because they were noise (Oct 5 2026: 32 sources, 21% of pairs
+  observed, 1,020 of 1,164 pairs seen once, agreement centred on 0, silhouette 0.04-0.07, resample
+  ARI 0.02-0.68). Now shown only if stable under resampling (`global_min_stability`), and live pages
+  are relabelled when clusters change. Open: a richer signal (owner's call): outlet-level units
+  instead of outlet::author, and stance-bearing evidence beyond omissions.
 - Writer failures on big stories: the reason is now split ("empty sentence" / "no valid ids" / "too
   long", plus reply-level `failure`); read `stories.analysis.writer_failures` before shortening input.
 - Fallback sentences append `when_text` that can be relative to another event ("on Thursday, a day

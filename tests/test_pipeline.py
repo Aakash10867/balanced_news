@@ -1147,3 +1147,23 @@ def test_pacing_opens_faster_on_indian_daytime_hours():
     d = lambda h: dt.datetime(2026, 10, 5, h, 0, tzinfo=PACIFIC)
     # Pacific 01:00-02:00 is 13:30-14:30 IST (day); 12:00-13:00 Pacific is 00:30-01:30 IST (night)
     assert pace_fraction(d(2)) - pace_fraction(d(1)) == pytest.approx(3 * (pace_fraction(d(13)) - pace_fraction(d(12))))
+
+
+def test_noise_does_not_become_perspectives(store):
+    """Real data, Oct 2026: agreement values centred on zero, clusters that changed with every
+    resample. Random agreements must not produce perspectives."""
+    import random
+    from nishpaksh.perspectives import recompute_global
+    rng = random.Random(3)
+    outlets = [f"O{i}" for i in range(12)]
+    rows = []
+    for sid in range(1, 40):
+        pick = rng.sample(outlets, 5)
+        for i, a in enumerate(pick):
+            for b in pick[i + 1:]:
+                x, y = sorted((a, b))
+                rows.append(dict(story_id=sid, a=x, b=y, value=rng.uniform(-1, 1)))
+    with store.engine.begin() as c:
+        c.execute(insert(story_pairs), rows)
+    assert recompute_global(store) == 0
+    assert store.rows(select(source_clusters)) == []
