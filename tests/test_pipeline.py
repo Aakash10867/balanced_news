@@ -1448,3 +1448,19 @@ def test_consolidation_turns_a_response_out_of_a_contradiction(store):
     assert store.one(select(canonical.c.conflicts).where(canonical.c.id == c1))["conflicts"] == []
     an = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
     assert an["responses"] == [[c1, c2]]
+
+
+def test_every_request_outcome_is_counted_per_model_and_key():
+    class Flaky:
+        def __init__(self): self.n = 0
+        def generate(self, model, prompt, json_mode, grounded):
+            self.n += 1
+            if self.n == 1:
+                raise RuntimeError("503 UNAVAILABLE: high demand")
+            return '{"ok": 1}', [], 5
+    f = Flaky()     # one backend behind two keys: the first request is refused, the retry on key 2 works
+    r = Router({"t": [dict(id="m1", rpm=100, tpm=10**6, rpd=100)]}, [f, f], max_wait=0.1)
+    r.call("t", "x")
+    log = {k: dict(v) for k, v in r.call_log.items()}
+    assert sum(v.get("ok", 0) for v in log.values()) == 1
+    assert sum(v.get("overloaded 5xx", 0) for v in log.values()) == 1

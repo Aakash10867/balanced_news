@@ -240,6 +240,9 @@ class Router:
         self.bad_keys: set[int] = set()
         from collections import Counter as _C
         self.error_log: _C = _C()   # "tier | model | kind" -> count, written to the run's stats
+        # every request's outcome per model and key ("gemini-3.8-flash@k2" -> {"ok": 4, "overloaded 5xx": 9}),
+        # so refusal rates can be compared by hour of day (owner, Oct 5 2026)
+        self.call_log: dict[str, _C] = {}
         # One slot per (key, model), shared by every tier that lists the model, so a model used by
         # two tiers is never counted against two separate quotas. `keep` lets a tier stop using a
         # model while that many requests remain today, leaving them for the other tiers.
@@ -312,6 +315,11 @@ class Router:
             else:
                 log.warning("model %s not available on key %d; disabled", slot.id, k + 1)
                 slot.disabled = True
+
+    def _outcome(self, slot: ModelSlot, kind: str) -> None:
+        """Count one request's outcome (caller holds the lock)."""
+        from collections import Counter as _C
+        self.call_log.setdefault(slot.usage_key, _C())[kind] += 1
 
     # budgets -------------------------------------------------------------------
     def pace_cap(self, tier: str, slot: ModelSlot) -> int:
@@ -446,9 +454,11 @@ class Router:
                         slot.used_today = max(0, slot.used_today - 1)
                     self._record(slot, 0)
                     self.error_log[f"{tier} | {slot.id} | {kind}"] += 1
+                    self._outcome(slot, kind)
                 continue
             with self._lock:
                 slot.fail_streak = 0
+                self._outcome(slot, "ok")
                 if tokens and booked in slot.window:
                     slot.window[slot.window.index(booked)] = (booked[0], tokens)
                 self._record(slot, tokens or est)
@@ -493,6 +503,7 @@ class Router:
                     if "validation" not in str(e):
                         self._handle_error(slot, e)
                     self._record(slot, 0)
+                    self._outcome(slot, "bad reply" if "validation" in str(e) else _error_kind(str(e)))
                 log.warning("embedding batch of %d failed (%s)", len(chunk), str(e)[:150])
                 if len(chunk) > 10 and "validation" in str(e):
                     step = max(10, len(chunk) // 4)  # smaller pieces, at most 4 more requests
@@ -501,5 +512,6 @@ class Router:
                 return None
             with self._lock:
                 self._record(slot, est)
+                self._outcome(slot, "ok")
             out.extend(vecs)
         return out
