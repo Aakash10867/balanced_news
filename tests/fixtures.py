@@ -149,6 +149,8 @@ class FakeBackend:
             speaker = {n: by for n, _, by in lines if by not in ("article", "unnamed source") and "," not in by}
             return json.dumps({"same": [], "conflicts": [], "names": {}, "speaker": speaker}), [], 100
         if "Write the headline for this news story" in prompt:
+            if "ESTABLISHED:" not in prompt:   # nothing settled yet: a good editor hedges
+                return json.dumps({"headline": "Section of Kesarganj flyover reportedly collapses, engineer arrested"}), [], 50
             return json.dumps({"headline": "Section of Kesarganj flyover collapses; two dead, engineer arrested"}), [], 50
         if "Translate each value" in prompt:
             payload = json.loads(prompt[prompt.index("{"):])

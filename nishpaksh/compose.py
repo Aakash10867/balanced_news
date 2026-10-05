@@ -321,6 +321,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         "children": children,
         "background": background,
         "headline": headline,
+        "headline_is_fallback": headline == fallback,
         "has_established": bool(facts),
         "perspective_mode": analysis.get("mode"),
         "qualified_by": analysis.get("qualified_by"),
@@ -362,6 +363,7 @@ def _collect_strings(payload: dict) -> list[str]:
     out += [b["text"] for b in payload.get("background", [])]
     for para in (payload.get("narrative") or {}).get("paragraphs", []):
         out += [x["text"] for x in para]
+    out += [x["text"] for x in (payload.get("narrative") or {}).get("also", [])]
     return [s for s in dict.fromkeys(out) if s]
 
 
@@ -413,25 +415,59 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
     for para in (hi.get("narrative") or {}).get("paragraphs", []):
         for x in para:
             x["text"] = tr(x["text"])
+    for x in (hi.get("narrative") or {}).get("also", []):
+        x["text"] = tr(x["text"])
     hi["translation_complete"] = all(_key(s) in cache for s in strings)
     return hi
 
 
+def _keepable(nar: dict | None) -> bool:
+    """An essay we may keep showing: written by the writer (Flash), not stitched by code and not by
+    Flash-Lite (its essays read badly, Oct 2026)."""
+    m = (nar or {}).get("model") or ""
+    return bool(m) and "lite" not in m and bool((nar or {}).get("paragraphs"))
+
+
 def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
+    """Only the writer produces prose. A new story is published once it has a good essay; until then
+    it waits. A live page keeps its essay, recoloured by code, unless the change is material and the
+    writer can afford a rewrite. A page with no keepable essay is taken down, not shown as stitched
+    sentences (Oct 2026: 85 of 91 live pages were code-stitched and read like he-said-she-said)."""
+    from .narrative import essay_ok, input_hash, needs_rewrite, recolour, sections_from_payload, write_narrative
     payload = build_payload(store, router, story_id)
     store.exec(update(stories).where(stories.c.id == story_id).values(dirty=False))
+    prev = store.one(select(published).where(published.c.story_id == story_id))
     if payload is None:
         # no longer meets the bar (e.g. after a rule change): take the page down, not leave it stale
         store.exec(delete(published).where(published.c.story_id == story_id))
         return False
-    prev = store.one(select(published).where(published.c.story_id == story_id))
-    from .narrative import input_hash, sections_from_payload, write_narrative
     old = ((prev or {}).get("payload_en") or {}).get("narrative")
-    if (old and old.get("paragraphs") and old.get("hash") == input_hash(sections_from_payload(payload), payload.get("background"))
-            and not old.get("rejected")):
-        payload["narrative"] = old  # same statements, same verdicts: keep the story as written
-    else:
-        payload["narrative"] = write_narrative(router, payload, set(payload["loaded_words"]))
+    old = old if _keepable(old) else None
+    h = input_hash(sections_from_payload(payload), payload.get("background"))
+    nar = None
+    if old and old.get("hash") == h:
+        nar = old  # same statements, same verdicts: keep the story as written
+    elif needs_rewrite(old, payload) and router is not None and _writer_attempt_allowed(store, story_id, h):
+        fresh = write_narrative(router, payload, set(payload["loaded_words"]))
+        if essay_ok(fresh, payload) and _keepable(fresh):
+            nar = fresh
+        else:
+            _note_writer_failure(store, story_id, h, fresh)
+    if nar is None and old:
+        nar = recolour(old, payload, set(payload["loaded_words"]))
+        if not nar["paragraphs"]:
+            nar = None
+    if prev and payload.get("headline_is_fallback"):
+        payload["headline"] = prev["headline_en"]   # a written headline beats the code fallback
+        payload["headline_is_fallback"] = False
+    if nar is None or payload.get("headline_is_fallback"):
+        # nothing worth reading yet: wait for the writer (the story is retried next run)
+        store.exec(update(stories).where(stories.c.id == story_id).values(dirty=True))
+        if prev:
+            store.exec(delete(published).where(published.c.story_id == story_id))
+        log.info("story %s waits for a written essay%s", story_id, " (taken down)" if prev else "")
+        return False
+    payload["narrative"] = nar
     hi = translate_payload(store, router, payload)
     version = (prev["version"] if prev else 0) + 1
     payload["version"] = hi["version"] = version
@@ -442,3 +478,27 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     else:
         store.exec(insert(published).values(story_id=story_id, **values))
     return True
+
+
+WRITER_TRIES = 3   # failed writes of the same statements before waiting for new ones
+
+
+def _writer_attempt_allowed(store: Store, story_id: int, h: str) -> bool:
+    a = ((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
+    w = a.get("writer_failures") or {}
+    return w.get("hash") != h or w.get("n", 0) < WRITER_TRIES
+
+
+def _note_writer_failure(store: Store, story_id: int, h: str, nar: dict) -> None:
+    """Remembered per statement set, with why, so a story the writer cannot do is not retried every
+    hour (and the reasons are readable in the database). Quota is not a failure of the story."""
+    if nar.get("failure") == "quota":
+        return
+    row = store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}
+    a = dict(row.get("analysis") or {})
+    w = a.get("writer_failures") or {}
+    n = w.get("n", 0) + 1 if w.get("hash") == h else 1
+    a["writer_failures"] = {"hash": h, "n": n, "model": nar.get("model"), "failure": nar.get("failure"),
+                            "rejected": nar.get("rejected"), "reasons": nar.get("reject_reasons"),
+                            "covers": len(nar.get("covers") or []), "at": utcnow().isoformat(timespec="minutes")}
+    store.exec(update(stories).where(stories.c.id == story_id).values(analysis=a))

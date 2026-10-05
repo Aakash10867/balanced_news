@@ -171,7 +171,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         if sid not in qualifying:
             continue
         verify.base_verdicts(store, sid)
-        if time.time() < deadline - 6 * 60 and (budget.get("judge", 0) > 0):
+        if SETTINGS.model_verdicts and time.time() < deadline - 6 * 60 and (budget.get("judge", 0) > 0):
             checked += verify.verify_story(store, router, sid, budget)
     # pages not touched this run still age: a "developing" statement becomes established once it has
     # stood 6 hours, and the clock is code-only (no model calls), so every live page is re-checked

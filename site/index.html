@@ -77,6 +77,9 @@
   .sources .why { font-family: var(--sans); font-size: .75rem; margin-left: .35em; }
   .s.false { color: var(--v-false); }
   .plain .s { color: inherit; }
+  .also-h { font-family: var(--sans); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); margin: 1.6rem 0 .5rem; font-weight: 600; }
+  .also { margin: 0 0 1rem; padding-left: 1.1rem; font-size: .95em; }
+  .also li { margin: 0 0 .4rem; }
   sup { font-family: var(--sans); font-size: .58em; line-height: 0; margin-left: .1em; color: var(--ink-soft); }
   sup a { text-decoration: none; }
   sup a:hover { color: var(--brand); text-decoration: underline; }
@@ -149,7 +152,7 @@ const T = {
     k_unverified: "not yet cross-checked", k_false: "shown false", falseTag: "FALSE",
     unreadable: "could not be read", unread: "not read (same owner as another source, or reading limit)",
     interim: "Which outlets form different perspectives is not yet known; this story is published because at least three independent outlets covered it.",
-    plain: "Plain text", sourcesTitle: "Sources", wording: "How each side worded it", fact: "Statement",
+    also: "Also reported", plain: "Plain text", sourcesTitle: "Sources", wording: "How each side worded it", fact: "Statement",
     detail: "Every statement, with who reported it", perspectives: "Perspectives",
     localNote: "Grouped from this story alone; stable perspectives need more history.",
     reported: "reported by", denied: "denied by",
@@ -172,7 +175,7 @@ const T = {
     k_unverified: "अभी पुष्टि नहीं", k_false: "असत्य सिद्ध", falseTag: "असत्य",
     unreadable: "पढ़ा नहीं जा सका", unread: "नहीं पढ़ा गया (दूसरे स्रोत का ही मालिक, या पढ़ने की सीमा)",
     interim: "कौन-से स्रोत अलग-अलग दृष्टिकोण बनाते हैं, यह अभी पता नहीं है; यह ख़बर इसलिए प्रकाशित है क्योंकि कम से कम तीन स्वतंत्र स्रोतों ने इसे कवर किया।",
-    plain: "सादा पाठ", sourcesTitle: "स्रोत", wording: "किस पक्ष ने किन शब्दों में कहा", fact: "कथन",
+    also: "यह भी बताया गया", plain: "सादा पाठ", sourcesTitle: "स्रोत", wording: "किस पक्ष ने किन शब्दों में कहा", fact: "कथन",
     detail: "हर कथन, और किसने बताया", perspectives: "दृष्टिकोण",
     localNote: "केवल इसी ख़बर के आधार पर समूह; स्थायी दृष्टिकोणों के लिए अभी और इतिहास चाहिए।",
     reported: "किसने बताया", denied: "किसने खंडन किया",
@@ -288,7 +291,7 @@ function ranges(nums) {
 
 function essayHtml(nar, t) {
   const names = Object.fromEntries(nar.sources.map(s => [s.n, s.outlet]));
-  return nar.paragraphs.map(para => "<p>" + para.map(x => {
+  const sent = x => {
     const nums = x.sources || [];
     const sup = ranges(nums).map(([a, b]) => b === a
         ? `<a href="#src-${a}" title="${esc(names[a] || "")}" data-src="${a}">${a}</a>`
@@ -296,7 +299,11 @@ function essayHtml(nar, t) {
     const who = [...new Set(nums.map(n => names[n]).filter(Boolean))].join(", ");
     const tag = x.class === "false" ? `<span class="ftag">${esc(t.falseTag)}</span>` : "";
     return `${tag}<span class="s ${esc(x.class)}" title="${esc(who)}">${esc(x.text)}</span><sup>${sup}</sup>`;
-  }).join(" ") + "</p>").join("");
+  };
+  // statements the essay does not carry are listed under it, so nothing is silently dropped
+  const also = (nar.also || []).length
+    ? `<h4 class="also-h">${esc(t.also)}</h4><ul class="also">${nar.also.map(x => `<li>${sent(x)}</li>`).join("")}</ul>` : "";
+  return nar.paragraphs.map(para => "<p>" + para.map(sent).join(" ") + "</p>").join("") + also;
 }
 
 function keyHtml(t, present) {
@@ -329,7 +336,7 @@ async function story(id) {
   document.title = `${p.headline} · Nishpaksh`;
   const n = (p.counts || {}).independent_sources || 0;
   const paragraphs = nar.paragraphs || [];
-  const present = new Set(paragraphs.flat().map(x => x.class));
+  const present = new Set([...paragraphs.flat(), ...(nar.also || [])].map(x => x.class));
 
   const framing = (p.framing || []).length ? (() => {
     const persp = [...new Set(p.framing.flatMap(f => Object.keys(f.words)))].sort();

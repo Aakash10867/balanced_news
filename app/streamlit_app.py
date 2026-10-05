@@ -157,6 +157,12 @@ def essay_html(nar: dict) -> str:
             out.append(f'<span class="np-s {x["class"]}" title="{tip}">{html.escape(x["text"])}</span>'
                        f'<sup>{sup}</sup> ')
         out.append("</p>")
+    if nar.get("also"):
+        out.append('<ul class="np-also">')
+        for x in nar["also"]:
+            sup = ",".join(f'<a href="#src-{n}">{n}</a>' for n in x["sources"][:4])
+            out.append(f'<li><span class="np-s {x["class"]}">{html.escape(x["text"])}</span><sup>{sup}</sup></li>')
+        out.append("</ul>")
     out.append("</div>")
     return "".join(out)
 
@@ -300,7 +306,7 @@ def story_view(sid: int, lang: str, t: dict) -> None:
 
     nar = p.get("narrative") or {}
     if nar.get("paragraphs"):
-        present = {x["class"] for para in nar["paragraphs"] for x in para}
+        present = {x["class"] for para in nar["paragraphs"] for x in para} | {x["class"] for x in nar.get("also") or []}
         st.markdown(essay_html(nar), unsafe_allow_html=True)
         st.markdown(key_html(t, present), unsafe_allow_html=True)
         if not p.get("has_established"):

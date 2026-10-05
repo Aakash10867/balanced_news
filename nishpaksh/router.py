@@ -24,6 +24,26 @@ PACE_SLACK_HOURS = 2   # how far ahead of an even spread a slot may run
 OVERLOAD_STREAK = 3    # consecutive overload errors before a model is dropped for the run
 
 
+IST = ZoneInfo("Asia/Kolkata")
+# Indian news arrives on Indian hours: the day's allowance opens faster 07:00-23:00 IST
+DAY_WEIGHT, NIGHT_WEIGHT = 1.5, 0.5
+
+
+def _hour_weight(pacific_midnight: dt.datetime, h: int) -> float:
+    ist_hour = (pacific_midnight + dt.timedelta(hours=h)).astimezone(IST).hour
+    return DAY_WEIGHT if 7 <= ist_hour < 23 else NIGHT_WEIGHT
+
+
+def pace_fraction(now: dt.datetime) -> float:
+    """Share of the day's allowance open by `now` (Pacific): each hour of the quota day opens its
+    weighted share, plus PACE_SLACK_HOURS of average hours as headroom."""
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    w = [_hour_weight(midnight, h) for h in range(24)]
+    total = sum(w)
+    done = sum(w[:now.hour]) + w[now.hour] * (now.minute / 60)
+    return min(1.0, (done + PACE_SLACK_HOURS * total / 24) / total)
+
+
 def quota_day() -> str:
     return dt.datetime.now(PACIFIC).date().isoformat()
 
@@ -273,10 +293,7 @@ class Router:
         allowance = slot.rpd - self.keep.get((tier, id(slot)), 0)
         if not self.paced:
             return allowance
-        now = self._now_pacific()
-        hours = now.hour + now.minute / 60
-        frac = min(1.0, (hours + PACE_SLACK_HOURS) / 24)
-        return int(allowance * frac + 1e-6)
+        return int(allowance * pace_fraction(self._now_pacific()) + 1e-6)
 
     def _now_pacific(self) -> dt.datetime:
         return dt.datetime.now(PACIFIC)

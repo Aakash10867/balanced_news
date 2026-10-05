@@ -128,6 +128,8 @@ def _embed_missing(store: Store, router: Router | None, arts: list[dict]) -> int
     left = router.remaining_today("embed")
     runs_left = max(1, 24 - _dt.datetime.now(PACIFIC).hour)
     budget = min(left, max(SETTINGS.embed_min_texts_per_run, left - SETTINGS.embed_reserve_per_run * (runs_left - 1)))
+    # never more than the pacing curve allows now (the router would refuse the rest mid-way)
+    budget = min(budget, router.remaining_now("embed"))
     # Half for new arrivals (newest first: that is what forms today's stories), half for read
     # articles still on an old model's vector (their stories cannot be published until regrouped).
     new = sorted([a for a in missing if a["extracted_at"] is None], key=lambda a: a["published_at"], reverse=True)

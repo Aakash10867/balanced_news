@@ -37,6 +37,19 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   them; at most one hedge per paragraph; "after" is fine, cause words only if a statement has them;
   never invent a speaker; "allegedly" stays as long as the outlets say it. Suicide stories get the
   Tele-MANAS helpline note.
+- **Only the writer produces prose (Oct 2026).** A new story is published only with a good essay
+  (`narrative.essay_ok`: written by a Flash model, covers 60% of non-minor statements); otherwise it
+  waits. Code-stitched pages and Flash-Lite essays are never kept (`compose._keepable`). A live
+  essay is recoloured by code when only verdicts change (`narrative.recolour`); a rewrite is spent
+  only on a material change (`needs_rewrite`). Rejected sentences are dropped, not patched; what the
+  essay does not carry is listed under it ("Also reported"). A fallback headline never goes live.
+  Writer failures per statement set are kept in `stories.analysis.writer_failures` (3 tries max).
+- **Attribution like a newspaper:** name a speaker once, continue with "he said" in the same
+  paragraph (validator honours the paragraph's speaker scope); "reports said" at most once per
+  paragraph, as a leading "According to reports,"; a dispute states both versions and whose they
+  are, never "other reports differ".
+- **Red verdicts on hold** (`SETTINGS.model_verdicts = False`): no second model family on the free
+  tier now Gemma fails most calls. Code verdicts still run. Tests keep the machinery on (conftest).
 - **Headlines:** ≤12 words, one hammer-blow fact, people introduced by role, hook from the facts, no
   "reports say", no tacked-on "reportedly".
 - **Threads:** a later development links to its earlier story (parent → daughter, many-to-many).
@@ -63,7 +76,8 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Flash models: 20/day each per key (writer/judge); Flash-Lite 500/day each per key; Gemma is
   unreliable on the free tier (overflow only). Grounded search ~20/day per model per key.
 - Quotas reset at 00:00 Pacific = 12:30 IST. **Every tier is paced** over that day
-  (`router.pace_cap`: allowance x (hours + 2)/24, unused carries forward): unpaced, Flash-Lite ran
+  (`router.pace_fraction`: hours weighted 1.5 on 07:00-23:00 IST and 0.5 at night, plus 2 h
+  slack; unused carries forward): unpaced, Flash-Lite ran
   out after ~15 runs and the site sat frozen from ~23:30 to 12:30 IST (Oct 4-5 2026). Dispatch the
   hourly workflow with reason `backfill` for a deliberate unpaced catch-up.
 - `light` = analysis (decides colours); `page` = headline, importance, threads, Hindi (same models,
@@ -87,8 +101,8 @@ importance, threads, headline; `narrative.py`: the essay) → Hindi → retentio
 - Green rule may be too strict (own-voice reporting rarely counts as an origin); revisit with data.
 - Thread timeline page (later). Weak fallback headlines when the model fails twice.
 - Perspective clusters appear but flip between runs; watch stability.
-- Writer sometimes fails all 5 attempts on big stories ("empty, no valid ids or too long", Kumar 10254
-  in replay 17; fine in 15/16): split the reason into its three causes, then consider shorter input.
+- Writer failures on big stories: the reason is now split ("empty sentence" / "no valid ids" / "too
+  long", plus reply-level `failure`); read `stories.analysis.writer_failures` before shortening input.
 - Fallback sentences append `when_text` that can be relative to another event ("on Thursday, a day
   before his arrest" on the arrest itself); prefer the absolute date in fallbacks.
 

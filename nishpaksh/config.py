@@ -117,6 +117,9 @@ class Settings:
     health_max_story_articles: int = 80
     health_embed_batch: int = 25        # one grouping batch (stories.py embeds 25 texts per call)
     health_stall_runs: int = 3
+    # model verdict checks (judge + independent second family) decide red/confirmed. On hold since
+    # Oct 2026: Gemma, the only other family on the free tier, fails most calls. Code verdicts still run.
+    model_verdicts: bool = False
 
 
 SETTINGS = Settings()

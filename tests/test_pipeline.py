@@ -227,8 +227,9 @@ def test_headline_with_loaded_word_is_rejected(store):
             return super().generate(model, prompt, json_mode, grounded)
     _seed(store)
     run(store=store, backend=Loaded(), time_budget_min=30, ingest_news=False, verify_budget=VB)
-    pub = store.rows(select(published))[0]
-    assert "shoddy" not in pub["headline_en"].lower()
+    # the loaded headline is rejected; with only the code fallback left, the new story waits
+    assert store.rows(select(published)) == []
+    assert store.rows(select(stories.c.dirty).where(stories.c.qualifies.is_(True)))[0]["dirty"] is True
 
 
 def test_quota_exhaustion_degrades_safely(store):
@@ -356,10 +357,15 @@ def test_narrative_is_checked_and_coloured(store):
             assert any(w in " ".join(x["text"].lower() for x in para)
                        for w in ("reportedly", "reports said", "said", "alleg", "according to"))
     assert all(x["class"] == "established" for x in paras[0])            # essay opens with what is settled
-    false_s = [x for x in sents if x["class"] == "false"]
+    # the red statement's sentence never said "false": rejected, so the statement is listed under the
+    # essay in plain words (rejected sentences are dropped, never patched into the prose)
+    also = nar["also"]
+    false_s = [x for x in sents + also if x["class"] == "false"]
     assert false_s and "substandard" in false_s[0]["text"] and "false" in false_s[0]["text"]
-    assert all(x["sources"] for x in sents)                              # every sentence cites sources
-    # every statement in the story appears somewhere in the essay, minor ones included
+    assert not [x for x in sents if x["class"] == "false"]
+    assert all(x["sources"] for x in sents + also)                       # every sentence cites sources
+    sents = sents + also
+    # every statement in the story appears somewhere: in the essay or listed under it
     payload = p["payload_en"]
     all_ids = {i["id"] for i in payload["contested"] + payload["established"] + payload["undated"]}
     all_ids |= {i["id"] for tier in payload["timeline"] for i in tier}
@@ -840,6 +846,11 @@ def test_story_grouped_on_old_vectors_is_not_published(store):
     assert store.rows(select(published)) == []
 
 
+def test_model_verdicts_are_on_hold_by_default():
+    from nishpaksh.config import SETTINGS
+    assert SETTINGS.model_verdicts is False
+
+
 def test_plain_wording_keeps_names_and_never_repeats_the_speaker():
     """Real fallback sentences that read badly: 'According to protesters, Protesters demanded...',
     'reported that sahil Wakode', and a hedge on every single sentence."""
@@ -850,7 +861,9 @@ def test_plain_wording_keeps_names_and_never_repeats_the_speaker():
     assert s(text="Sahil Wakode faced caste-based discrimination", speaker="his parents") == \
         "Sahil Wakode faced caste-based discrimination, according to his parents."
     assert s(text="Sahil Wakode was found dead in his hostel room.") == "Sahil Wakode was found dead in his hostel room."
-    assert "other reports differ" in s(text="About 40 people gave statements", verdict="disputed")
+    # a dispute says what the other side is: here, a denial (never "other reports differ" with no content)
+    assert s(text="About 40 people gave statements", verdict="disputed") == \
+        "About 40 people gave statements; this is denied in other reports."
 
 
 # ---------------------------------------------------------------- writing round 2
@@ -967,7 +980,7 @@ def test_router_paces_each_tier_over_the_quota_day():
         r.call("page", "x")                     # the page still gets its share
     with pytest.raises(QuotaExhausted):
         r.call("page", "x")
-    clock["t"] = clock["t"].replace(hour=22)    # by the end of the day everything is open
+    clock["t"] = clock["t"].replace(hour=23)    # by the end of the day everything is open
     assert r.pace_cap("page", fl) == 480 and r.remaining_now("light") == 432 - 40
     assert Router(cfg, B(), paced=False).pace_cap("page", fl) == 480   # backfill: unpaced
 
@@ -1025,3 +1038,112 @@ def test_router_drops_a_model_that_keeps_failing_with_overload():
         r.tiers["t"][0].cooldown_until = 0          # pretend the cooldown passed each time
         r.call("t", "x")
     assert r.tiers["t"][0].disabled and b.calls["gemma"] == 3
+
+
+# ---------------------------------------------------------------- writing round 3 (Oct 2026)
+
+def _payload(items):
+    for i in items:
+        i.setdefault("sources", [{"url": f"https://o{i['id']}.in/a", "outlet": f"O{i['id']}", "stance": "supports"}])
+        i.setdefault("n_articles", 3)
+        i.setdefault("minor", False)
+        i.setdefault("conflicts_with", [])
+    return {"timeline": [], "undated": [], "established": [i for i in items if i["verdict"] == "corroborated"],
+            "contested": [i for i in items if i["verdict"] != "corroborated"], "background": [],
+            "sources": [s for i in items for s in i["sources"]]}
+
+
+def test_speaker_named_once_carries_through_the_paragraph():
+    """'Sybiha set out Kyiv's position. He said X. He added Y.' is how newspapers attribute; the
+    old check demanded the name in every sentence, which produced 'according to Sybiha' x8."""
+    from nishpaksh.narrative import _check_paragraphs
+    by = {1: _item(1, "India's proposal is the most comprehensive of four", speaker="Andrii Sybiha"),
+          2: _item(2, "Ukraine is ready for an energy truce", speaker="Andrii Sybiha"),
+          3: _item(3, "Russia is not interested in peace talks", speaker="Friedrich Merz")}
+    para = [{"text": "Ukraine's foreign minister Andrii Sybiha said India's proposal is the most comprehensive of four.", "ids": [1]},
+            {"text": "He added that Ukraine is ready for an energy truce.", "ids": [2]},
+            {"text": "He said Russia is not interested in peace talks.", "ids": [3]}]   # Merz's claim, not Sybiha's
+    paras, dropped, rejected = _check_paragraphs([para], by, set(), [])
+    assert [s["ids"] for s in paras[0]] == [[1], [2]] and rejected == 1 and dropped == [3]
+
+
+def test_dispute_must_say_what_the_other_side_is():
+    from nishpaksh.narrative import _validate, disputed_pair
+    a = dict(_item(1, "The toll is 40", "disputed", speaker="the police"), conflicts_with=[2])
+    b = dict(_item(2, "The toll is 50", "disputed", speaker="the families"), conflicts_with=[1])
+    by = {1: a, 2: b}
+    assert _validate({"text": "The toll is 40, according to some reports; other reports differ.", "ids": [1]}, by, set(), []) is None
+    assert _validate({"text": "The police put the toll at 40; the families say 50.", "ids": [1, 2]}, by, set(), []) == [1, 2]
+    assert disputed_pair(a, b) == "The police says the toll is 40; the families says the toll is 50."
+
+
+def test_colour_change_recolours_the_essay_without_a_rewrite():
+    from nishpaksh.narrative import needs_rewrite, recolour, write_narrative
+
+    class Writer:
+        model = "gemini-3.8-flash"
+        def call(self, tier, prompt, **kw):
+            from nishpaksh.router import LLMResult
+            data = {"paragraphs": [[{"text": "A bridge collapsed in Kesarganj.", "ids": [1]},
+                                    {"text": "The engineer was arrested.", "ids": [2]}]]}
+            return LLMResult("", data, self.model, [], 10)
+    items = [_item(1, "A bridge collapsed in Kesarganj", "developing"), _item(2, "The engineer was arrested", "developing")]
+    p = _payload(items)
+    nar = write_narrative(Writer(), p, set())
+    assert nar["model"] and [s["class"] for s in nar["paragraphs"][0]] == ["developing", "developing"]
+    # six hours on, the bridge is established: same essay, new colour, no writer call
+    items[0]["verdict"] = "corroborated"
+    p2 = _payload(items)
+    assert not needs_rewrite(nar, p2)
+    re = recolour(nar, p2, set())
+    assert re["paragraphs"][0][0]["class"] == "established" and re["paragraphs"][0][0]["text"] == "A bridge collapsed in Kesarganj."
+    # the arrest becomes disputed: stated as fact it fails the checks, so it leaves the essay and is
+    # listed under it in words that say so
+    items[1]["verdict"] = "disputed"
+    re2 = recolour(re, _payload(items), set())
+    assert [s["ids"] for p in re2["paragraphs"] for s in p] == [[1]]
+    assert re2["also"][0]["ids"] == [2] and "denied" in re2["also"][0]["text"]
+    # a new statement that is not minor is material: worth a rewrite when the writer can afford one
+    items.append(_item(3, "The state ordered an inquiry", "developing"))
+    assert needs_rewrite(re2, _payload(items))
+
+
+def test_new_story_waits_for_the_writer_and_live_page_keeps_its_essay(store):
+    """No writer quota: a new story is not published as stitched sentences; a page already written
+    by the writer stays up with its essay. A page that was only ever stitched is taken down."""
+    from nishpaksh import compose
+    from nishpaksh.router import QuotaExhausted
+    _seed(store)
+    _run_twice(store)
+    row = store.rows(select(published))[0]
+    sid = row["story_id"]
+    essay = [s["text"] for p in row["payload_en"]["narrative"]["paragraphs"] for s in p]
+
+    class NoWriter(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            if "Write the story below as ONE news article" in prompt:
+                raise RuntimeError("429 RESOURCE_EXHAUSTED: GenerateRequestsPerDay")
+            return super().generate(model, prompt, json_mode, grounded)
+    r = _router(store, NoWriter())
+    # a new statement arrives (material): the rewrite fails for quota, the written essay stays
+    nar = dict(row["payload_en"]["narrative"], covers=[], hash="changed")
+    pe = dict(row["payload_en"], narrative=nar)
+    store.exec(update(published).where(published.c.story_id == sid).values(payload_en=pe))
+    assert compose.publish_story(store, r, sid)
+    kept = store.one(select(published).where(published.c.story_id == sid))["payload_en"]["narrative"]
+    assert [s["text"] for p in kept["paragraphs"] for s in p][:2] == essay[:2] and kept.get("recoloured")
+    # a page stitched by code (no writer model) is not kept: taken down until the writer can do it
+    pe = dict(row["payload_en"], narrative=dict(kept, model=None))
+    store.exec(update(published).where(published.c.story_id == sid).values(payload_en=pe))
+    assert compose.publish_story(store, r, sid) is False
+    assert store.rows(select(published).where(published.c.story_id == sid)) == []
+    assert store.one(select(stories.c.dirty).where(stories.c.id == sid))["dirty"] is True
+    # so is one written by Flash-Lite
+    assert compose._keepable({"model": "gemini-3.5-flash-lite", "paragraphs": [[{}]]}) is False
+
+
+def test_pacing_opens_faster_on_indian_daytime_hours():
+    from nishpaksh.router import PACIFIC, pace_fraction
+    d = lambda h: dt.datetime(2026, 10, 5, h, 0, tzinfo=PACIFIC)
+    # Pacific 01:00-02:00 is 13:30-14:30 IST (day); 12:00-13:00 Pacific is 00:30-01:30 IST (night)
+    assert pace_fraction(d(2)) - pace_fraction(d(1)) == pytest.approx(3 * (pace_fraction(d(13)) - pace_fraction(d(12))))
