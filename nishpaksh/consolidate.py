@@ -65,7 +65,7 @@ Reply with JSON only:
  "name_conflicts": [{{"ids": [5, 9], "names": ["Company A", "Company B"]}}]}}"""
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
-CONSOLIDATE_VERSION = 3   # part of the cache key: stories are consolidated again when the task changes
+CONSOLIDATE_VERSION = 4   # part of the cache key: stories are consolidated again when the task changes
 
 NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -152,53 +152,56 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                 out.append(x)
         return out
 
-    from .match import real_difference
-    conflicts: set[tuple[int, int]] = set()
+    from .match import _remove_conflict, check_conflicts, real_difference
+    responses = [tuple(p) for p in (ids(p) for p in data.get("responses") or []) if len(p) == 2 and p[0] != p[1]]
+    response_pairs = {tuple(sorted(p)) for p in responses}
+    # Proposed contradictions, from every source: the model naming two values, contradictions marked
+    # earlier (re-judged with the whole story in view, Oct 2026), and statements the model calls the
+    # same fact whose numbers differ. A difference is not yet a contradiction: each goes through one
+    # question, can both be true (match.check_conflicts)? Only "cannot both be true" is kept. A party's
+    # answer to a claim is a response, never a contradiction.
+    proposed: set[tuple[int, int]] = set()
     for c in data.get("conflicts") or []:
         if not isinstance(c, list) or len(c) < 2:
             continue
         pair = ids(c[:2])
         if len(pair) == 2 and pair[0] != pair[1] and real_difference(
                 by_id[pair[0]]["text"], by_id[pair[1]]["text"], c[2] if len(c) > 2 else None):
-            conflicts.add(tuple(sorted(pair)))
-    responses = [tuple(p) for p in (ids(p) for p in data.get("responses") or []) if len(p) == 2 and p[0] != p[1]]
-    response_pairs = {tuple(sorted(p)) for p in responses}
-    # contradictions marked earlier are re-judged here, with the whole story in view: one that is not
-    # confirmed (and is not a plain difference in numbers) is taken back (Oct 2026: two statements that
-    # agreed stayed "disputed" for good because conflicts could only ever be added)
-    from .match import _remove_conflict as _unmark
-    for r in rows:
-        for o in r["conflicts"] or []:
-            pair = tuple(sorted((r["id"], o)))
-            if o not in by_id or pair in conflicts:
-                continue
-            a_, b_ = by_id[pair[0]]["text"], by_id[pair[1]]["text"]
-            if NUM.findall(a_) and NUM.findall(b_) and set(NUM.findall(a_)) != set(NUM.findall(b_)):
-                conflicts.add(pair)            # different numbers for one thing: kept
-            else:
-                _unmark(store, *pair)
-    # a party's answer to a claim is a response, not a contradiction (Oct 2026: a company's statement
-    # that its product is safe turned the analyst's finding amber): take such pairs out of conflicts
-    from .match import _remove_conflict
-    for a, b in conflicts & response_pairs:
-        _remove_conflict(store, a, b)
-    conflicts -= response_pairs
+            proposed.add(tuple(sorted(pair)))
+    earlier = {tuple(sorted((r["id"], o))) for r in rows for o in r["conflicts"] or [] if o in by_id}
+    proposed |= earlier
+    same_groups = [[x for x in dict.fromkeys(ids(g))] for g in data.get("same") or []]
+    for g in same_groups:
+        for i, a in enumerate(g):
+            for b in g[i + 1:]:
+                ta, tb = by_id[a]["text"], by_id[b]["text"]
+                if NUM.findall(ta) and NUM.findall(tb) and set(NUM.findall(ta)) != set(NUM.findall(tb)):
+                    proposed.add(tuple(sorted((a, b))))
+    proposed -= response_pairs
+    checks = dict(analysis.get("conflict_checks") or {})     # answers kept per pair of texts
+    key = lambda p: hashlib.sha256(json.dumps([by_id[p[0]]["text"], by_id[p[1]]["text"]]).encode()).hexdigest()[:16]  # noqa: E731
+    ask = sorted(p for p in proposed if key(p) not in checks)
+    for p, ans in zip(ask, check_conflicts(router, [(by_id[a]["text"], by_id[b]["text"]) for a, b in ask])):
+        checks[key(p)] = ans
+    verdict = {p: checks.get(key(p), "unsure") for p in proposed}
+    conflicts = {p for p, v in verdict.items() if v == "cannot_both_be_true"}
+    doubtful = {x for p, v in verdict.items() if v == "unsure" for x in p}
+    for pair in earlier - conflicts:
+        _remove_conflict(store, *pair)       # not confirmed: taken back
+    keep_apart = {p for p, v in verdict.items() if v != "both_true"}
     merged = 0
     gone: set[int] = set()
-    for group in data.get("same") or []:
-        g = [x for x in dict.fromkeys(ids(group)) if x not in gone]
+    for g in same_groups:
+        g = [x for x in g if x not in gone]
         if len(g) < 2:
             continue
         dst = max(g, key=lambda x: (support.get(x, 0), len(by_id[x]["text"])))
         for src in g:
-            if src == dst:
+            if src == dst or tuple(sorted((src, dst))) in keep_apart:
                 continue
             a, b = by_id[src]["text"], by_id[dst]["text"]
-            if tuple(sorted((src, dst))) in conflicts:
-                continue
             if set(NUM.findall(a)) != set(NUM.findall(b)) and NUM.findall(a) and NUM.findall(b):
-                conflicts.add(tuple(sorted((src, dst))))   # different numbers: a disagreement, not a duplicate
-                continue
+                continue     # one adds a number the other lacks: kept as two statements, not a dispute
             _merge(store, src, dst)
             gone.add(src)
             merged += 1
@@ -255,7 +258,10 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     analysis.update(consolidated=_hash(after), speakers=speakers,
                     names={**(analysis.get("names") or {}), **names},
                     roles=roles, related_event=related, responses=[list(p) for p in all_resp],
-                    name_conflicts=name_conf)
+                    name_conflicts=name_conf, conflict_checks=dict(list(checks.items())[-400:]),
+                    # a possible contradiction the check could not settle: not shown as a dispute, but
+                    # neither statement can be established while it stands (verify.base_verdicts)
+                    doubtful_conflicts=sorted(x for x in doubtful if alive(x)))
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis))
     log.info("consolidate story %s: %d merged, %d contradictions, %d names", story_id, merged, added, len(names))
     return {"merged": merged, "conflicts": added, "names": len(names)}

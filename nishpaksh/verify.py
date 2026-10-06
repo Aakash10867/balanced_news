@@ -136,6 +136,9 @@ def base_verdicts(store: Store, story_id: int) -> int:
     # the reports do not agree WHO did it (a different company or person named for the same fact):
     # whatever else holds, that statement is not established
     name_conf = set((story["analysis"] or {}).get("name_conflicts") or {})
+    # a possible contradiction nobody could settle (consolidate.py): not shown as a dispute, but not
+    # established either
+    name_conf |= {str(x) for x in (story["analysis"] or {}).get("doubtful_conflicts") or []}
     now = utcnow()
     changed = 0
     for cid, c in canon.items():

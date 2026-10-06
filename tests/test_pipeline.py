@@ -1745,3 +1745,59 @@ def test_published_articles_move_to_the_archive_branch_and_stay_findable(store, 
                                 "Court grants bail to Kesarganj flyover site engineer",
                                 "The site engineer arrested after the Kesarganj flyover collapse got bail") == [sid]
     assert store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == child)) == [{"parent_id": sid}]
+
+
+def test_a_difference_is_a_contradiction_only_if_both_cannot_be_true(store):
+    """Oct 6 2026: two statements were shown as disputes because their values differed, though both
+    were true: two different steps of one agreement (signed / took effect), and one statement adding
+    a number to the same pledge. Every proposed contradiction, from the model or from differing
+    numbers, must pass "can both be true?"; unsure keeps both from being established, never amber."""
+    from nishpaksh.consolidate import consolidate_story
+    from nishpaksh.db import claims as Cl
+    from nishpaksh.router import LLMResult
+    from nishpaksh.verify import base_verdicts
+    sid, c1 = _origin_story(store, [("Outlet A", None, "article"), ("Outlet B", None, "article")])
+    texts = {c1: "The bridge was approved in March 2024"}
+    store.exec(update(canonical).where(canonical.c.id == c1).values(text=texts[c1]))
+    for t in ["The bridge opened to traffic in October 2025",            # another step: both true
+              "40 people died in the collapse", "50 people died in the collapse",      # a real conflict
+              "The state pledged 100 crore for repairs",
+              "The state pledged 100 crore for repairs and 20 new inspectors",          # adds a number
+              "The engineer was in charge of the site", "The engineer had left the job"]:   # unsure
+        cid = store.insert_returning_id(canonical, dict(story_id=sid, kind="claim", text=t, conflicts=[]))
+        store.exec(insert(Cl).values(story_id=sid, article_id=1, kind="claim", text=t, stance="asserts",
+                                     attributed_to="article", evidence="none", canonical_id=cid))
+        texts[cid] = t
+    idx = {t: c for c, t in texts.items()}
+    opened, d40, d50 = idx["The bridge opened to traffic in October 2025"], idx["40 people died in the collapse"], idx["50 people died in the collapse"]
+    p1, p2 = idx["The state pledged 100 crore for repairs"], idx["The state pledged 100 crore for repairs and 20 new inspectors"]
+    e1, e2 = idx["The engineer was in charge of the site"], idx["The engineer had left the job"]
+    answers = {frozenset((c1, opened)): "both_true", frozenset((d40, d50)): "cannot_both_be_true",
+               frozenset((p1, p2)): "both_true", frozenset((e1, e2)): "unsure"}
+
+    class R:
+        def call(self, tier, prompt, **kw):
+            import re as _re
+            if "can both be true at the same time" in prompt:
+                res = []
+                for n, a, b in _re.findall(r'(\d+)\. A: "(.*?)" \| B: "(.*?)"', prompt):
+                    res.append({"n": int(n), "answer": answers[frozenset((idx[a], idx[b]))]})
+                return LLMResult("", {"results": res}, "m", [], 1)
+            return LLMResult("", {"same": [[p1, p2]], "names": {}, "speaker": {}, "responses": [],
+                                  "conflicts": [[c1, opened, "March 2024 vs October 2025"],
+                                                [d40, d50, "40 people vs 50 people"],
+                                                [e1, e2, "in charge vs had left"]]}, "m", [], 1)
+    consolidate_story(store, R(), sid)
+    conf = {r["id"]: r["conflicts"] for r in store.rows(select(canonical.c.id, canonical.c.conflicts).where(canonical.c.story_id == sid))}
+    assert conf[c1] == [] and conf[opened] == []                       # two steps: no dispute
+    assert conf[d40] == [d50]                                         # the same question, two answers
+    assert p1 in conf and p2 in conf and conf[p1] == [] and conf[p2] == []   # kept apart, not a dispute
+    assert conf[e1] == [] and conf[e2] == []                           # unsure: not shown as a dispute
+    an = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
+    assert sorted(an["doubtful_conflicts"]) == sorted([e1, e2])
+    base_verdicts(store, sid)
+    v = {r["id"]: r["verdict"] for r in store.rows(select(canonical.c.id, canonical.c.verdict).where(canonical.c.story_id == sid))}
+    assert v[e1] == v[e2] == "unverified"                   # never established while unsettled
+    assert v[c1] != "disputed" and v[opened] != "disputed"
+    # the answers are kept: consolidating again (new statement set) asks only about new pairs
+    assert len(an["conflict_checks"]) == 4

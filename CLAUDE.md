@@ -71,6 +71,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (`match.real_difference`); the quick pairwise check trusts only numbers, names, dates and negation
   (`typed_difference`); consolidation re-judges every earlier contradiction with the whole story in
   view and takes back what it does not confirm. The same event told from two sides is "same".
+  **Different is not incompatible (Oct 6 2026):** every proposed contradiction (model, earlier mark,
+  or "same" statements with different numbers) must pass one separately asked question, "can both be
+  true?" (`match.check_conflicts`): kept only for "cannot both be true" (same question, different
+  answers). Two steps of one thing (signed / took effect), a target vs a pledge of the same figures,
+  one statement adding a number: not disputes. "Unsure": not amber, but neither statement can be
+  established (`analysis.doubtful_conflicts`). Answers cached in `analysis.conflict_checks`. The
+  writer puts a real dispute with its subject, never in a closing "accounts differ" paragraph.
 - **Three relations:** same / contradiction (both cannot be true as facts: amber) / RESPONSE (a party
   answers a claim or finding: both true as reports, written together, never amber). "No denial" in
   the green rule means nobody denies the EVENT happened, not that a party objects to it.

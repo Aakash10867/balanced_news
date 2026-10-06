@@ -3,7 +3,7 @@
 Division of labour:
   code   decides which statements exist, their verdicts, who makes each claim, and time order
   model  writes them as a news article: an opening that says who, where and what, then events in
-         time order, then the investigation and each side's response, then where accounts differ
+         time order, then the investigation and each side's response; a disagreement sits with its subject
   code   validates every sentence and colours it by the weakest statement it cites
 
 Attribution (decided with the reader in mind): outlet names never appear in the text; the colour
@@ -28,7 +28,7 @@ import threading
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
-WRITER_VERSION = 7   # part of the cache key: pages written by an older writer are rewritten once
+WRITER_VERSION = 8   # part of the cache key: pages written by an older writer are rewritten once
 
 RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "disputed": 3, "false": 4}
 CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "disputed", 4: "false"}
@@ -51,7 +51,8 @@ Structure:
 4. Then CONTEXT: background and related events, each clearly as a SEPARATE event with its own time
    ("The order came a day after a food analyst declared a sample of Nestle's dairy whitener unsafe;
    Nestle India says the product is safe."); explanations; what happens next.
-5. Last, where accounts of the facts differ, if they do.
+A disagreement is written where its subject is, in the same paragraph as the rest of that subject,
+never collected into a closing paragraph about differing accounts.
 Organise paragraphs by SUBJECT: one subject per paragraph, 2-4 sentences. Never group statements
 because they share a status, and never join two statements in one sentence unless they are about the
 same person, body, place or thing. Say each fact ONCE: if two statements say the same thing, write it
@@ -73,7 +74,8 @@ Attribution, the way a good newspaper does it (important):
   not a contradiction: do not write "accounts differ" for it.
 - DISPUTED (contradicted): write the disagreement itself, both versions, and whose they are where
   known: "The police put the toll at 40; the families say 50." NEVER write "other reports differ" or
-  "accounts differ" without saying what the other account is.
+  "accounts differ" without saying what the other account is. Only statements marked "contradicted
+  by" disagree: two statements about different steps, dates, people or parts of the story do not.
 - NAMES DIFFER: when a statement says the reports name different actors, name both ("Creative Bakers,
   named in some reports as Sugarr & Spice"), never pick one.
 - FALSE: say who claimed it and that the evidence shows it is false, citing the evidence given.

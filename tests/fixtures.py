@@ -113,6 +113,15 @@ class FakeBackend:
         if "careful annotator" in prompt:
             title = re.search(r"Title: (.*)", prompt).group(1).strip()
             return json.dumps(EXTRACTIONS[title], ensure_ascii=False), [], 900
+        if "decide whether A and B can both be true at the same time" in prompt:
+            # same wording apart from the values: one question, two answers; otherwise both can be true
+            res = []
+            for n, a, b in re.findall(r'(\d+)\. A: "(.*?)" \| B: "(.*?)"', prompt):
+                strip = lambda t: {w for w in re.findall(r"[a-z]+", t.lower()) if len(w) > 2}
+                wa, wb = strip(a), strip(b)
+                same_q = len(wa & wb) / max(1, len(wa | wb)) >= 0.5
+                res.append({"n": int(n), "answer": "cannot_both_be_true" if same_q else "both_true"})
+            return json.dumps({"results": res}), [], 100
         if "Each numbered line has two statements" in prompt:
             res = []
             for n, a, b in re.findall(r'(\d+)\. A: "(.*?)" \| B: "(.*?)"', prompt):

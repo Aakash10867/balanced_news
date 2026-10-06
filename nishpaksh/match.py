@@ -40,6 +40,58 @@ two values that cannot both be true, it is not a contradiction.
 Reply with JSON only: {{"results": [{{"n": 1, "label": "same"}}, {{"n": 2, "label": "contradict", "differs": "40 vs 50"}}, ...]}}"""
 
 
+CONFLICT_CHECK_PROMPT = """Each numbered line has two statements, A and B, from news reports about the same story.
+For each line, decide whether A and B can both be true at the same time.
+
+"both_true" - they can both be true. This is the answer when they answer DIFFERENT questions (two different
+              steps, dates, events, people, places, measures or parts of the story: when something was
+              signed and when it took effect, a target and a pledge, the number injured and the number dead),
+              when one only adds a detail or a number the other leaves out, when they are the same fact told
+              from two sides or by two parties, or when one is a party's response to the other.
+"cannot_both_be_true" - they give DIFFERENT ANSWERS TO THE SAME QUESTION about the same thing: the same event,
+              the same moment, the same measure (one says 40 died in the collapse, the other 50; one says
+              he was arrested, the other that he was not; one says Friday, the other Saturday, for the same
+              event).
+"unsure"    - you cannot tell from the statements.
+
+{pairs}
+
+For each line give "question": the one question both statements answer, if there is one, and "answer".
+Reply with JSON only: {{"results": [{{"n": 1, "question": "How many people died in the collapse?", "answer": "cannot_both_be_true"}}, {{"n": 2, "question": "", "answer": "both_true"}}]}}"""
+
+CHECK_ANSWERS = {"both_true", "cannot_both_be_true", "unsure"}
+
+
+def check_conflicts(router: Router | None, pairs: list[tuple[str, str]]) -> list[str]:
+    """The test that defines a contradiction, asked on its own: can both statements be true? Every
+    proposed contradiction passes through it, whoever proposed it (a model naming two values, or code
+    seeing different numbers). Two values that differ are not enough: Oct 2026, "signed in March 2024"
+    and "entered into force last October", and a target announced by one side and the same figures
+    pledged by the other, were shown as disputes. Anything but a clear "cannot both be true" is not a
+    contradiction; "unsure" is returned so the caller can keep such statements from being established."""
+    out = ["unsure"] * len(pairs)
+    if router is None or not pairs:
+        return out
+    for start in range(0, len(pairs), SETTINGS.match_batch_size):
+        chunk = pairs[start:start + SETTINGS.match_batch_size]
+        body = "\n".join(f'{i + 1}. A: "{a}" | B: "{b}"' for i, (a, b) in enumerate(chunk))
+        try:
+            res = router.call("light", CONFLICT_CHECK_PROMPT.format(pairs=body), json_out=True, max_output_tokens=1500)
+        except QuotaExhausted:
+            break
+        except Exception as e:  # noqa: BLE001
+            log.warning("conflict check failed: %s", str(e)[:200])
+            continue
+        for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
+            try:
+                n = int(item["n"]) - 1
+            except (KeyError, TypeError, ValueError):
+                continue
+            if 0 <= n < len(chunk) and item.get("answer") in CHECK_ANSWERS:
+                out[start + n] = item["answer"]
+    return out
+
+
 def _create_canonical(store: Store, story_id: int, kind: str, text: str) -> int:
     return store.insert_returning_id(canonical, dict(story_id=story_id, kind=kind, text=text, conflicts=[],
                                                      verdict="pending", checked_members=0))
