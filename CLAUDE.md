@@ -116,8 +116,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 - **Threads:** a later development links to its earlier story (parent → daughter, many-to-many).
   Daughter opens with the new development + ≤2 background sentences + "Earlier in this story"; the
   parent gains no link (it is closed). Archived parents are found through the branch index.
-  Front page: one entry per thread (its latest development), ranked by importance; top 20, then
-  "More stories". Filler is never published. A thread timeline page is a possible later step.
+  Front page: one entry per thread (its latest development), NEWEST FIRST by publication time (owner,
+  Oct 6 2026; was ranked by importance and read as random); top 20, then "More stories". Filler is never published. A thread timeline page is a possible later step.
 - **Grouping:** one embedding model only (`gemini-embedding-001`, chosen on 216 labelled real pairs);
   join only on high similarity to closest members and the story's fixed core, a model checks the
   middle band, stories holding separate events are split. When unsure, keep apart.

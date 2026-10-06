@@ -243,7 +243,7 @@ async function front() {
   } catch (e) { main.innerHTML = `<p class="error">${esc(t.error)}</p>`; return; }
   rows = rows.filter(r => r.lead_en);  // pages awaiting their first essay are skipped
   if (!rows.length) { main.innerHTML = `<p class="empty">${esc(t.empty)}</p>`; return; }
-  // one entry per thread: its latest development, ranked by the thread's most important story
+  // one entry per thread: its latest development
   const byThread = new Map();
   for (const r of rows) {
     const k = r.thread || r.story_id;
@@ -255,8 +255,9 @@ async function front() {
       if (new Date(r.updated_at) > new Date(cur.latest.updated_at)) cur.latest = r;
     }
   }
+  // newest first (owner, Oct 2026): by when each thread's latest article was published
   const threads = [...byThread.values()].sort((a, b) =>
-    (b.rank - a.rank) || (new Date(b.latest.updated_at) - new Date(a.latest.updated_at)));
+    new Date(b.latest.updated_at) - new Date(a.latest.updated_at));
   const item = th => {
     const r = th.latest;
     const head = lang === "hi" && r.headline_hi ? r.headline_hi : r.headline_en;
