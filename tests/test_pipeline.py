@@ -2070,3 +2070,19 @@ def test_a_short_article_is_finished_next_time_not_thrown_away(store):
     payload = {"timeline": [], "undated": [{"id": other, "kind": "event"}], "contested": [], "established": []}
     moved = compose._remap_draft(store, draft, payload)
     assert [x for _, para in moved["sections"] for s in para for x in s["ids"]] == [other]
+
+
+def test_one_spelling_per_name_in_an_article():
+    """Oct 7 2026: one page spelt the pilot Machhar, Machar, Matchar and Machchhar."""
+    from nishpaksh.spelling import unify_article, unify_payload
+    a = {"id": 1, "text": "Captain Smit Machhar was attacked.", "n_articles": 4, "speaker": None}
+    b = {"id": 2, "text": "Smit Matchar landed the plane.", "n_articles": 1, "speaker": "Captain Machchhar"}
+    c = {"id": 3, "text": "Kumari and Kumar spoke.", "n_articles": 1}
+    payload = {"timeline": [[a]], "undated": [], "established": [a], "contested": [b], "context": [c]}
+    unify_payload(payload)
+    assert b["text"] == "Smit Machhar landed the plane." and b["speaker"] == "Captain Machhar"
+    assert c["text"] == "Kumari and Kumar spoke."                    # two names, not two spellings
+    payload.update(headline="Pilot Machar praised", narrative={"paragraphs": [[{"text": "Captain Matchar flew."}]]})
+    unify_article(payload)
+    assert payload["headline"] == "Pilot Machhar praised"
+    assert payload["narrative"]["paragraphs"][0][0]["text"] == "Captain Machhar flew."

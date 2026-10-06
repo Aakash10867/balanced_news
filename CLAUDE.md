@@ -227,6 +227,15 @@ Hindi. At most 2 per clock hour.
   before his arrest" on the arrest itself); prefer the absolute date in fallbacks.
 
 ## Fixed at the root (Oct 2026), keep the guards
+- One spelling per name in an article by code (`spelling.py`, Oct 7 2026: Machhar / Machar / Matchar /
+  Machchhar on one page): capitalised words with the same key (tch/chh = ch, ee = i, oo = u, doubled letters
+  single) take the spelling most reports use; applied to statements before writing and to the article and
+  headline after. The consolidation model's `names` alone missed these.
+- The same news is never published twice (Oct 7 2026: one Supreme Court order published as 11593 and
+  11663 a minute apart): the thread check also asks for earlier articles reporting the SAME news and
+  links them like a parent, so the story must pass `follow_up_ok`; it re-checks whenever an article was
+  published since (`analysis.thread_checked_at`), and an article published first can be the parent
+  whichever story was opened first.
 - Name consolidation maps only spelling variants (`consolidate.is_spelling_variant`); aliases were
   rewriting "X, also known as Y" into "Y, also known as Y". Old bad mappings are undone on the next run.
 - `when_text` is extracted in English; `narrative.english_when` converts any stored Devanagari.

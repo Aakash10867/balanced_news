@@ -15,6 +15,8 @@ import json
 import logging
 import re
 
+from sqlalchemy import func
+
 from .db import Store, published, select, stories, story_links, update, utcnow, insert, delete
 from .router import QuotaExhausted, Router
 
@@ -30,7 +32,10 @@ NEW: {new}
 EARLIER:
 {earlier}
 
-Reply with JSON only: {{"developments": [2]}}  (the numbers of the earlier stories it develops; [] if none)"""
+Also say which earlier stories report the SAME news as the new story (the same event or decision,
+told again by other outlets, not a later step).
+
+Reply with JSON only: {{"developments": [2], "same": [3]}}  (numbers of earlier stories; [] if none)"""
 
 STOP = set("""the a an of in on at to for from by with and or after over amid as is are was were be has have had
 its his her their this that new says said police govt government india indian state minister chief
@@ -61,7 +66,12 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
     if not story or router is None:
         return [r["parent_id"] for r in store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == story_id))]
     analysis = dict(story["analysis"] or {})
-    if analysis.get("thread_checked") == headline:
+    # checked once per headline, and again whenever an article was published since (Oct 7 2026: two
+    # stories of the same Supreme Court order were published a minute apart; the second had been
+    # checked before the first went live)
+    newest = store.one(select(func.max(published.c.updated_at).label("t")).where(published.c.story_id != story_id))
+    newest = newest["t"].isoformat() if newest and newest["t"] else ""
+    if analysis.get("thread_checked") == headline and str(analysis.get("thread_checked_at") or "") >= newest:
         return [r["parent_id"] for r in store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == story_id))]
     since = utcnow() - dt.timedelta(days=window_days)
     rows = store.rows(select(published.c.story_id, published.c.headline_en, published.c.payload_en, published.c.updated_at)
@@ -78,12 +88,15 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
                                         "narrative": {"paragraphs": [[{"text": x.get("summary") or ""}]]}},
                          "updated_at": None})
             created.setdefault(x["story_id"], _when(x.get("written_at")))
+    daughters = {r["child_id"] for r in store.rows(select(story_links.c.child_id).where(story_links.c.parent_id == story_id))}
     mine = _words(headline + " " + summary)
     my_names = _names(headline + " " + summary)
     cands = []
     for r in rows:
-        if created.get(r["story_id"]) and story["created_at"] and created[r["story_id"]] >= story["created_at"]:
-            continue   # a parent came first
+        # an article already published came first, whichever story was opened first; only a story
+        # that is itself a daughter of this one cannot be its parent
+        if r["story_id"] in daughters:
+            continue
         text = _summary(r)
         overlap = len(mine & _words(text))
         shared = my_names & _names(text)
@@ -97,7 +110,10 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
         try:
             res = router.call("page", PROMPT.format(new=f"{headline}. {summary}"[:600], earlier=earlier),
                               json_out=True, max_output_tokens=100)
-            for n in (res.data or {}).get("developments", []) if isinstance(res.data, dict) else []:
+            data = res.data if isinstance(res.data, dict) else {}
+            # the same news told again is linked like a development: as a follow-up it must earn its
+            # place against the published article (editions.follow_up_ok), so it is never printed twice
+            for n in list(data.get("developments") or []) + list(data.get("same") or []):
                 try:
                     n = int(n) - 1
                 except (TypeError, ValueError):
@@ -116,6 +132,7 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
                                                   reason=json.dumps(sorted(next(c[3] for c in cands if c[1] == pid)))))
             # the parent is a closed article (editions.py): it is not touched
     analysis["thread_checked"] = headline
+    analysis["thread_checked_at"] = newest
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis))
     if found:
         log.info("threads: story %s develops %s", story_id, found)

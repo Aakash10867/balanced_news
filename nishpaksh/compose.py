@@ -574,6 +574,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     if payload is None or payload.get("headline_is_fallback"):
         log.info("story %s waits: %s", story_id, "no longer qualifies" if payload is None else "no written headline")
         return False
+    from .spelling import unify_article, unify_payload
+    unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     parents = [x["story_id"] for x in payload.get("parents") or []]
     if parents and not follow_up_ok(store, router, story_id, payload, parents):
         return False
@@ -611,6 +613,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         h = _headline(router, hl["facts"], set(hl["banned"]), hl["fallback"], hl["unsettled"], hl["thread"], lead=lead)
         if h != hl["fallback"]:
             payload["headline"] = h
+    unify_article(payload)                  # and in what the writer and the headline model wrote
     now = utcnow()
     payload["written_at"] = now.isoformat(timespec="seconds")
     hi = translate_payload(store, router, payload)
