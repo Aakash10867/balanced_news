@@ -275,7 +275,7 @@ def mature(store: Store, sid: int) -> bool:
     the evidence the story already holds, and each sentence and statement takes its current colour.
     Text, headline, order and sections never change. Returns True if a colour changed."""
     from .db import canonical
-    from .narrative import CLASS, RANK
+    from .narrative import CLASS, RANK, shade
     from .verify import base_verdicts
     base_verdicts(store, sid)
     verdict = {r["id"]: r["verdict"] for r in store.rows(select(canonical.c.id, canonical.c.verdict)
@@ -298,7 +298,7 @@ def mature(store: Store, sid: int) -> bool:
             by_id[i.get("id")] = i
         for para in (p.get("narrative") or {}).get("paragraphs") or []:
             for s in para:
-                ranks = [RANK.get((by_id.get(x) or {}).get("verdict"), 2) for x in s.get("ids") or [] if x in by_id]
+                ranks = [RANK.get(shade(by_id.get(x) or {}), 2) for x in s.get("ids") or [] if x in by_id]
                 if ranks and s.get("class") != CLASS[max(ranks)]:
                     s["class"] = CLASS[max(ranks)]
                     changed = True

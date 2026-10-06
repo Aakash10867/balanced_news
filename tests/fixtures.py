@@ -130,7 +130,7 @@ class FakeBackend:
                 res.append({"n": int(n), "label": label})
             return json.dumps({"results": res}), [], 200
         if "Write the story below as ONE news article" in prompt:
-            stmts = re.findall(r'#(\d+) ([\w-]+) \| "(.*?)"(?: \| said by: ([^|\n]*))?', prompt)
+            stmts = re.findall(r'#(\d+) ([A-Z][A-Z -]*?) \| "(.*?)"(?: \| said by: ([^|\n]*))?', prompt)
             first, rest = [], []
             for sid, status, text, by in stmts:
                 if status == "ESTABLISHED":
@@ -186,7 +186,7 @@ class FakeBackend:
             paras = [[x for x in p if f'"{x["text"]}"' not in failed_txt] for p in paras]   # a good editor drops them
             miss = prompt.split("Missing statements:")[1].split("All statements:")[0]
             add = []
-            for sid, status, text, by in re.findall(r'#(\d+) ([\w-]+) \| "(.*?)"(?: \| said by: ([^|\n]*))?', miss):
+            for sid, status, text, by in re.findall(r'#(\d+) ([A-Z][A-Z -]*?) \| "(.*?)"(?: \| said by: ([^|\n]*))?', miss):
                 if status == "FALSE":
                     add.append({"text": f"Reports that {text[0].lower() + text[1:]} are false, the evidence shows.", "ids": [int(sid)]})
                 elif by:

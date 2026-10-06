@@ -20,6 +20,7 @@
     --v-established: #1d6a45;
     --v-disputed: #8a6100;    /* amber-gold: far from the red of 'false' */
     --v-unverified: #6b7075;
+    --v-single: #6a3d9a;      /* purple: one outlet only (an exclusive, or wrong) */
     --v-false: #b2251c;
     --serif: "Source Serif 4", "Noto Serif Devanagari", Georgia, "Times New Roman", serif;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Devanagari", sans-serif;
@@ -67,6 +68,7 @@
   .s.established { color: var(--v-established); }
   .s.disputed { color: var(--v-disputed); }
   .s.unverified { color: var(--v-unverified); }
+  .s.single { color: var(--v-single); }
   .s.developing { color: var(--v-unverified); text-decoration: underline dotted #9aa0a6; text-underline-offset: 4px; }
   .ftag { font-family: var(--sans); font-size: .62em; font-weight: 700; letter-spacing: .06em; color: #fff;
           background: var(--v-false); border-radius: 3px; padding: .08em .38em; margin-right: .35em; vertical-align: .14em; }
@@ -148,7 +150,7 @@ const T = {
     helpline: "If you or someone you know is struggling, help is available: Tele-MANAS, free and confidential, 14416 or 1-800-891-4416 (24×7).",
     updated: "published", ago: a => `${a} ago`, back: "All stories",
     k_established: "established", k_developing: "developing (recent)", k_disputed: "sources disagree",
-    k_unverified: "not yet cross-checked", k_false: "shown false", falseTag: "FALSE",
+    k_unverified: "not yet cross-checked", k_single: "one outlet only", k_false: "shown false", falseTag: "FALSE",
     unreadable: "could not be read", unread: "not read (same owner as another source, or reading limit)",
     interim: "Which outlets form different perspectives is not yet known; this story is published because at least three independent outlets covered it.",
     plain: "Plain text", sourcesTitle: "Sources", wording: "How each side worded it", fact: "Statement",
@@ -159,8 +161,8 @@ const T = {
     empty: "No stories yet. A story appears once at least three independent outlets have covered it.",
     error: "Stories could not be loaded. Check your connection and reload the page.",
     missing: "This story is no longer published.",
-    foot: "Nishpaksh reads Indian news outlets in English and Hindi every hour. A sentence is green only when at least three independent outlets report it, it traces to at least two independent origins (not one press release or unnamed sources repeated), nobody denies it, it is a checkable fact, and it has stood for six hours (until then it is underlined as developing). Grey means not yet cross-checked; amber means sources disagree; red, marked FALSE, means primary evidence (FIR, court record, official data, video) shows it is false.",
-    tags: {corroborated: "Established", confirmed: "Confirmed", developing: "Developing", disputed: "Sources disagree", unverified: "Not yet cross-checked", pending: "Not yet cross-checked", false: "FALSE"},
+    foot: "Nishpaksh reads Indian news outlets in English and Hindi every hour. A sentence is green only when at least three independent outlets report it, it traces to at least two independent origins (not one press release or unnamed sources repeated), nobody denies it, it is a checkable fact, and it has stood for six hours (until then it is underlined as developing). Grey means not yet cross-checked; purple means only one outlet reports it (an exclusive, or a mistake); amber means sources disagree; red, marked FALSE, means primary evidence (FIR, court record, official data, video) shows it is false.",
+    tags: {corroborated: "Established", confirmed: "Confirmed", developing: "Developing", disputed: "Sources disagree", unverified: "Not yet cross-checked", pending: "Not yet cross-checked", single: "One outlet only", false: "FALSE"},
     units: {m: "min", h: "h", d: "d"},
   },
   hi: {
@@ -171,7 +173,7 @@ const T = {
     helpline: "अगर आप या आपका कोई परिचित मुश्किल में है, तो मदद उपलब्ध है: टेली-मानस, निःशुल्क और गोपनीय, 14416 या 1-800-891-4416 (24×7)।",
     updated: "प्रकाशित", ago: a => `${a} पहले`, back: "सभी ख़बरें",
     k_established: "स्थापित", k_developing: "विकसित हो रही (ताज़ा)", k_disputed: "स्रोतों में मतभेद",
-    k_unverified: "अभी पुष्टि नहीं", k_false: "असत्य सिद्ध", falseTag: "असत्य",
+    k_unverified: "अभी पुष्टि नहीं", k_single: "केवल एक स्रोत", k_false: "असत्य सिद्ध", falseTag: "असत्य",
     unreadable: "पढ़ा नहीं जा सका", unread: "नहीं पढ़ा गया (दूसरे स्रोत का ही मालिक, या पढ़ने की सीमा)",
     interim: "कौन-से स्रोत अलग-अलग दृष्टिकोण बनाते हैं, यह अभी पता नहीं है; यह ख़बर इसलिए प्रकाशित है क्योंकि कम से कम तीन स्वतंत्र स्रोतों ने इसे कवर किया।",
     plain: "सादा पाठ", sourcesTitle: "स्रोत", wording: "किस पक्ष ने किन शब्दों में कहा", fact: "कथन",
@@ -182,15 +184,15 @@ const T = {
     empty: "अभी कोई ख़बर नहीं। ख़बर तब दिखती है जब कम से कम तीन स्वतंत्र स्रोत उसे कवर करें।",
     error: "ख़बरें लोड नहीं हो सकीं। इंटरनेट जाँचें और पेज दोबारा खोलें।",
     missing: "यह ख़बर अब प्रकाशित नहीं है।",
-    foot: "निष्पक्ष हर घंटे अंग्रेज़ी और हिंदी के भारतीय समाचार स्रोत पढ़ता है। वाक्य हरा तभी होता है जब कम से कम तीन स्वतंत्र स्रोत उसे बताएँ, वह कम से कम दो स्वतंत्र मूल स्रोतों तक जाए (एक ही प्रेस विज्ञप्ति या बेनाम सूत्र नहीं), कोई उसका खंडन न करे, वह जाँचा जा सकने वाला तथ्य हो, और छह घंटे टिका रहे (तब तक उसके नीचे बिंदुदार रेखा रहती है)। धूसर का अर्थ है अभी पुष्टि नहीं; सुनहरा-पीला का अर्थ है स्रोतों में मतभेद; लाल, \"असत्य\" चिह्न के साथ, का अर्थ है प्राथमिक साक्ष्य (FIR, अदालती रिकॉर्ड, सरकारी आँकड़े, वीडियो) उसे असत्य दिखाते हैं।",
-    tags: {corroborated: "स्थापित", confirmed: "प्रमाणित", developing: "विकसित हो रही", disputed: "स्रोतों में मतभेद", unverified: "अभी पुष्टि नहीं", pending: "अभी पुष्टि नहीं", false: "असत्य"},
+    foot: "निष्पक्ष हर घंटे अंग्रेज़ी और हिंदी के भारतीय समाचार स्रोत पढ़ता है। वाक्य हरा तभी होता है जब कम से कम तीन स्वतंत्र स्रोत उसे बताएँ, वह कम से कम दो स्वतंत्र मूल स्रोतों तक जाए (एक ही प्रेस विज्ञप्ति या बेनाम सूत्र नहीं), कोई उसका खंडन न करे, वह जाँचा जा सकने वाला तथ्य हो, और छह घंटे टिका रहे (तब तक उसके नीचे बिंदुदार रेखा रहती है)। धूसर का अर्थ है अभी पुष्टि नहीं; बैंगनी का अर्थ है केवल एक स्रोत ने बताया (विशेष ख़बर या गलती); सुनहरा-पीला का अर्थ है स्रोतों में मतभेद; लाल, \"असत्य\" चिह्न के साथ, का अर्थ है प्राथमिक साक्ष्य (FIR, अदालती रिकॉर्ड, सरकारी आँकड़े, वीडियो) उसे असत्य दिखाते हैं।",
+    tags: {corroborated: "स्थापित", confirmed: "प्रमाणित", developing: "विकसित हो रही", disputed: "स्रोतों में मतभेद", unverified: "अभी पुष्टि नहीं", pending: "अभी पुष्टि नहीं", single: "केवल एक स्रोत", false: "असत्य"},
     units: {m: "मिनट", h: "घंटे", d: "दिन"},
   },
 };
 const VCOLOR = {established: "var(--v-established)", developing: "var(--v-unverified)", disputed: "var(--v-disputed)",
-                unverified: "var(--v-unverified)", false: "var(--v-false)"};
+                unverified: "var(--v-unverified)", single: "var(--v-single)", false: "var(--v-false)"};
 const TAGCOLOR = {corroborated: "#1d6a45", confirmed: "#1d6a45", developing: "#6b7075", disputed: "#8a6100",
-                  unverified: "#6b7075", pending: "#6b7075", false: "#b2251c"};
+                  unverified: "#6b7075", pending: "#6b7075", single: "#6a3d9a", false: "#b2251c"};
 
 const params = new URLSearchParams(location.search);
 let lang = params.get("lang") || safeGet("np-lang") || "en";
@@ -306,7 +308,7 @@ function essayHtml(nar, t) {
 }
 
 function keyHtml(t, present) {
-  const order = ["established", "developing", "disputed", "unverified", "false"].filter(k => present.has(k));
+  const order = ["established", "developing", "disputed", "unverified", "single", "false"].filter(k => present.has(k));
   return `<div class="key">${order.map(k => `<span><i style="background:${VCOLOR[k]}${k === "developing" ? ";outline:1px dotted #9aa0a6;outline-offset:1px" : ""}"></i>${esc(t["k_" + k])}</span>`).join("")}
     <label><input type="checkbox" id="plain" ${plain ? "checked" : ""}> ${esc(t.plain)}</label></div>`;
 }
@@ -316,7 +318,9 @@ function detailHtml(p, t) {
   const line = i => {
     const sup = [...new Set(i.sources.filter(s => s.stance !== "denies").map(s => s.outlet))];
     const den = [...new Set(i.sources.filter(s => s.stance === "denies").map(s => s.outlet))];
-    return `<div class="stmt"><span class="tag" style="background:${TAGCOLOR[i.verdict] || "#6b7075"}">${esc(t.tags[i.verdict] || i.verdict)}</span>${esc(i.text)}
+    // one outlet only (purple) unless disputed or shown false: as narrative.shade
+    const v = (i.verdict === "unverified" || i.verdict === "pending") && (i.n_sources || 0) <= 1 ? "single" : i.verdict;
+    return `<div class="stmt"><span class="tag" style="background:${TAGCOLOR[v] || "#6b7075"}">${esc(t.tags[v] || v)}</span>${esc(i.text)}
       <div class="note">${sup.length ? `${esc(t.reported)}: ${esc(sup.join(", "))}` : ""}${den.length ? `; ${esc(t.denied)}: ${esc(den.join(", "))}` : ""}</div></div>`;
   };
   return all.map(line).join("");

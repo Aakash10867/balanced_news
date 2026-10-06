@@ -1929,15 +1929,40 @@ def test_the_desk_publishes_at_most_two_an_hour(store, monkeypatch):
     from nishpaksh.run import run
     _seed(store)
     run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
-    assert desk.published_this_hour(store) == 1
+    at = store.rows(select(published.c.updated_at))[0]["updated_at"]     # the test must not depend on the clock hour
+    assert desk.published_this_hour(store, at) == 1
     for k in range(2):
-        store.exec(insert(published).values(story_id=900 + k, version=1, updated_at=utcnow_(), headline_en="h",
+        store.exec(insert(published).values(story_id=900 + k, version=1, updated_at=at, headline_en="h",
                                             headline_hi="h", payload_en={}, payload_hi={}))
-    assert desk.published_this_hour(store) == 3
-    stats = desk.work(store, _router(store, FakeBackend()))
+    assert desk.published_this_hour(store, at) == 3
+    stats = desk.work(store, _router(store, FakeBackend()), now=at)
     assert stats["tried"] == 0 and stats["published"] == []
 
 
-def utcnow_():
-    from nishpaksh.db import utcnow
-    return utcnow()
+def test_one_outlet_lines_are_written_in_purple():
+    """Owner, Oct 7 2026: a line only one outlet reports goes into the article too, shown purple ("one
+    outlet only"): it may be an exclusive, or wrong. Never as plain fact."""
+    from nishpaksh.narrative import _finish, _statement_line, shade
+    one = dict(_item(1, "The minister met the protesters on Monday"), n_sources=1)
+    three = dict(_item(2, "Police detained 40 protesters"), n_sources=3)
+    est = dict(_item(3, "The protest began at noon", verdict="corroborated"), n_sources=4)
+    dis = dict(_item(4, "Ten people were injured", verdict="disputed"), n_sources=1)
+    assert [shade(i) for i in (one, three, est, dis)] == ["single", "unverified", "corroborated", "disputed"]
+    assert "ONE OUTLET ONLY" in _statement_line(one)
+    payload = _payload([one, three, est, dis])
+    by = {i["id"]: i for i in (one, three, est, dis)}
+    nar = _finish(payload, [[{"text": "The minister met the protesters on Monday.", "ids": [1]}],
+                            [{"text": "The protest began at noon.", "ids": [3]},
+                             {"text": "The minister met the protesters on Monday after the protest began.", "ids": [1, 3]}],
+                            [{"text": "Police detained 40 protesters.", "ids": [2]}]], [], by, {"model": "m"})
+    classes = [[s["class"] for s in p] for p in nar["paragraphs"]]
+    assert classes == [["single"], ["established", "single"], ["unverified"]]
+    # the paragraph's hedge says how many reports: one, not "reports"
+    assert nar["paragraphs"][0][0]["text"].startswith("According to one report, the minister")
+    assert nar["paragraphs"][2][0]["text"].startswith("According to reports, police")
+
+
+def test_the_writer_is_asked_for_every_statement_including_one_outlet_lines():
+    from nishpaksh.narrative import REVISE_PROMPT, WRITER_PROMPT
+    assert "Use EVERY statement" in WRITER_PROMPT and "may be left out" not in WRITER_PROMPT
+    assert "minor statement that adds nothing" not in REVISE_PROMPT

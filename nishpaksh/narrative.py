@@ -30,10 +30,22 @@ from .router import QuotaExhausted, Router
 log = logging.getLogger(__name__)
 WRITER_VERSION = 8   # part of the cache key: pages written by an older writer are rewritten once
 
-RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "disputed": 3, "false": 4}
-CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "disputed", 4: "false"}
+RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "single": 3,
+        "disputed": 4, "false": 5}
+CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "single", 4: "disputed", 5: "false"}
 STATUS_LABEL = {"corroborated": "ESTABLISHED", "confirmed": "ESTABLISHED", "developing": "REPORTED",
-                "disputed": "DISPUTED", "unverified": "REPORTED", "pending": "REPORTED", "false": "FALSE"}
+                "disputed": "DISPUTED", "unverified": "REPORTED", "pending": "REPORTED", "false": "FALSE",
+                "single": "ONE OUTLET ONLY"}
+
+
+def shade(i: dict) -> str:
+    """The colour a statement is shown in. Reported by ONE independent outlet only, and not disputed or
+    shown false: purple, "one outlet only" (owner, Oct 7 2026): it may be an exclusive, or wrong.
+    Everything else: its verdict."""
+    v = i.get("verdict") or "pending"
+    if v in ("unverified", "pending") and (i.get("n_sources") or 0) <= 1:
+        return "single"
+    return v
 
 WRITER_PROMPT = """You are a senior news editor. Write the story below as ONE news article for ordinary
 readers, the way a good newspaper reports it: clear, calm, flowing paragraphs. Not a list.
@@ -81,6 +93,9 @@ Attribution, the way a good newspaper does it (important):
 - NAMES DIFFER: when a statement says the reports name different actors, name both ("Creative Bakers,
   named in some reports as Sugarr & Spice"), never pick one; say it ONCE, at the first mention.
 - FALSE: say who claimed it and that the evidence shows it is false, citing the evidence given.
+- ONE OUTLET ONLY: a single outlet reports it; it may be an exclusive or it may be wrong. Include it,
+  never as plain fact: pin it on its speaker if it has one, otherwise "one report said ..." (never
+  "reports said" for it).
 
 Never add any fact, name, number, place, cause, motive, adjective or opinion that is not in the
 statements. Events may be told in order ("after", "later", "then"), but never link two events by cause
@@ -93,8 +108,9 @@ the statements give ("AAP Delhi chief Saurabh Bharadwaj", "Supreme Court judge U
 that, the surname or a short form. Never use a surname alone for someone not yet introduced.
 No headings, no bullet points.
 Never use any of these words: {banned}
-Every sentence lists in "ids" every statement it uses. Use every statement at least once; minor
-statements (marked "minor") may be left out if they add nothing.
+Every sentence lists in "ids" every statement it uses. Use EVERY statement at least once, including
+those only one outlet reports: the reader gets everything known about the story, the past (CONTEXT
+background), the present and what happens next.
 
 {people}{background}Statements, the story's own event first, then CONTEXT:
 {statements}
@@ -105,7 +121,7 @@ Reply with JSON only:
 REVISE_PROMPT = """You wrote the news article below from numbered statements. Revise it into the final
 article. Everything a reader should know must be IN the article: there is no list of extra facts under it.
 1. Work in EVERY missing statement listed below, each where it belongs by subject (a new paragraph if
-   needed). Only a minor statement that adds nothing new may be left out.
+   needed), including those only one outlet reports (never as plain fact: "one report said ...").
 2. Rewrite each failed sentence so it passes the check named, or drop it if it cannot pass.
 3. Keep every other sentence as it is.
 Same rules as before: only the statements given; no outlet named as a source; no number or speaker the
@@ -130,7 +146,7 @@ Reply with JSON only, the whole revised article:
 
 FALSE_MARKERS = ("false", "untrue", "not true", "contradict", "evidence shows", "disproved", "incorrect",
                  "no evidence", "refut")
-HEDGE_MARKERS = ("reportedly", "according to report", "report", "it is said", "was said to", "were said to",
+HEDGE_MARKERS = ("reportedly", "according to report", "according to one report", "report", "it is said", "was said to", "were said to",
                  "accounts differ", "according to early", "unconfirmed", "allegedly")
 ATTRIBUTION_VERBS = ("said", "say", "says", "alleg", "claim", "accus", "denied", "deny", "denies", "demand",
                      "told", "stated", "according to", "maintain", "insist", "assert")
@@ -232,9 +248,7 @@ def sections_from_payload(p: dict) -> dict[str, list[dict]]:  # kept for the cac
 
 
 def _statement_line(i: dict) -> str:
-    line = f'#{i["id"]} {STATUS_LABEL.get(i["verdict"], "REPORTED")} | "{i["text"]}"'
-    if i.get("minor"):
-        line += " | minor"
+    line = f'#{i["id"]} {STATUS_LABEL.get(shade(i), "REPORTED")} | "{i["text"]}"'
     if not is_core(i):
         line += f" | CONTEXT: {i['role']}" + (f" ({i['related_event']})" if i.get("related_event") else "")
     if i.get("speaker"):
@@ -414,14 +428,15 @@ COMMON_FIRST = {"the", "a", "an", "police", "officials", "authorities", "protest
                 "several", "many", "some", "two", "three", "four", "five", "an", "his", "her", "their", "its"}
 
 
-def _hedge(text: str, proper: set[str] | None = None) -> str:
+def _hedge(text: str, proper: set[str] | None = None, single: bool = False) -> str:
     """One hedge for the paragraph, at the front: 'According to reports, ...'. A leading adverbial
     keeps its place ("Previously, according to reports, ..."); a common first word is lower-cased,
     a name is not (seen: "According to reports, Police are...")."""
     t = text.strip()
     m = re.match(r"^([A-Z][a-z]+),\s+(.*)$", t)
+    lead = "according to one report" if single else "according to reports"
     if m:
-        return f"{m.group(1)}, according to reports, {m.group(2)}"
+        return f"{m.group(1)}, {lead}, {m.group(2)}"
     first = re.match(r"^(\w+)", t)
     if first:
         w = first.group(1)
@@ -429,7 +444,7 @@ def _hedge(text: str, proper: set[str] | None = None) -> str:
         is_name = (w in proper) if proper is not None else w.lower() not in COMMON_FIRST
         if not is_name and not w.isupper():
             t = t[0].lower() + t[1:]
-    return "According to reports, " + t
+    return lead[0].upper() + lead[1:] + ", " + t
 
 
 def input_hash(sections: dict[str, list[dict]], background: list[dict] | None = None) -> str:
@@ -617,7 +632,9 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
                 m in x["text"].lower() for x in para for m in HEDGE_MARKERS):
             first = next(x for x in para if _needs_hedge(x, by_id))
             first["raw"] = first["text"]          # the hedge is code's: dropped again if no longer needed
-            first["text"] = _hedge(first["text"], proper)
+            single = all(shade(by_id[x]) == "single" for x in first["ids"]
+                         if by_id[x]["verdict"] not in ("corroborated", "confirmed") and not by_id[x].get("speaker"))
+            first["text"] = _hedge(first["text"], proper, single)
     numbering: dict[str, int] = {}
     for sent in [x for para in paragraphs for x in para] + also:
         for x in sent["ids"]:
@@ -626,7 +643,7 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
     for s in payload["sources"]:
         numbering.setdefault(s["url"], len(numbering) + 1)
     for sent in [x for para in paragraphs for x in para] + also:
-        sent["class"] = CLASS[max(RANK.get(by_id[x]["verdict"], 2) for x in sent["ids"])]
+        sent["class"] = CLASS[max(RANK.get(shade(by_id[x]), 2) for x in sent["ids"])]
         sent["sources"] = sorted({numbering[s["url"]] for x in sent["ids"] for s in by_id[x]["sources"]})
     src_meta = {s["url"]: s for s in payload["sources"]}
     source_list = [{"n": n, "url": url, "outlet": src_meta.get(url, {}).get("outlet", ""),
@@ -764,7 +781,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
     repaired = False
     covered = {x for para in paragraphs for s_ in para for x in s_["ids"]}
     essay_text = [x["text"] for para in paragraphs for x in para]
-    missing = [i for i in items if i["id"] not in covered and not i.get("minor") and not _said_in(i, essay_text)]
+    missing = [i for i in items if i["id"] not in covered and not _said_in(i, essay_text)]
     if (failed or missing) and model and router is not None:
         revised = _revise(router, drafted, failed, missing, banned, statements)
         if revised:

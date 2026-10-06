@@ -29,6 +29,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   from when the rule was first met (before that: "developing", dotted grey).
 - Grey = not yet cross-checked; amber = sources disagree; red with a FALSE tag = primary evidence
   (FIR, court record, official data, video) shows it false, two model families agreeing.
+  **Purple = one outlet only (owner, Oct 7 2026):** a statement only one independent outlet reports
+  (and not disputed or false) goes INTO the article, shown purple ("one outlet only": an exclusive,
+  or a mistake), never as plain fact ("one report said", or pinned on its speaker; the paragraph
+  hedge reads "According to one report"). `narrative.shade`; the writer and the revision pass must
+  use every statement, one-outlet lines included (they were "minor" and optional before).
 - **Interim publishing rule** while perspectives are unknown: 3+ independent read outlets and 2+
   origins. Perspectives emerge from agreement data (no hand labels of outlets).
 - **Option B:** a page we could not read (headline/blurb only) is listed as "could not be read",
