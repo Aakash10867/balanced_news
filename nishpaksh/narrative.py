@@ -824,7 +824,7 @@ def _check_sections(drafted, by_id, banned, outlets):
 COMPLETE = 0.85     # owner, Oct 7 2026: an article must carry 85% of everything known (the middle way)
 
 
-def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> dict:
+def write_narrative(router: Router | None, payload: dict, banned: set[str], draft: dict | None = None) -> dict:
     """The article, in sections (owner, Oct 7 2026): one sectioned draft, then a fill pass for each
     group of sections that left statements out or has failed sentences, a few sections per call, so even
     Flash-Lite carries everything. Each sentence is checked; a section rewrite is kept only if the
@@ -834,7 +834,13 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
     drafted: list[tuple[str, list]] = []
     model, failure = None, None
     _reasons().clear()
-    if router is not None and items:
+    resumed = bool(draft and draft.get("sections") and draft.get("model"))
+    if resumed:
+        # an earlier try that fell short is finished, not thrown away (owner, Oct 7 2026): its sections
+        # are kept and only what is still missing is written; new statements simply count as missing
+        drafted = [(k if k in SECTION_KEYS else "happened", p) for k, p in draft["sections"] if isinstance(p, list)]
+        model = draft["model"]
+    elif router is not None and items:
         bg = ""
         if background:
             bg = ("This story is a later development of an earlier story on the site. The section "
@@ -847,9 +853,15 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
     paragraphs, keys, failed, rejected = _check_sections(drafted, by_id, banned, outlets)
     first_reasons = dict(_reasons())
     filled = []
-    for group in FILL_GROUPS:
+    # up to two rounds over the section groups: a group still short after its first fill gets one more
+    rounds = [g for _ in range(2) for g in FILL_GROUPS]
+    for n_call, group in enumerate(rounds):
         if not model or router is None:
             break
+        if n_call >= len(FILL_GROUPS):
+            cov_now = {x for para in paragraphs for s_ in para for x in s_["ids"]}
+            if len({i["id"] for i in items} & cov_now) >= COMPLETE * len(items) and not failed:
+                break                                  # complete enough: no second round
         covered = {x for para in paragraphs for s_ in para for x in s_["ids"]}
         essay_text = [x["text"] for para in paragraphs for x in para]
         missing = [i for i in items if sec.get(i["id"]) in group and i["id"] not in covered
@@ -901,7 +913,9 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> d
     return _finish(payload, paragraphs, also, by_id,
                    {"model": model, "rejected": rejected, "reject_reasons": dict(_reasons()), "failure": failure,
                     "first_draft_reasons": first_reasons, "repaired": bool(filled), "filled": filled,
-                    "section_keys": keys})
+                    "section_keys": keys, "resumed": resumed,
+                    # the sections as drafted, kept with the story if the article falls short (not published)
+                    "drafted": [[k, p] for k, p in drafted]})
 
 
 def recolour(old: dict, payload: dict, banned: set[str]) -> dict:

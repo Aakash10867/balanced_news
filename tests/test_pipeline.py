@@ -1,6 +1,7 @@
 import dataclasses
 import datetime as dt
 import json
+import re
 
 import numpy as np
 import pytest
@@ -2017,3 +2018,44 @@ def test_sections_left_short_are_filled_a_few_at_a_time():
     keys = nar["section_keys"]
     assert len(keys) == len(nar["paragraphs"]) and keys[0] == "news"
     assert [k for k in dict.fromkeys(keys)] == ["news", "happened", "numbers", "say", "background", "next"]
+
+
+def test_a_short_article_is_finished_next_time_not_thrown_away(store):
+    """Owner, Oct 7 2026: an article that falls short of the 85% bar is kept as a draft; the next try
+    fills in what is missing instead of writing a new article from nothing."""
+    from nishpaksh import compose
+    from nishpaksh.run import run
+    _seed(store)
+    calls = []
+
+    class Stingy(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            if "Write the story below as ONE news article" in prompt:
+                calls.append("draft")
+                first = re.search(r'#(\d+) ESTABLISHED \| "(.*?)"', prompt) or re.search(r'#(\d+) [A-Z ]+ \| "(.*?)"', prompt)
+                return json.dumps({"sections": [{"key": "news", "paragraphs": [[{"text": f"Reportedly, {first.group(2)[0].lower() + first.group(2)[1:]}.",
+                                                                                  "ids": [int(first.group(1))]}]]}]}), [], 100
+            if "You are completing a news article written in sections" in prompt:
+                calls.append("fill")
+                return '{"sections": []}', [], 10         # the fills fail this time
+            return super().generate(model, prompt, json_mode, grounded)
+    run(store=store, backend=Stingy(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    assert store.rows(select(published)) == [] and calls[0] == "draft"
+    tried = [r for r in store.rows(select(stories.c.id, stories.c.analysis)) if "writer_failures" in (r["analysis"] or {})]
+    sid = tried[0]["id"]                                          # the story the writer tried
+    draft = tried[0]["analysis"]["writer_draft"]
+    assert draft["sections"] and draft["covers"] == 1
+
+    calls.clear()
+
+    class Fills(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            if "Write the story below as ONE news article" in prompt:
+                calls.append("draft")
+            return super().generate(model, prompt, json_mode, grounded)
+    assert compose.publish_story(store, _router(store, Fills()), sid)
+    assert "draft" not in calls                                   # continued, not started again
+    an = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
+    assert "writer_draft" not in an
+    nar = store.one(select(published).where(published.c.story_id == sid))["payload_en"]["narrative"]
+    assert nar["resumed"] and "drafted" not in nar

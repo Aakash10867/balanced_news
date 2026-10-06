@@ -128,7 +128,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   kept only if the article then carries at least as much (Flash-Lite given all 40 statements wrote 10
   sentences; a few at a time it uses them). `essay_ok` needs 85% of ALL statements (owner: the middle
   way). `narrative.section_keys` (one per paragraph) drives the headings on the site, English and
-  Hindi. Leftovers stay in `narrative.not_in_essay`. (`recolour`/`needs_rewrite` unused: articles are
+  Hindi. Leftovers stay in `narrative.not_in_essay`. **A short article is finished, not thrown away (owner, Oct 7 2026):** each try runs up to two fill rounds; a draft still under 85% is kept in `stories.analysis.writer_draft` (sections + model) and the next try resumes it with fills only (no new draft call); it is removed when the article publishes. (`recolour`/`needs_rewrite` unused: articles are
   closed.)
 - **Introductions:** every person and body at first mention with the fullest name and role the
   statements give (`narrative._people` lists them for the writer); extraction names people in full.

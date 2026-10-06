@@ -539,11 +539,27 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     banned = set(payload["loaded_words"])
     if router is None or not _writer_attempt_allowed(store, story_id, h):
         return False
-    nar = write_narrative(router, payload, banned)
+    # an earlier try that fell short of the bar is continued, not started again (owner, Oct 7 2026)
+    an = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
+    draft = an.get("writer_draft")
+    nar = write_narrative(router, payload, banned, draft=draft if _keepable({"model": (draft or {}).get("model"),
+                                                                             "paragraphs": [1]}) else None)
+    drafted = nar.pop("drafted", None)
     if not (essay_ok(nar, payload) and _keepable(nar)):
         _note_writer_failure(store, story_id, h, nar)
-        log.info("story %s waits for a written essay", story_id)
+        if drafted and _keepable({"model": nar.get("model"), "paragraphs": [1]}):   # a writer model's draft
+            an = dict((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
+            covered = len(set(nar.get("covers") or []))
+            an["writer_draft"] = {"sections": drafted, "model": nar.get("model"), "covers": covered,
+                                  "at": utcnow().isoformat(timespec="minutes")}
+            store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
+        log.info("story %s waits: the article carries %d statements, short of the bar; its draft is kept",
+                 story_id, len(set(nar.get("covers") or [])))
         return False
+    if draft:
+        an = dict((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
+        an.pop("writer_draft", None)
+        store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
     payload["narrative"] = nar
     # the newspaper order: the article first, the headline from its opening (the news)
     hl = payload.pop("_headline_input", None)
