@@ -237,6 +237,24 @@ class Store:
             if not n:
                 c.execute(insert(quota_usage).values(model=model, day=day, requests=requests, tokens=tokens))
 
+    def quota_add(self, model: str, day: str, requests: int, tokens: int) -> None:
+        """Add to a day's usage atomically (several processes share the keys)."""
+        from sqlalchemy.exc import IntegrityError
+        for _ in range(2):
+            with self.engine.begin() as c:
+                n = c.execute(update(quota_usage).where(quota_usage.c.model == model, quota_usage.c.day == day)
+                              .values(requests=quota_usage.c.requests + requests,
+                                      tokens=quota_usage.c.tokens + tokens)).rowcount
+                if n:
+                    return
+            try:
+                with self.engine.begin() as c:
+                    c.execute(insert(quota_usage).values(model=model, day=day, requests=max(0, requests),
+                                                         tokens=max(0, tokens)))
+                return
+            except IntegrityError:
+                continue      # the other process inserted the row first: add to it
+
     # translations cache --------------------------------------------------------
     def translation_get(self, keys: list[str]) -> dict[str, str]:
         if not keys:

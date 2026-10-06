@@ -50,8 +50,10 @@ def _parallel(items: list, fn, until: float, workers: int) -> list:
 
 
 def run(store: Store | None = None, backend=None, time_budget_min: float = 40, ingest_news: bool = True,
-        verify_budget: dict | None = None, search_news: bool | None = None) -> dict:
-    from . import compose, extract, ingest, match, perspectives, stories as story_mod, verify, wire
+        verify_budget: dict | None = None, search_news: bool | None = None, then_write: bool = False) -> dict:
+    """One pipeline run. `then_write` runs the writing desk right after (local runs and tests; in
+    production the desk is its own workflow)."""
+    from . import extract, ingest, match, perspectives, priority, stories as story_mod, verify, wire
     search_news = ingest_news if search_news is None else search_news
 
     t0 = time.time()
@@ -88,16 +90,23 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         stats["ingested"] = ingest.ingest(store)
     if search_news:
         # who else covered the stories we know? found articles are grouped like any other
-        stats["search"] = step("search", lambda: discover.discover(store, tavily, until=t0 + 8 * 60))
+        # the stories being prepared for the writer (ranked in earlier runs) are searched first
+        stats["search"] = step("search", lambda: discover.discover(store, tavily, until=t0 + 8 * 60,
+                                                                   focus=set(priority.queue(store))))
     stats["retracted_headline_only"] = extract.retract_unreadable(store)
     if tavily is not None:
         # pages we could not read, in stories worth reading (grouped in earlier runs)
         stats["tavily_pages_read"] = step("tavily", lambda: extract.read_blocked_pages(
-            store, tavily, SETTINGS.tavily_extract_pages_per_run))
+            store, tavily, SETTINGS.tavily_extract_pages_per_run, focus=set(priority.queue(store))))
     stats["wire_assigned"] = wire.assign_wire_groups(store)
     stats["grouped"] = step("grouping", lambda: story_mod.group_stories(store, router))   # a failure must not stop reading and writing
+    # only the stories worth writing are read and analysed (priority.py, owner Oct 6 2026): each story
+    # with 3+ sources is rated from its headlines; the best `prep_queue` of them are prepared
+    stats["rated"] = step("priority", lambda: priority.rank_new(store, router))
+    focus = set(priority.queue(store))
+    stats["queue"] = len(focus)
     # time plan: reading stops 20 minutes before the deadline; the story stage gets the rest
-    stats["extracted"] = extract.extract_pending(store, router, deadline - 20 * 60)
+    stats["extracted"] = extract.extract_pending(store, router, deadline - 20 * 60, focus=focus)
 
     # published stories are closed (editions.py): never re-analysed, re-read or rewritten
     from . import editions
@@ -108,7 +117,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         ids = sorted(frozen & set(dirty))
         for i in range(0, len(ids), 500):
             store.exec(update(stories).where(stories.c.id.in_(ids[i:i + 500])).values(dirty=False))
-    dirty = [sid for sid in dirty if sid not in frozen]
+    # stories outside the preparation queue stay dirty: they are analysed when they enter it
+    dirty = [sid for sid in dirty if sid not in frozen and sid in focus]
     # most-covered stories first, so the stories readers most likely want are never the ones cut
     with store.engine.connect() as c:
         size = dict(c.execute(select(_articles.c.story_id, func.count())
@@ -182,27 +192,14 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         verify.base_verdicts(store, sid)
         if SETTINGS.model_verdicts and time.time() < deadline - 6 * 60 and (budget.get("judge", 0) > 0):
             checked += verify.verify_story(store, router, sid, budget)
-    # written once, when coverage has settled (no new independent outlet for 3 hours, or 8 hours after
-    # the rule was met); most covered first, a limited number per run (the writer is the scarce tier)
+    # writing is the desk's job (desk.py, its own workflow at :35); the pipeline only prepares
     settled = [sid for sid in qualifying if editions.settled(store, sid)]
-    settled.sort(key=lambda sid: -size.get(sid, 0))
-    to_publish = settled[:SETTINGS.waiting_per_run]
-    for sid in to_publish:
-        if sid not in analysed:
-            verify.base_verdicts(store, sid)     # the 6-hour clock moved since it was analysed
-    written: list[int] = []   # articles actually written; "attempted" counts tries
-
-    def _publish(sid):
-        if compose.publish_story(store, router, sid):
-            written.append(sid)
-    attempted = _parallel(to_publish, _publish, deadline, workers)
     # published articles: only their colours mature, by code (the 6-hour clock)
     matured = sum(1 for sid in sorted(frozen) if editions.mature(store, sid))
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(qualifying),
-                 settled=len(settled), claims_checked=checked, publish_attempted=len(attempted),
-                 published=len(written), colours_matured=matured,
+                 settled=len(settled), claims_checked=checked, colours_matured=matured,
                  live_pages=len(store.rows(select(_published.c.story_id))),
-                 left_for_next_run=len(dirty) - len(analysed) + len(to_publish) - len(attempted))
+                 left_for_next_run=len(dirty) - len(analysed))
     from . import positions
     pos = step("positions", lambda: positions.daily(store, until=deadline))
     if pos is not None:
@@ -217,6 +214,10 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     stats["tier_calls"] = {k: dict(v) for k, v in sorted(router.tier_log.items())}
     if tavily is not None:
         stats["tavily"] = {"spent_this_run": tavily.spent_this_run, "left_today": tavily.allowance_today()}
+    if then_write:
+        from . import desk
+        stats["desk"] = desk.work(store, router)
+        stats["published"] = len(stats["desk"]["published"])
     stats["health"] = health(store, stats)
     store.exec(update(_runs).where(_runs.c.id == run_id).values(finished_at=_now(), stats=stats))
     log.info("run complete: %s", stats)
@@ -242,19 +243,28 @@ def stalled(store: Store, stats: dict) -> dict:
 
 
 def writer_silent(store: Store, stats: dict) -> str | None:
-    """The writer was asked in this run and the one before and wrote nothing. No new story can go
-    live without it (Oct 5 2026: five hours of refused Flash calls read as "published: 121")."""
-    from .db import runs as R
-    prev = store.rows(select(R.c.stats).where(R.c.finished_at.is_not(None)).order_by(R.c.id.desc()).limit(1))
-    window = [stats] + [r["stats"] or {} for r in prev]
-    w = [(s.get("tier_calls") or {}).get("writer") for s in window]
-    if len(w) < 2 or any(x is None for x in w) or any(x.get("ok", 0) for x in w):
-        return None
-    refused: Counter = Counter()
-    for x in w:
-        refused.update(x)
-    return (f"writer wrote nothing in the last 2 runs ({sum(refused.values())} calls: "
-            + ", ".join(f"{n} {k}" for k, n in refused.most_common()) + "); no new story can go live")
+    """The writing desk (desk.py) asked the writer in its last two runs and got nothing, or the last
+    two clock hours ended without an article while stories were ready (owner: at least one an hour).
+    Oct 5 2026: five hours of refused Flash calls went unnoticed."""
+    from .db import diagnostics as D, published as P
+    reports = [r["report"] or {} for r in store.rows(select(D.c.report).where(D.c.kind == "desk")
+                                                      .order_by(D.c.id.desc()).limit(2))]
+    problems = []
+    w = [(r.get("tier_calls") or {}).get("writer") for r in reports]
+    if len(w) == 2 and all(x is not None for x in w) and not any(x.get("ok", 0) for x in w):
+        refused: Counter = Counter()
+        for x in w:
+            refused.update(x)
+        problems.append(f"writer wrote nothing in the desk's last 2 runs ({sum(refused.values())} calls: "
+                        + ", ".join(f"{n} {k}" for k, n in refused.most_common()) + ")")
+    from .db import utcnow as _now
+    import datetime as _dt
+    now = _now()
+    since = now.replace(minute=0, second=0, microsecond=0) - _dt.timedelta(hours=2)
+    recent = store.rows(select(P.c.story_id).where(P.c.updated_at >= since, P.c.updated_at < since + _dt.timedelta(hours=2)))
+    if reports and not recent and (stats.get("settled") or 0) > 0:
+        problems.append(f"no article in the last two clock hours while {stats.get('settled')} stories are ready")
+    return "; ".join(problems) or None
 
 
 def health(store: Store, stats: dict) -> dict:

@@ -1,4 +1,6 @@
+import dataclasses
 import datetime as dt
+import json
 
 import numpy as np
 import pytest
@@ -1530,17 +1532,20 @@ def test_writer_keeps_flash_and_3_5_flash_lite_essays_only():
 
 
 def test_health_flags_a_writer_that_wrote_nothing_for_two_runs(tmp_path):
-    from nishpaksh.db import runs, utcnow
+    from nishpaksh.db import diagnostics, utcnow
     from nishpaksh.run import writer_silent
     store = Store(f"sqlite:///{tmp_path}/w.db")
     store.init()
-    store.insert_returning_id(runs, dict(started_at=utcnow(), finished_at=utcnow(),
-                                         stats={"tier_calls": {"writer": {"overloaded 5xx": 30}}}))
-    msg = writer_silent(store, {"tier_calls": {"writer": {"overloaded 5xx": 20, "rate limit 429": 2}}})
+    desk = lambda w: store.exec(insert(diagnostics).values(created_at=utcnow(), kind="desk",  # noqa: E731
+                                                            report={"tier_calls": {"writer": w}, "published": []}))
+    desk({"overloaded 5xx": 30})
+    desk({"overloaded 5xx": 20, "rate limit 429": 2})
+    msg = writer_silent(store, {"settled": 0})
     assert msg and "52 calls" in msg and "50 overloaded 5xx" in msg
-    assert writer_silent(store, {"tier_calls": {"writer": {"ok": 1, "overloaded 5xx": 3}}}) is None
-    assert writer_silent(store, {"tier_calls": {}}) is None   # writer not asked this run
-
+    desk({"ok": 1, "overloaded 5xx": 3})
+    assert writer_silent(store, {"settled": 0}) is None
+    # owner: at least one article an hour; two clock hours without one while stories are ready
+    assert "no article in the last two clock hours" in writer_silent(store, {"settled": 4})
 
 def test_new_story_waits_for_the_writer_and_is_then_written_once(store):
     """No writer: a new story is not published as stitched sentences; it waits, qualified. When the
@@ -1555,7 +1560,7 @@ def test_new_story_waits_for_the_writer_and_is_then_written_once(store):
             return super().generate(model, prompt, json_mode, grounded)
     _seed(store)
     stats = run(store=store, backend=NoWriter(), time_budget_min=30, ingest_news=False, verify_budget=VB)
-    assert store.rows(select(published)) == [] and stats["published"] == 0 and stats["publish_attempted"] >= 1
+    assert store.rows(select(published)) == [] and stats["published"] == 0 and stats["desk"]["tried"] >= 1
     sid = store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))[0]["id"]
     stats = run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
     assert stats["published"] == 1
@@ -1687,11 +1692,11 @@ def test_follow_up_needs_a_lot_of_new_or_a_major_development(store, monkeypatch)
     assert check(13, old + ["A court granted bail to the site engineer"], [["a"], ["b"], ["a", "b", "c"]])
     # on the parent's own date: a major development carried by five outlets, nothing less
     same_day = NOW - dt.timedelta(days=1)
-    assert not check(14, old + four, [["a", "b", "c", "d", "e"]] * 6, now=same_day + dt.timedelta(hours=3))
+    assert not check(14, old + four, [["a", "b", "c", "d", "e"]] * 6, now=same_day + dt.timedelta(minutes=1))
     assert not check(15, old + ["A court granted bail to the site engineer"], [[], [], ["a", "b", "c"]],
-                     now=same_day + dt.timedelta(hours=3))
+                     now=same_day + dt.timedelta(minutes=1))
     assert check(16, old + ["A court granted bail to the site engineer"], [[], [], ["a", "b", "c", "d", "e"]],
-                 now=same_day + dt.timedelta(hours=3))
+                 now=same_day + dt.timedelta(minutes=1))
     # the judgement is kept per statement set: no second model call for the same statements
     calls = []
 
@@ -1868,3 +1873,71 @@ def test_matching_uses_frames_before_wording(store):
     assert cid[rows[2][1]] != cid[rows[3][1]]
     assert conf[cid[rows[2][1]]] == [] and conf[cid[rows[3][1]]] == []   # two steps: no dispute
     assert conf[cid[rows[4][1]]] == [cid[rows[5][1]]]                     # 40 vs 50 dead: the dispute
+
+
+def _story_with_sources(store, title, n_outlets, hours_ago=2.0):
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=True, qualifies=False,
+                                                  signature=title))
+    for k in range(n_outlets):
+        store.exec(insert(articles).values(url=f"https://{abs(hash(title)) % 10**6}-{k}.example/{k}", outlet=f"{title} outlet {k}",
+                                           lang="en", title=f"{title} ({k})", text="t " * 300, text_source="full",
+                                           published_at=NOW - dt.timedelta(hours=hours_ago), fetched_at=NOW - dt.timedelta(hours=hours_ago),
+                                           story_id=sid, extract_failures=0))
+    return sid
+
+
+def test_only_the_best_ranked_stories_are_prepared(store, monkeypatch):
+    """Owner, Oct 6 2026: rank stories from their headlines, read and analyse only the best (the
+    writer publishes 1-2 an hour; reading every story spent ~160 calls per published article)."""
+    import nishpaksh.priority as P
+    from nishpaksh.extract import select_for_extraction
+    monkeypatch.setattr(P, "SETTINGS", dataclasses.replace(P.SETTINGS, prep_queue=2))
+    big = _story_with_sources(store, "Parliament passes bill", 5)
+    mid = _story_with_sources(store, "State cabinet meets", 3)
+    small = _story_with_sources(store, "Town fair opens", 3)
+    lone = _story_with_sources(store, "One outlet scoop", 1)
+    horo = _story_with_sources(store, "Aaj ka rashifal horoscope", 4)
+
+    class Rater(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            if "each shown by the headlines" in prompt:
+                import re as _re
+                res = []
+                for n, heads in _re.findall(r"^(\d+)\. (.*)$", prompt, _re.M):
+                    score = 5 if "Parliament" in heads else 4 if "cabinet" in heads else 2
+                    res.append({"n": int(n), "score": score, "filler": "horoscope" in heads})
+                return json.dumps({"results": res}), [], 50
+            return super().generate(model, prompt, json_mode, grounded)
+    assert P.rank_new(store, _router(store, Rater())) == 4        # the one-outlet story is not rated
+    q = P.queue(store)
+    assert q == [big, mid]                                       # best first; filler and the rest wait
+    read = {a["story_id"] for a in select_for_extraction(store, set(q))}
+    assert read == {big, mid}
+    # nothing is rated twice unless its coverage grows by two sources
+    assert P.rank_new(store, _router(store, Rater())) == 0
+    for k in range(2):
+        store.exec(insert(articles).values(url=f"https://late{k}.example/x", outlet=f"Late {k}", lang="en",
+                                           title="Town fair opens (late)", text="t " * 300, text_source="full",
+                                           published_at=NOW, fetched_at=NOW, story_id=small, extract_failures=0))
+    assert P.rank_new(store, _router(store, Rater())) == 1
+    assert lone not in P.queue(store, size=10) and horo not in P.queue(store, size=10)
+
+
+def test_the_desk_publishes_at_most_two_an_hour(store, monkeypatch):
+    """Owner, Oct 6 2026: at least one article an hour, at most two."""
+    from nishpaksh import desk
+    from nishpaksh.run import run
+    _seed(store)
+    run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    assert desk.published_this_hour(store) == 1
+    for k in range(2):
+        store.exec(insert(published).values(story_id=900 + k, version=1, updated_at=utcnow_(), headline_en="h",
+                                            headline_hi="h", payload_en={}, payload_hi={}))
+    assert desk.published_this_hour(store) == 3
+    stats = desk.work(store, _router(store, FakeBackend()))
+    assert stats["tried"] == 0 and stats["published"] == []
+
+
+def utcnow_():
+    from nishpaksh.db import utcnow
+    return utcnow()

@@ -106,7 +106,10 @@ class Settings:
 
     # extraction: only stories covered by >= 2 independent sources; at most this many articles each
     max_extract_per_story: int = 8
-    waiting_per_run: int = 12            # settled stories offered to the writer per run, most covered first
+    prep_queue: int = 16                 # stories read, analysed and searched for at a time (priority.py)
+    desk_per_hour: int = 2               # articles the writer publishes in one clock hour, at most (owner)
+    desk_tries: int = 5                  # stories the writer job tries per run before giving up
+    desk_minutes: float = 20             # the writer job's time budget
     min_sources_to_read: int = 3          # independent sources with a readable page before a story is read
 
     # claim matching (TF-IDF within a story; the middle band goes to an LLM)

@@ -129,7 +129,7 @@ def resolve(item: dict, session=None) -> str | None:
     return url
 
 
-def pick_stories(store: Store, n: int) -> list[dict]:
+def pick_stories(store: Store, n: int, focus: set[int] | None = None) -> list[dict]:
     since = utcnow() - dt.timedelta(hours=48)
     arts = store.rows(select(articles.c.id, articles.c.story_id, articles.c.outlet, articles.c.url, articles.c.agency,
                              articles.c.wire_group, articles.c.lang, articles.c.published_at, articles.c.role,
@@ -159,12 +159,14 @@ def pick_stories(store: Store, n: int) -> list[dict]:
             if groups >= 4 and age_h >= 3:  # a big story that has gone quiet: look for follow-ups
                 depth.append((importance, s, members))
             continue
-        if groups >= 6:
+        in_focus = bool(focus) and sid in focus
+        if groups >= 6 and not in_focus:
             continue  # plenty of coverage already; search cannot add much
         if groups == 1 and len(members) < 3 and not official:
             continue  # one outlet, one or two pieces: usually too minor to chase
         gap_bonus = {1: 0.5, 2: 1.5, 3: 1.0, 4: 0.6, 5: 0.3}.get(groups, 0)
-        breadth.append((importance + gap_bonus, s, members))
+        # the stories being prepared for the writer (priority.queue) come first: more outlets for them
+        breadth.append((importance + gap_bonus + (5.0 if in_focus else 0), s, members))
     breadth.sort(key=lambda t: -t[0])
     depth.sort(key=lambda t: -t[0])
     n_depth = max(1, round(n * SETTINGS.search_depth_share)) if depth else 0
@@ -173,9 +175,9 @@ def pick_stories(store: Store, n: int) -> list[dict]:
 
 
 def discover(store: Store, tavily=None, n_stories: int | None = None, until: float | None = None,
-             engines=(gnews, bing)) -> dict:
+             engines=(gnews, bing), focus: set[int] | None = None) -> dict:
     n_stories = SETTINGS.search_stories_per_run if n_stories is None else n_stories
-    targets = pick_stories(store, n_stories)
+    targets = pick_stories(store, n_stories, focus)
     stats = {"stories": len(targets), "results": 0, "new_articles": 0, "unreadable": 0, "tavily_searches": 0}
     if not targets:
         return stats

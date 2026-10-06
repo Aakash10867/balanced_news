@@ -1,0 +1,39 @@
+name: writing-desk
+
+# The writing desk (nishpaksh/desk.py), separate from the hourly pipeline (owner, Oct 6 2026): it only
+# writes and publishes the most important settled stories, at least one and at most two per clock hour.
+# Started at :35 every hour by Supabase (pg_cron -> workflow_dispatch, see supabase/migrations), after
+# the pipeline that starts at :05 has prepared stories. GitHub's own schedule is a backup; the desk
+# never publishes more than two articles in an hour however often it runs.
+on:
+  schedule:
+    - cron: "50 * * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "who started this run"
+        default: "manual"
+
+concurrency:
+  group: nishpaksh-desk
+  cancel-in-progress: false
+
+jobs:
+  write:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Write and publish
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RUN_TRIGGER: ${{ github.event.inputs.reason || github.event_name }}
+        run: python -m nishpaksh.desk --minutes 20

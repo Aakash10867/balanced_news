@@ -9,10 +9,10 @@
 tiers:
   # Reads articles: events, claims, times, loaded words.
   # Flash-Lite first: Gemma 4 on the free tier is heavily overloaded (mostly 500/504 errors
-  # in testing), so it is kept as overflow. `keep` leaves 150 Flash-Lite requests a day each
-  # for matching, headlines and translation.
+  # in testing), so it is kept as overflow. `keep` leaves 3.5 Flash-Lite's last 250 a day for
+  # analysis, page-building and the writer, 3.1's last 150 for analysis and page-building.
   bulk:
-    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 150}
+    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 250}
     - {id: gemini-3.1-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 150}
     - {id: gemma-4-31b-it, rpm: 30, tpm: 16000, rpd: 14400, json_mode: false}
     - {id: gemma-4-26b-it, rpm: 30, tpm: 16000, rpd: 14400, json_mode: false}
@@ -26,22 +26,23 @@ tiers:
   # the same-event check in grouping. These decide sentence colours, so model changes here need
   # tools/modelcmp first. `keep` leaves 60 a day on each model for the page tier below.
   light:
-    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 60}
+    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 120}
     - {id: gemini-3.1-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 60}
 
   # Building the page: headline, importance, thread links, Hindi translation. Same models as
   # light but nothing kept back, so the last steps of a run are never the ones starved.
   # Every tier is paced over the quota day (router.pace_cap).
   page:
-    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
+    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 80}
     - {id: gemini-3.1-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
 
   # Writes the readable story from the checked statements, best model first: every Flash model,
   # then 3.5 Flash-Lite as the last resort (owner, Oct 6 2026: Oct 5 every Flash model refused on
   # all keys for hours and nothing was written). Older Flash-Lites read badly and are never used.
   # A model refusing 3 times in a row is dropped on every key for the run (router.OVERLOAD_STREAK).
-  # 3.5 Flash-Lite also reads articles and decides colours: the writer stops using it while 300 of
-  # its 500 a day remain, so at most 200 a key go to essays. Red verdicts are on hold, so the judge
+  # 3.5 Flash-Lite is shared, and the writer comes FIRST on it (Oct 6: reading used it up and the
+  # fallback never fired): reading stops while 250 of its 500 a day remain, analysis while 120,
+  # page-building while 80; the last 80 a key are the writer's alone (~25-40 essays a day). Red verdicts are on hold, so the judge
   # makes no calls and the writer keeps nothing back for it.
   writer:
     - {id: gemini-3.8-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
@@ -49,7 +50,7 @@ tiers:
     - {id: gemini-3.6-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
     - {id: gemini-3.5-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
     - {id: gemini-3-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
-    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 300}
+    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
 
   # Verdicts on contested claims. Gemma (second tier) gives the independent second opinion.
   # gemini-2.5-flash is deliberately NOT here: its 20/day are reserved for search grounding.

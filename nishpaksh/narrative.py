@@ -669,7 +669,9 @@ def _call_writer(router: Router, prompt: str) -> tuple[list[list[dict]], str | N
     try:
         # at most 3 tries per run: when Flash is overloaded, 8 tries burned a quarter of an hour's
         # writer calls on one story; the story is simply tried again next run
-        res = router.call("writer", prompt, json_out=True, max_output_tokens=7000, max_attempts=3)
+        # enough attempts to get past refusing Flash models (each is dropped after 3 refusals, on every
+        # key) to the last resort, 3.5 Flash-Lite: with 3, a call gave up before ever reaching it (Oct 6)
+        res = router.call("writer", prompt, json_out=True, max_output_tokens=7000, max_attempts=16)
     except QuotaExhausted as e:
         log.info("narrative: writer quota used up for now (%s)", e)
         return [], None, "quota"
@@ -731,7 +733,7 @@ def _revise(router: Router, drafted: list[list[dict]], failed: list[dict], missi
     prompt = REVISE_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", article=_article_lines(drafted),
                                   failed=failed_lines, missing=missing_lines, statements=statements)
     try:
-        res = router.call("writer", prompt, json_out=True, max_output_tokens=8000, max_attempts=2)
+        res = router.call("writer", prompt, json_out=True, max_output_tokens=8000, max_attempts=8)
     except Exception as e:  # noqa: BLE001
         log.info("narrative: revision not done (%s)", str(e)[:120])
         return None

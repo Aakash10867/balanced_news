@@ -253,7 +253,7 @@ def _extract_one(store: Store, router: Router, a: dict) -> str:
     return "done"
 
 
-def select_for_extraction(store: Store) -> list[dict]:
+def select_for_extraction(store: Store, focus: set[int] | None = None) -> list[dict]:
     """Which articles are worth an LLM call. A story only one source covers can never be
     published and teaches the perspective model nothing, so it waits until a second
     independent source appears. Within a story only one article per independent source is
@@ -269,8 +269,8 @@ def select_for_extraction(store: Store) -> list[dict]:
     closed = frozen_ids(store)       # a published story is never read again (editions.py)
     by_story: dict[int, list[dict]] = {}
     for r in rows:
-        if r["story_id"] in closed:
-            continue
+        if r["story_id"] in closed or (focus is not None and r["story_id"] not in focus):
+            continue    # only the stories being prepared for the writer are read (priority.py)
         if ROUNDUP.search(r["title"] or ""):
             continue   # live blogs and news roundups mix unrelated events into one story
         by_story.setdefault(r["story_id"], []).append(r)
@@ -328,7 +328,7 @@ def retract_unreadable(store: Store) -> int:
     return len(ids)
 
 
-def read_blocked_pages(store: Store, tavily, max_pages: int = 5) -> int:
+def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int] | None = None) -> int:
     """Pages our fetcher could not read, in stories worth reading, fetched through Tavily: at most
     one per independent source per story, stories closest to publishable first."""
     if tavily is None or not tavily.enabled or max_pages <= 0:
@@ -342,7 +342,7 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5) -> int:
     closed = frozen_ids(store)       # no credits on a published story (editions.py)
     by_story: dict[int, list[dict]] = {}
     for r in rows:
-        if r["story_id"] not in closed:
+        if r["story_id"] not in closed and (focus is None or r["story_id"] in focus):
             by_story.setdefault(r["story_id"], []).append(r)
     wanted: list[tuple[int, dt.datetime, dict]] = []
     for sid, arts in by_story.items():
@@ -382,10 +382,11 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5) -> int:
     return n
 
 
-def extract_pending(store: Store, router: Router, deadline: float, workers: int = 6) -> int:
+def extract_pending(store: Store, router: Router, deadline: float, workers: int = 6,
+                    focus: set[int] | None = None) -> int:
     """Read the selected articles, several at a time, while the router keeps every model inside
     its limits."""
-    pending = select_for_extraction(store)
+    pending = select_for_extraction(store, focus)
     if not pending:
         return 0
     stop = threading.Event()

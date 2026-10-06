@@ -61,6 +61,19 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   - After 3 days the article moves to the `archive` branch (`pagearchive.py`, step in hourly.yml:
     `pages/<id>.json.gz`, `index/<YYYY-MM>.jsonl`) and is deleted from Supabase only after the push.
     The site and follow-ups read archived parents from the branch (raw.githubusercontent.com).
+- **Writing desk and preparation queue (owner, Oct 6 2026).** Target: at least one article an hour,
+  at most two. The writer is its own job (`desk.py`, workflow `writer.yml`, dispatched at :35 by
+  pg_cron `public.dispatch_desk()`, same Vault token; GitHub schedule :50 as backup): it writes the
+  settled stories most important first until the clock hour has `desk_per_hour` (2) articles; it logs
+  to `diagnostics` (kind 'desk'), never `runs` (the gate spaces pipeline runs by `runs`). The pipeline
+  (:05) only prepares: every story with 3+ independent sources is rated from its HEADLINES
+  (`priority.rank_new`, one Flash-Lite call per 20 stories, importance rubric 1-5 + filler), and only
+  the best `prep_queue` (16) are read, analysed, Tavily-read and searched first (`priority.queue`);
+  the rest wait as headlines and enter when they rank higher (re-rated when coverage grows by 2+).
+  Oct 6 before this: 458 articles read in 95 stories in 8 h for 8 published (~160 Flash-Lite calls
+  per article). 3.5 Flash-Lite is the writer's first claim: reading stops at 250 left, analysis at 120,
+  page at 80 (models.yaml `keep`); writer calls try up to 16 times so they reach it. Quota usage is
+  saved as increments (`Store.quota_add`), since both jobs share the keys.
 - **Story layers (Oct 5 2026, owner):** a story has its own event (core) and CONTEXT: background,
   related events (a separate event the reports connect to this one: written as separate, never
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),
@@ -129,10 +142,13 @@ ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavil
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
 read articles (`extract.py`, Flash-Lite) → per story: match statements → consolidate
 (`consolidate.py`: merge duplicates, contradictions, one spelling per name, who says what) →
-perspectives → origins + fact/characterisation → verdicts (`verify.py`) → settled? follow-up?
-(`editions.py`) → page, written once (`compose.py`: importance, threads, headline; `narrative.py`: the
-essay) → Hindi → colours of published articles mature → retention → health checks in
-`runs.stats.health` → (workflow step) articles older than 3 days to the archive branch.
+perspectives → origins + fact/characterisation → verdicts (`verify.py`) → settled? (`editions.py`) →
+colours of published articles mature → retention → health checks in `runs.stats.health` → (workflow
+step) articles older than 3 days to the archive branch. Rating (`priority.py`) comes after grouping;
+search, Tavily reads, reading and analysis cover the preparation queue only.
+Writing desk (`desk.py`, :35): settled stories, most important first → follow-up? → page, written once
+(`compose.py`: importance, threads, headline; `narrative.py`: the essay; headline from its lead) →
+Hindi. At most 2 per clock hour.
 
 ## Known quotas and facts learned from real data
 - Google counts **each text in an embedding batch** as one request: ~1,000 texts/day per key.
@@ -202,8 +218,9 @@ essay) → Hindi → colours of published articles mature → retention → heal
 - Writer validator rejects Hindi in English text, and reported speech ("A said that B claimed X")
   turned into a fact or pinned on A.
 - `compose.tidy` removes "X (X)" duplicates.
-- Run stats: `published` = articles written, `publish_attempted` = tries, `settled`,
-  `colours_matured`, `live_pages`; health flags a writer with 0 successes in 2 runs
-  (`run.writer_silent`, from `tier_calls`). `published.updated_at` is the publication time.
+- Run stats: `rated`, `queue`, `settled`, `colours_matured`, `live_pages`; the desk's own stats are in
+  `diagnostics` (kind 'desk': ready, tried, published, tier_calls). Health flags a writer with 0
+  successes in the desk's last 2 runs and two clock hours without an article while stories are ready
+  (`run.writer_silent`). `published.updated_at` is the publication time.
 - The headline model gets statements dated and newest first (`compose._newest_first`); sorted by support,
   old background outranked the new development and got tied to it with "after".

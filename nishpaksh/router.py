@@ -102,6 +102,7 @@ class ModelSlot:
     json_mode: bool = False
     grounding: bool = False
     used_today: int = 0
+    saved: tuple = (0, 0)   # (requests, tokens) already written to quota_usage by this process
     tokens_today: int = 0
     window: list = field(default_factory=list)  # [(timestamp, tokens)] in the last 60 s
     cooldown_until: float = 0.0
@@ -270,6 +271,7 @@ class Router:
         for slot in self.all_slots():
             if slot.usage_key in usage:
                 slot.used_today, slot.tokens_today = usage[slot.usage_key]
+                slot.saved = usage[slot.usage_key]
 
     def all_slots(self):
         seen = set()
@@ -318,6 +320,7 @@ class Router:
                 usage = self.store.quota_load(self.day).get(slot.usage_key) if self.store else None
                 if usage:
                     slot.used_today, slot.tokens_today = usage
+                    slot.saved = tuple(usage)
             else:
                 log.warning("model %s not available on key %d; disabled", slot.id, k + 1)
                 slot.disabled = True
@@ -374,7 +377,12 @@ class Router:
         slot.tokens_today += tokens
         if self.store:
             try:
-                self.store.quota_save(slot.usage_key, self.day, slot.used_today, slot.tokens_today)
+                # increments, not totals: the pipeline and the writer job run at the same time on the
+                # same keys, and totals from one process would overwrite the other's count
+                d_req, d_tok = slot.used_today - slot.saved[0], slot.tokens_today - slot.saved[1]
+                if d_req or d_tok:
+                    self.store.quota_add(slot.usage_key, self.day, d_req, d_tok)
+                    slot.saved = (slot.used_today, slot.tokens_today)
             except Exception as e:
                 log.warning("quota save failed: %s", e)
 

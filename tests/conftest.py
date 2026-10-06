@@ -24,3 +24,12 @@ def no_settle_wait(monkeypatch, request):
         return
     import nishpaksh.editions as ed
     monkeypatch.setattr(ed, "SETTINGS", dataclasses.replace(ed.SETTINGS, settle_quiet_hours=0))
+
+
+@pytest.fixture(autouse=True)
+def pipeline_then_desk(monkeypatch):
+    """In production the writing desk is its own job (desk.py); in tests a pipeline run is followed by
+    the desk, so a run ends with what a reader would see."""
+    import functools
+    import nishpaksh.run as run_mod
+    monkeypatch.setattr(run_mod, "run", functools.partial(run_mod.run, then_write=True))

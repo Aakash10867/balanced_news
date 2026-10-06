@@ -153,6 +153,12 @@ class FakeBackend:
                 res.append({"n": int(n), "new": new,
                             "major": "court" if new and re.search(r"(?i)bail|court", t) else "none"})
             return json.dumps({"items": res}), [], 100
+        if "each shown by the headlines different outlets gave it" in prompt:
+            res = []
+            for n, heads in re.findall(r"^(\d+)\. (.*)$", prompt, re.M):
+                low = heads.lower()
+                res.append({"n": int(n), "score": 4, "filler": "horoscope" in low or "rashifal" in low})
+            return json.dumps({"results": res}), [], 60
         if "Rate how important this Indian news story" in prompt:
             head = re.search(r"Headline: (.*)", prompt).group(1).lower()
             filler = "horoscope" in head or "rashifal" in head
