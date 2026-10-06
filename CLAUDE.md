@@ -62,8 +62,9 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     `pages/<id>.json.gz`, `index/<YYYY-MM>.jsonl`) and is deleted from Supabase only after the push.
     The site and follow-ups read archived parents from the branch (raw.githubusercontent.com).
 - **Writing desk and preparation queue (owner, Oct 6 2026).** Target: at least one article an hour,
-  at most two. The writer is its own job (`desk.py`, workflow `writer.yml`, dispatched at :35 by
-  pg_cron `public.dispatch_desk()`, same Vault token; GitHub schedule :50 as backup): it writes the
+  at most two. The writer is its own job (`desk.py`, workflow `writer.yml`, dispatched at :45 UTC = :15 IST by
+  pg_cron `public.dispatch_desk()`, same Vault token; GitHub schedule :55 as backup; pg_cron is UTC, the
+  pipeline starts :05 UTC = :35 IST): it writes the
   settled stories most important first until the clock hour has `desk_per_hour` (2) articles; it logs
   to `diagnostics` (kind 'desk'), never `runs` (the gate spaces pipeline runs by `runs`). The pipeline
   (:05) only prepares: every story with 3+ independent sources is rated from its HEADLINES
@@ -146,7 +147,7 @@ perspectives → origins + fact/characterisation → verdicts (`verify.py`) → 
 colours of published articles mature → retention → health checks in `runs.stats.health` → (workflow
 step) articles older than 3 days to the archive branch. Rating (`priority.py`) comes after grouping;
 search, Tavily reads, reading and analysis cover the preparation queue only.
-Writing desk (`desk.py`, :35): settled stories, most important first → follow-up? → page, written once
+Writing desk (`desk.py`, :45 UTC): settled stories, most important first → follow-up? → page, written once
 (`compose.py`: importance, threads, headline; `narrative.py`: the essay; headline from its lead) →
 Hindi. At most 2 per clock hour.
 

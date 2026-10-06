@@ -1,6 +1,6 @@
 """The writing desk: a job of its own, separate from the hourly pipeline (owner, Oct 6 2026).
 
-The pipeline (run.py, at :05) reads, analyses and prepares stories; this job (at :35, writer.yml)
+The pipeline (run.py, at :05 UTC) reads, analyses and prepares stories; this job (:45 UTC, writer.yml)
 only writes. Publishing used to come last in a 20-50 minute run and was squeezed out (Oct 6: one run
 spent 50 minutes reading and never asked the writer), and reading spent the Flash-Lite the writer
 needed as its fallback.

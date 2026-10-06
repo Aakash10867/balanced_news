@@ -2,12 +2,12 @@ name: writing-desk
 
 # The writing desk (nishpaksh/desk.py), separate from the hourly pipeline (owner, Oct 6 2026): it only
 # writes and publishes the most important settled stories, at least one and at most two per clock hour.
-# Started at :35 every hour by Supabase (pg_cron -> workflow_dispatch, see supabase/migrations), after
-# the pipeline that starts at :05 has prepared stories. GitHub's own schedule is a backup; the desk
-# never publishes more than two articles in an hour however often it runs.
+# Started at :45 UTC (:15 IST) every hour by Supabase (pg_cron -> workflow_dispatch, see
+# supabase/migrations), 40 minutes after the pipeline (:05 UTC = :35 IST) started preparing stories.
+# GitHub's own schedule is a backup; the desk never publishes more than two articles in an hour.
 on:
   schedule:
-    - cron: "50 * * * *"
+    - cron: "55 * * * *"
   workflow_dispatch:
     inputs:
       reason:
