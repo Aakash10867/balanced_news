@@ -119,15 +119,17 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   what (`compose._actor_problem`). Reports naming different actors for one fact block green.
 - **Everything in the article, in sections with headings (owner, Oct 5 and Oct 7 2026):** code puts every
   statement in exactly one section (`narrative.assign_sections`): news (the lead, no heading), What
-  happened, By the numbers, What they say, Disputed or unconfirmed (real disputes with both versions
-  and whose; one-outlet lines), Background, Related events, Explained, What next. One sectioned draft,
-  then a FILL pass: each group of sections (news+happened+numbers / say+disputed / background+related+
+  happened, By the numbers, What they say, Background, Related events, Explained, What next. NO
+  disputed section (owner, Oct 7 2026): a disagreement is written where its subject is, with both
+  versions and whose; contradicting statements and claim/response pairs share a section; purple
+  one-outlet lines stay with their subject (the colour marks them). One sectioned draft,
+  then a FILL pass: each group of sections (news+happened+numbers / say / background+related+
   explained+next) that left statements out or has failed sentences gets its own small writer call,
   kept only if the article then carries at least as much (Flash-Lite given all 40 statements wrote 10
   sentences; a few at a time it uses them). `essay_ok` needs 85% of ALL statements (owner: the middle
   way). `narrative.section_keys` (one per paragraph) drives the headings on the site, English and
   Hindi. Leftovers stay in `narrative.not_in_essay`. (`recolour`/`needs_rewrite` unused: articles are
-  closed. The Oct 6 rule "a dispute sits with its subject" gave way to the Disputed section.)
+  closed.)
 - **Introductions:** every person and body at first mention with the fullest name and role the
   statements give (`narrative._people` lists them for the writer); extraction names people in full.
 - **Attribution like a newspaper:** name a speaker once, continue with "he said" in the same

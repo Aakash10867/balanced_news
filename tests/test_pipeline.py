@@ -1987,7 +1987,8 @@ def test_every_statement_has_one_section_like_an_explainer():
     """Owner, Oct 7 2026: the article in sections that cover everything known, with headings."""
     from nishpaksh.narrative import assign_sections
     sec = assign_sections(_sec_items())
-    assert sec == {1: "happened", 2: "happened", 3: "numbers", 4: "say", 5: "disputed", 6: "background", 7: "next"}
+    # owner, Oct 7 2026: no disputed section; a one-outlet line stays with its subject (purple marks it)
+    assert sec == {1: "happened", 2: "happened", 3: "numbers", 4: "say", 5: "happened", 6: "background", 7: "next"}
 
 
 def test_sections_left_short_are_filled_a_few_at_a_time():
@@ -2011,8 +2012,8 @@ def test_sections_left_short_are_filled_a_few_at_a_time():
             return super().generate(model, prompt, json_mode, grounded)
     nar = write_narrative(_router(None, Short()), payload, set())
     # the draft, then one call per group of sections that missed statements
-    assert calls == ["draft", "news, happened, numbers", "say, disputed", "background, next"]
+    assert calls == ["draft", "news, happened, numbers", "say", "background, next"]
     assert set(nar["covers"]) == {1, 2, 3, 4, 5, 6, 7} and essay_ok(nar, payload)
     keys = nar["section_keys"]
     assert len(keys) == len(nar["paragraphs"]) and keys[0] == "news"
-    assert [k for k in dict.fromkeys(keys)] == ["news", "happened", "numbers", "say", "disputed", "background", "next"]
+    assert [k for k in dict.fromkeys(keys)] == ["news", "happened", "numbers", "say", "background", "next"]

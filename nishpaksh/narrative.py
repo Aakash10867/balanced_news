@@ -65,13 +65,13 @@ statements below are already sorted into sections; write each section from its o
   happened    what happened, in time order (the statements of the news are not repeated here)
   numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
   say         what each person or body says: claims, allegations, positions, and the responses to them
-  disputed    what is disputed or unconfirmed: each disagreement with both versions and whose they are;
-              claims only one outlet reports ("one report said ...")
   background  how this came about: earlier events, each clearly with its own time
   related     separate events the reports connect to this one, each clearly SEPARATE, with its time
   explained   what a rule, term, finding or number means
   next        what happens next: hearings, deadlines, required steps
 Write only the sections that have statements (and "news"); skip the others.
+A disagreement is written where its subject is, in the same paragraph as the rest of that subject, with
+both versions and whose they are; never collected into a paragraph or section about differing accounts.
 Organise paragraphs by SUBJECT: one subject per paragraph, 2-4 sentences. Never group statements
 because they share a status, and never join two statements in one sentence unless they are about the
 same person, body, place or thing. Say each fact ONCE: if two statements say the same thing, write it
@@ -120,8 +120,8 @@ background), the present and what happens next.
 {people}{background}Statements, by section:
 {statements}
 
-Reply with JSON only, the sections in this order (news, happened, numbers, say, disputed, background,
-related, explained, next), each with its paragraphs:
+Reply with JSON only, the sections in this order (news, happened, numbers, say, background, related,
+explained, next), each with its paragraphs:
 {{"sections": [{{"key": "news", "paragraphs": [[{{"text": "...", "ids": [3]}}]]}},
                {{"key": "happened", "paragraphs": [[{{"text": "...", "ids": [5, 7]}}], [ ... ]]}}, ...]}}"""
 
@@ -149,12 +149,12 @@ Failed sentences in these sections:
 Reply with JSON only: {{"sections": [{{"key": "...", "paragraphs": [[{{"text": "...", "ids": [3]}}]]}}]}}"""
 
 SECTIONS = [("news", "The news"), ("happened", "What happened"), ("numbers", "By the numbers"),
-            ("say", "What they say"), ("disputed", "Disputed or unconfirmed"), ("background", "Background"),
+            ("say", "What they say"), ("background", "Background"),
             ("related", "Related events"), ("explained", "Explained"), ("next", "What next")]
 SECTION_KEYS = [k for k, _ in SECTIONS]
 # the fill pass works on a few sections at a time: small tasks are done completely (owner, Oct 7 2026:
 # Flash-Lite given all 40 statements wrote 10 sentences; given 8-10 at a time it uses them all)
-FILL_GROUPS = [("news", "happened", "numbers"), ("say", "disputed"), ("background", "related", "explained", "next")]
+FILL_GROUPS = [("news", "happened", "numbers"), ("say",), ("background", "related", "explained", "next")]
 ROLE_SECTION = {"background": "background", "related": "related", "explanation": "explained",
                 "reaction": "say", "next": "next"}
 NUMBER = re.compile(r"\d")
@@ -167,25 +167,19 @@ def assign_sections(items: list[dict], background: list[dict] | None = None) -> 
     for i in items:
         if not is_core(i):
             out[i["id"]] = ROLE_SECTION.get(i.get("role"), "background")
-        elif shade(i) in ("disputed", "false", "single") or i.get("conflicts_with") \
-                or any(s_.get("stance") == "denies" for s_ in i.get("sources") or []):
-            out[i["id"]] = "disputed"
         elif i.get("speaker") or i.get("responds_to") or i.get("responded_by"):
             out[i["id"]] = "say"
         elif i["kind"] == "claim" and NUMBER.search(str(((i.get("frame") or {}).get("value")) or i["text"])):
             out[i["id"]] = "numbers"
         else:
             out[i["id"]] = "happened"
-    by_id = {i["id"]: i for i in items}
-    # a claim and its response, or two contradicting statements, are written together
+    # a claim and its response, or two contradicting statements, are written together, where their
+    # subject is (owner, Oct 7 2026: no separate section for disputes; purple lines stay with their
+    # subject too, the colour says they are unconfirmed)
     for i in items:
         for x in (i.get("responded_by") or []) + (i.get("conflicts_with") or []):
-            if x in by_id and x in out:
-                out[x] = out[i["id"]] if out[i["id"]] in ("say", "disputed") else out[x]
-    for i in items:
-        for x in i.get("conflicts_with") or []:
-            if x in out:
-                out[i["id"]] = out[x] = "disputed"
+            if x in out and i["id"] in out:
+                out[x] = out[i["id"]]
     for b in background or []:
         out[b["id"]] = "background"
     return out
