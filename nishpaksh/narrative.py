@@ -55,18 +55,23 @@ when it happened, which statements contradict it, and which statements are a par
 Statements marked CONTEXT are not the story's own event: background, a separate related event,
 an explanation, a reaction, or what happens next.
 
-Structure:
-1. Opening paragraph (1-2 sentences): THE NEWS, the thing that makes this a story today: the newest
-   or most consequential thing someone did, decided or said, with who, where and when. Not the setting
-   or the background, even when that came first in time ("Donald Trump said 125 million people voted in
-   India's election, mixing up India with Brazil", not "Brazil held an election on Sunday").
-2. Then what happened, in time order.
-3. Then each party's account and response: a speaker with several statements gets their own paragraph.
-4. Then CONTEXT: background and related events, each clearly as a SEPARATE event with its own time
-   ("The order came a day after a food analyst declared a sample of Nestle's dairy whitener unsafe;
-   Nestle India says the product is safe."); explanations; what happens next.
-A disagreement is written where its subject is, in the same paragraph as the rest of that subject,
-never collected into a closing paragraph about differing accounts.
+Structure: the article is written in SECTIONS, like a full explainer, so that a reader gets everything
+known about the story: what happened, who says what, how it came about and what comes next. The
+statements below are already sorted into sections; write each section from its own statements:
+  news        1-2 sentences: THE NEWS, the thing that makes this a story today: the newest or most
+              consequential thing someone did, decided or said, with who, where and when. Never the setting
+              or background ("Donald Trump said 125 million people voted in India's election, mixing up
+              India with Brazil", not "Brazil held an election on Sunday"). Use the "happened" statements.
+  happened    what happened, in time order (the statements of the news are not repeated here)
+  numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
+  say         what each person or body says: claims, allegations, positions, and the responses to them
+  disputed    what is disputed or unconfirmed: each disagreement with both versions and whose they are;
+              claims only one outlet reports ("one report said ...")
+  background  how this came about: earlier events, each clearly with its own time
+  related     separate events the reports connect to this one, each clearly SEPARATE, with its time
+  explained   what a rule, term, finding or number means
+  next        what happens next: hearings, deadlines, required steps
+Write only the sections that have statements (and "news"); skip the others.
 Organise paragraphs by SUBJECT: one subject per paragraph, 2-4 sentences. Never group statements
 because they share a status, and never join two statements in one sentence unless they are about the
 same person, body, place or thing. Say each fact ONCE: if two statements say the same thing, write it
@@ -112,37 +117,92 @@ Every sentence lists in "ids" every statement it uses. Use EVERY statement at le
 those only one outlet reports: the reader gets everything known about the story, the past (CONTEXT
 background), the present and what happens next.
 
-{people}{background}Statements, the story's own event first, then CONTEXT:
+{people}{background}Statements, by section:
 {statements}
 
-Reply with JSON only:
-{{"paragraphs": [[{{"text": "...", "ids": [3, 7]}}, {{"text": "...", "ids": [5]}}], [ ... ]]}}"""
+Reply with JSON only, the sections in this order (news, happened, numbers, say, disputed, background,
+related, explained, next), each with its paragraphs:
+{{"sections": [{{"key": "news", "paragraphs": [[{{"text": "...", "ids": [3]}}]]}},
+               {{"key": "happened", "paragraphs": [[{{"text": "...", "ids": [5, 7]}}], [ ... ]]}}, ...]}}"""
 
-REVISE_PROMPT = """You wrote the news article below from numbered statements. Revise it into the final
-article. Everything a reader should know must be IN the article: there is no list of extra facts under it.
-1. Work in EVERY missing statement listed below, each where it belongs by subject (a new paragraph if
-   needed), including those only one outlet reports (never as plain fact: "one report said ...").
-2. Rewrite each failed sentence so it passes the check named, or drop it if it cannot pass.
-3. Keep every other sentence as it is.
-Same rules as before: only the statements given; no outlet named as a source; no number or speaker the
+FILL_PROMPT = """You are completing a news article written in sections from numbered statements. Rewrite ONLY the
+sections named below so that they carry EVERY statement listed for them (each where it belongs; a new
+paragraph if needed) and fix each failed sentence (or drop it if it cannot pass). Keep good sentences as
+they are. The rest of the article is shown so you continue it: do not repeat what it already says, and
+do not introduce again a person it already introduced.
+Rules as before: only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
-disputes give both versions; no cause words unless a statement has them; nothing loaded: {banned}.
-Introduce every person and body at first mention with the fullest name and role the statements give.
+disputes give both versions and whose they are; ONE OUTLET ONLY statements never as plain fact ("one
+report said ..."); no cause words unless a statement has them; nothing loaded: {banned}.
 
-Current article (each sentence with its statement ids):
+The article so far:
 {article}
 
-Failed sentences:
-{failed}
+Sections to rewrite: {keys}
 
-Missing statements:
-{missing}
-
-All statements:
+Their statements (every one must be used):
 {statements}
 
-Reply with JSON only, the whole revised article:
-{{"paragraphs": [[{{"text": "...", "ids": [3, 7]}}], [ ... ]]}}"""
+Failed sentences in these sections:
+{failed}
+
+Reply with JSON only: {{"sections": [{{"key": "...", "paragraphs": [[{{"text": "...", "ids": [3]}}]]}}]}}"""
+
+SECTIONS = [("news", "The news"), ("happened", "What happened"), ("numbers", "By the numbers"),
+            ("say", "What they say"), ("disputed", "Disputed or unconfirmed"), ("background", "Background"),
+            ("related", "Related events"), ("explained", "Explained"), ("next", "What next")]
+SECTION_KEYS = [k for k, _ in SECTIONS]
+# the fill pass works on a few sections at a time: small tasks are done completely (owner, Oct 7 2026:
+# Flash-Lite given all 40 statements wrote 10 sentences; given 8-10 at a time it uses them all)
+FILL_GROUPS = [("news", "happened", "numbers"), ("say", "disputed"), ("background", "related", "explained", "next")]
+ROLE_SECTION = {"background": "background", "related": "related", "explanation": "explained",
+                "reaction": "say", "next": "next"}
+NUMBER = re.compile(r"\d")
+
+
+def assign_sections(items: list[dict], background: list[dict] | None = None) -> dict[int, str]:
+    """Every statement in exactly one section, by code, from what we know about it (owner, Oct 7 2026:
+    sections like an explainer, so nothing is left out and the reader can find each part)."""
+    out: dict[int, str] = {}
+    for i in items:
+        if not is_core(i):
+            out[i["id"]] = ROLE_SECTION.get(i.get("role"), "background")
+        elif shade(i) in ("disputed", "false", "single") or i.get("conflicts_with") \
+                or any(s_.get("stance") == "denies" for s_ in i.get("sources") or []):
+            out[i["id"]] = "disputed"
+        elif i.get("speaker") or i.get("responds_to") or i.get("responded_by"):
+            out[i["id"]] = "say"
+        elif i["kind"] == "claim" and NUMBER.search(str(((i.get("frame") or {}).get("value")) or i["text"])):
+            out[i["id"]] = "numbers"
+        else:
+            out[i["id"]] = "happened"
+    by_id = {i["id"]: i for i in items}
+    # a claim and its response, or two contradicting statements, are written together
+    for i in items:
+        for x in (i.get("responded_by") or []) + (i.get("conflicts_with") or []):
+            if x in by_id and x in out:
+                out[x] = out[i["id"]] if out[i["id"]] in ("say", "disputed") else out[x]
+    for i in items:
+        for x in i.get("conflicts_with") or []:
+            if x in out:
+                out[i["id"]] = out[x] = "disputed"
+    for b in background or []:
+        out[b["id"]] = "background"
+    return out
+
+
+def _section_block(items: list[dict], sec: dict[int, str]) -> str:
+    """The statements, grouped by section, for the writer."""
+    lines = []
+    for key in SECTION_KEYS:
+        mine = [i for i in items if sec.get(i["id"]) == ("happened" if key == "news" else key)]
+        if key == "news" or not mine:
+            continue
+        lines.append(f"SECTION {key}:" if key != "happened" else "SECTION happened (and news):")
+        lines += [_statement_line(i) for i in mine]
+    return "\n".join(lines)
+
+
 
 FALSE_MARKERS = ("false", "untrue", "not true", "contradict", "evidence shows", "disproved", "incorrect",
                  "no evidence", "refut")
@@ -554,10 +614,13 @@ def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool =
             alive[i] = False
         drop_units()
     paragraphs: list[list[dict]] = []
+    kept: list[int] = []
+    _TL.kept = kept          # which drafted paragraphs survived (their sections, for the headings)
     for p, para in enumerate(drafted):
         out = [{"text": re.sub(r"\.{2,}$", ".", flat[i][2]["text"].strip()), "ids": ok_ids[i]}
                for i in range(n) if flat[i][0] == p and alive[i]]
         if out:
+            kept.append(p)
             paragraphs.append(out)
     return paragraphs, failed, sum(1 for a in alive if not a)
 
@@ -659,30 +722,29 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
 
 
 def essay_ok(nar: dict, payload: dict) -> bool:
-    """Good enough to publish as the story: written by the writer, it carries most of the story's own
-    event (60% of its statements that are not minor; context is welcome but optional), and the
-    writer was not badly off task (no more than half its sentences left the essay)."""
+    """Good enough to publish: written by the writer, not badly off task (no more than half its
+    sentences left the essay), and carrying at least 85% of EVERY statement known about the story:
+    the event, who says what, one-outlet lines, background, related events, what next (owner, Oct 7
+    2026: the middle way between "complete or nothing" and short articles)."""
     if not nar.get("model") or not nar.get("paragraphs"):
         return False
     sents = sum(len(p) for p in nar["paragraphs"])
     if nar.get("rejected", 0) > sents:
         return False
-    major = [i["id"] for i in ordered_items(payload) if not i.get("minor") and is_core(i)]
-    if not major:
+    every = [i["id"] for i in ordered_items(payload)]
+    if not every:
         return True
-    return len(set(major) & set(nar.get("covers") or [])) >= 0.75 * len(major)
+    return len(set(every) & set(nar.get("covers") or [])) >= COMPLETE * len(every)
 
 
 def _target_length(items: list[dict]) -> str:
     """Roughly how long the article should be: it follows the material, never padded."""
-    major = sum(1 for i in items if not i.get("minor"))
-    ctx = sum(1 for i in items if not is_core(i))
-    lo = max(4, min(30, int(0.6 * major + 0.4 * ctx)))
-    return f"{lo}-{lo + max(2, lo // 3)}"
+    lo = max(5, min(50, int(0.8 * len(items))))       # every statement is written: about one sentence each
+    return f"{lo}-{lo + max(3, lo // 3)}"
 
 
-def _call_writer(router: Router, prompt: str) -> tuple[list[list[dict]], str | None, str | None]:
-    """(paragraphs, model, failure)."""
+def _call_writer(router: Router, prompt: str) -> tuple[list[tuple[str, list]], str | None, str | None]:
+    """([(section, paragraph)], model, failure)."""
     try:
         # at most 3 tries per run: when Flash is overloaded, 8 tries burned a quarter of an hour's
         # writer calls on one story; the story is simply tried again next run
@@ -698,9 +760,23 @@ def _call_writer(router: Router, prompt: str) -> tuple[list[list[dict]], str | N
     except Exception as e:  # noqa: BLE001
         log.warning("narrative failed: %s", e)
         return [], None, f"error: {str(e)[:80]}"
-    paras = (res.data or {}).get("paragraphs") if isinstance(res.data, dict) else None
-    drafted = [p for p in paras if isinstance(p, list)] if isinstance(paras, list) else []
+    drafted = _sections_of(res.data)
     return drafted, res.model, None if drafted else "no paragraphs in reply"
+
+
+def _sections_of(data) -> list[tuple[str, list]]:
+    """[(section key, paragraph)] from a reply: {"sections": [...]}, or plain {"paragraphs": [...]}."""
+    if not isinstance(data, dict):
+        return []
+    out: list[tuple[str, list]] = []
+    for sec in data.get("sections") or []:
+        if not isinstance(sec, dict):
+            continue
+        key = sec.get("key") if sec.get("key") in SECTION_KEYS else "happened"
+        out += [(key, p) for p in sec.get("paragraphs") or [] if isinstance(p, list)]
+    if not out and isinstance(data.get("paragraphs"), list):
+        out = [("happened", p) for p in data["paragraphs"] if isinstance(p, list)]
+    return out
 
 
 NAME_LEAD_STOP = {"The", "A", "An", "In", "On", "At", "By", "For", "From", "According", "After", "Before",
@@ -731,76 +807,107 @@ def _people(items: list[dict]) -> str:
             + "; ".join(sorted(best.values())[:40]) + "\n\n")
 
 
-def _article_lines(drafted: list[list[dict]]) -> str:
-    out = []
-    for k, para in enumerate(drafted):
-        out.append(f"[paragraph {k + 1}]")
+def _article_with_sections(drafted: list[tuple[str, list]]) -> str:
+    out, last = [], None
+    for key, para in drafted:
+        if key != last:
+            out.append(f"== {key} ==")
+            last = key
         for sent in para:
             if isinstance(sent, dict):
                 out.append(f'  "{str(sent.get("text") or "")}" | ids: {sent.get("ids")}')
     return "\n".join(out)
 
 
-def _revise(router: Router, drafted: list[list[dict]], failed: list[dict], missing: list[dict],
-            banned: set[str], statements: str) -> list[list[dict]] | None:
-    """One more writer call: the whole article back, with every missing statement worked in and every
-    failed sentence fixed (owner, Oct 2026: everything in the article, no list of extras under it)."""
-    failed_lines = "\n".join(f'- "{str(f["sentence"].get("text") or "")}" | problem: {f["reason"]}' for f in failed) or "(none)"
-    missing_lines = "\n".join(_statement_line(i) for i in missing) or "(none)"
-    prompt = REVISE_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", article=_article_lines(drafted),
-                                  failed=failed_lines, missing=missing_lines, statements=statements)
-    try:
-        res = router.call("writer", prompt, json_out=True, max_output_tokens=8000, max_attempts=8)
-    except Exception as e:  # noqa: BLE001
-        log.info("narrative: revision not done (%s)", str(e)[:120])
-        return None
-    paras = (res.data or {}).get("paragraphs") if isinstance(res.data, dict) else None
-    out = [p for p in paras if isinstance(p, list)] if isinstance(paras, list) else []
-    return out or None
+def _check_sections(drafted, by_id, banned, outlets):
+    paragraphs, failed, rejected = _check_paragraphs([p for _, p in drafted], by_id, banned, outlets)
+    keys = [drafted[k][0] for k in getattr(_TL, "kept", [])]
+    for f in failed:
+        f["section"] = drafted[f["p"]][0] if f["p"] < len(drafted) else "happened"
+    return paragraphs, keys, failed, rejected
+
+
+COMPLETE = 0.85     # owner, Oct 7 2026: an article must carry 85% of everything known (the middle way)
 
 
 def write_narrative(router: Router | None, payload: dict, banned: set[str]) -> dict:
+    """The article, in sections (owner, Oct 7 2026): one sectioned draft, then a fill pass for each
+    group of sections that left statements out or has failed sentences, a few sections per call, so even
+    Flash-Lite carries everything. Each sentence is checked; a section rewrite is kept only if the
+    article then carries at least as much."""
     items, background, by_id, outlets, banned = _context(payload, banned)
-    drafted: list[list[dict]] = []
+    sec = assign_sections(items, background)
+    drafted: list[tuple[str, list]] = []
     model, failure = None, None
     _reasons().clear()
-    statements = "\n".join(_statement_line(i) for i in items)
     if router is not None and items:
         bg = ""
         if background:
-            bg = ("This story is a later development of an earlier story on the site. Open with the NEW "
-                  "development; then give at most TWO sentences of background from these earlier facts, "
-                  "citing their ids (they are optional; do not repeat them later):\n"
-                  + "\n".join(_statement_line(b) for b in background) + "\n\n")
+            bg = ("This story is a later development of an earlier story on the site. The section "
+                  "\"background\" holds facts from the earlier story: give at most TWO sentences of them.\n\n")
         prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg,
-                                      statements=statements, length=_target_length(items), people=_people(items))
+                                      statements=_section_block(items + background, sec),
+                                      length=_target_length(items), people=_people(items))
         drafted, model, failure = _call_writer(router, prompt)
 
-    paragraphs, failed, rejected = _check_paragraphs(drafted, by_id, banned, outlets)
+    paragraphs, keys, failed, rejected = _check_sections(drafted, by_id, banned, outlets)
     first_reasons = dict(_reasons())
-    repaired = False
-    covered = {x for para in paragraphs for s_ in para for x in s_["ids"]}
-    essay_text = [x["text"] for para in paragraphs for x in para]
-    missing = [i for i in items if i["id"] not in covered and not _said_in(i, essay_text)]
-    if (failed or missing) and model and router is not None:
-        revised = _revise(router, drafted, failed, missing, banned, statements)
-        if revised:
-            saved = dict(_reasons())
+    filled = []
+    for group in FILL_GROUPS:
+        if not model or router is None:
+            break
+        covered = {x for para in paragraphs for s_ in para for x in s_["ids"]}
+        essay_text = [x["text"] for para in paragraphs for x in para]
+        missing = [i for i in items if sec.get(i["id"]) in group and i["id"] not in covered
+                   and not _said_in(i, essay_text)]
+        bad = [f for f in failed if f.get("section") in group or (f.get("section") == "news" and "news" in group)]
+        if not missing and not bad:
+            continue
+        mine = [i for i in items if sec.get(i["id"]) in group]
+        prompt = FILL_PROMPT.format(
+            banned=", ".join(sorted(banned)) or "(none)", article=_article_with_sections(drafted),
+            keys=", ".join(k for k in group if k == "news" or any(sec.get(i["id"]) == k for i in mine)),
+            statements="\n".join(f"[{sec[i['id']]}] " + _statement_line(i) for i in mine),
+            failed="\n".join(f'- "{str(f["sentence"].get("text") or "")}" | problem: {f["reason"]}' for f in bad) or "(none)")
+        try:
+            res = router.call("writer", prompt, json_out=True, max_output_tokens=6000, max_attempts=8)
+        except Exception as e:  # noqa: BLE001
+            log.info("narrative: section fill not done (%s)", str(e)[:120])
+            continue
+        new = [(k, p) for k, p in _sections_of(res.data) if k in group]
+        if not new:
+            continue
+        # the group's sections replaced in place, the rest of the article as it was
+        trial: list[tuple[str, list]] = []
+        placed = False
+        for k, p in drafted:
+            if k in group:
+                if not placed:
+                    trial += new
+                    placed = True
+                continue
+            trial.append((k, p))
+        if not placed:
+            order = {k: n for n, k in enumerate(SECTION_KEYS)}
+            trial = sorted(trial + new, key=lambda kp: order.get(kp[0], 99))
+        saved = dict(_reasons())
+        _reasons().clear()
+        p2, k2, f2, r2 = _check_sections(trial, by_id, banned, outlets)
+        cov2 = {x for para in p2 for s_ in para for x in s_["ids"]}
+        if len(cov2) >= len(covered):
+            drafted, paragraphs, keys, failed, rejected = trial, p2, k2, f2, r2
+            filled.append("+".join(group))
+        else:
             _reasons().clear()
-            p2, f2, r2 = _check_paragraphs(revised, by_id, banned, outlets)
-            cov2 = {x for para in p2 for s_ in para for x in s_["ids"]}
-            if len(cov2) >= len(covered):          # keep the revision only if it carries at least as much
-                paragraphs, failed, rejected, repaired = p2, f2, r2, True
-            else:
-                _reasons().clear()
-                _reasons().update(saved)
+            _reasons().update(saved)
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     if rejected:
         log.info("narrative: %d sentences left the essay (%s)", rejected, dict(_reasons()))
     return _finish(payload, paragraphs, also, by_id,
                    {"model": model, "rejected": rejected, "reject_reasons": dict(_reasons()), "failure": failure,
-                    "first_draft_reasons": first_reasons, "repaired": repaired})
+                    "first_draft_reasons": first_reasons, "repaired": bool(filled), "filled": filled,
+                    "section_keys": keys})
 
 
 def recolour(old: dict, payload: dict, banned: set[str]) -> dict:

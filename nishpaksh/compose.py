@@ -285,6 +285,8 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "origins": (c.get("origins") or {}).get("origins", []),
             "n_origins": (c.get("origins") or {}).get("n_origins", 0),
             "n_outlets": (c.get("origins") or {}).get("outlets", 0),
+            # its fields (frames.py): the writer's sections place figures by them
+            "frame": (c.get("rel") or {}).get("frame") if c["kind"] != "relation" else None,
         }
 
     all_items = {cid: item(cid) for cid in canon if members.get(cid)}

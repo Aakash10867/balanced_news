@@ -172,32 +172,38 @@ class FakeBackend:
             lines = re.findall(r"^(\d+) \| (.*?) \| (.*)$", prompt, flags=re.M)
             speaker = {n: by for n, _, by in lines if by not in ("article", "unnamed source") and "," not in by}
             return json.dumps({"same": [], "conflicts": [], "names": {}, "speaker": speaker}), [], 100
-        if "Revise it into the final" in prompt:
-            art = prompt.split("Current article")[1].split("Failed sentences:")[0]
-            paras, cur = [], None
+        if "You are completing a news article written in sections" in prompt:
+            art = prompt.split("The article so far:")[1].split("Sections to rewrite:")[0]
+            keys = [k.strip() for k in prompt.split("Sections to rewrite:")[1].split("\n")[0].split(",")]
+            failed_txt = prompt.split("Failed sentences in these sections:")[1]
+            secs, cur = {}, None
             for line in art.splitlines():
-                if line.startswith("[paragraph"):
-                    cur = []
-                    paras.append(cur)
+                m = re.match(r"== (\w+) ==", line)
+                if m:
+                    cur = m.group(1)
+                    continue
                 m = re.match(r'\s+"(.*)" \| ids: \[(.*)\]$', line)
-                if m and cur is not None:
-                    cur.append({"text": m.group(1), "ids": [int(x) for x in m.group(2).split(",") if x.strip()]})
-            failed_txt = prompt.split("Failed sentences:")[1].split("Missing statements:")[0]
-            paras = [[x for x in p if f'"{x["text"]}"' not in failed_txt] for p in paras]   # a good editor drops them
-            miss = prompt.split("Missing statements:")[1].split("All statements:")[0]
-            add = []
-            for sid, status, text, by in re.findall(r'#(\d+) ([A-Z][A-Z -]*?) \| "(.*?)"(?: \| said by: ([^|\n]*))?', miss):
+                if m and cur in keys and f'"{m.group(1)}"' not in failed_txt:   # a good editor drops failed ones
+                    secs.setdefault(cur, []).append({"text": m.group(1), "ids": [int(x) for x in m.group(2).split(",") if x.strip()]})
+            have = {x for v in secs.values() for sent in v for x in sent["ids"]}
+            stm = prompt.split("Their statements (every one must be used):")[1].split("Failed sentences")[0]
+            for key, sid, status, text, by in re.findall(r'\[(\w+)\] #(\d+) ([A-Z][A-Z -]*?) \| "(.*?)"(?: \| said by: ([^|\n]*))?', stm):
+                if int(sid) in have:
+                    continue
                 if status == "FALSE":
-                    add.append({"text": f"Reports that {text[0].lower() + text[1:]} are false, the evidence shows.", "ids": [int(sid)]})
+                    t = f"Reports that {text[0].lower() + text[1:]} are false, the evidence shows."
                 elif by:
-                    add.append({"text": f"{by.strip()} said that {text[0].lower() + text[1:]}.", "ids": [int(sid)]})
+                    t = f"{by.strip()} said that {text[0].lower() + text[1:]}."
                 elif status == "DISPUTED":
-                    add.append({"text": f"{text}, though this is disputed.", "ids": [int(sid)]})
+                    t = f"{text}, though this is disputed."
                 elif status == "ESTABLISHED":
-                    add.append({"text": text + ".", "ids": [int(sid)]})
+                    t = text + "."
+                elif status == "ONE OUTLET ONLY":
+                    t = f"One report said {text[0].lower() + text[1:]}."
                 else:
-                    add.append({"text": f"Reportedly, {text[0].lower() + text[1:]}.", "ids": [int(sid)]})
-            return json.dumps({"paragraphs": [p for p in paras if p] + ([add] if add else [])}), [], 400
+                    t = f"Reportedly, {text[0].lower() + text[1:]}."
+                secs.setdefault(key, []).append({"text": t, "ids": [int(sid)]})
+            return json.dumps({"sections": [{"key": k, "paragraphs": [v]} for k, v in secs.items() if v]}), [], 400
         if "These sentences failed the newsroom's" in prompt:
             n = len(re.findall(r"^\d+\. ", prompt.split("Statements:")[0], flags=re.M))
             return json.dumps({"fixes": [{"n": k + 1, "text": "", "ids": []} for k in range(n)]}), [], 50

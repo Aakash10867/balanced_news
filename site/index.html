@@ -65,6 +65,8 @@
   article .meta { margin-bottom: 2rem; }
   .story p { margin: 0 0 1.15rem; hyphens: manual; }
   .story p:first-child { font-size: 1.1em; line-height: 1.55; }
+  .story h2.sec { font-family: var(--sans); font-size: .78rem; font-weight: 700; letter-spacing: .08em;
+                  text-transform: uppercase; color: var(--ink-soft); margin: 2rem 0 .6rem; }
   .s.established { color: var(--v-established); }
   .s.disputed { color: var(--v-disputed); }
   .s.unverified { color: var(--v-unverified); }
@@ -164,6 +166,9 @@ const T = {
     foot: "Nishpaksh reads Indian news outlets in English and Hindi every hour. A sentence is green only when at least three independent outlets report it, it traces to at least two independent origins (not one press release or unnamed sources repeated), nobody denies it, it is a checkable fact, and it has stood for six hours (until then it is underlined as developing). Grey means not yet cross-checked; purple means only one outlet reports it (an exclusive, or a mistake); amber means sources disagree; red, marked FALSE, means primary evidence (FIR, court record, official data, video) shows it is false.",
     tags: {corroborated: "Established", confirmed: "Confirmed", developing: "Developing", disputed: "Sources disagree", unverified: "Not yet cross-checked", pending: "Not yet cross-checked", single: "One outlet only", false: "FALSE"},
     units: {m: "min", h: "h", d: "d"},
+    sections: {happened: "What happened", numbers: "By the numbers", say: "What they say",
+               disputed: "Disputed or unconfirmed", background: "Background", related: "Related events",
+               explained: "Explained", next: "What next"},
   },
   hi: {
     intro: "हर ख़बर उन सभी स्रोतों से लिखी गई है जिन्होंने उसे कवर किया। रंग बताता है कि हर वाक्य कितना पुष्ट है।",
@@ -187,6 +192,9 @@ const T = {
     foot: "निष्पक्ष हर घंटे अंग्रेज़ी और हिंदी के भारतीय समाचार स्रोत पढ़ता है। वाक्य हरा तभी होता है जब कम से कम तीन स्वतंत्र स्रोत उसे बताएँ, वह कम से कम दो स्वतंत्र मूल स्रोतों तक जाए (एक ही प्रेस विज्ञप्ति या बेनाम सूत्र नहीं), कोई उसका खंडन न करे, वह जाँचा जा सकने वाला तथ्य हो, और छह घंटे टिका रहे (तब तक उसके नीचे बिंदुदार रेखा रहती है)। धूसर का अर्थ है अभी पुष्टि नहीं; बैंगनी का अर्थ है केवल एक स्रोत ने बताया (विशेष ख़बर या गलती); सुनहरा-पीला का अर्थ है स्रोतों में मतभेद; लाल, \"असत्य\" चिह्न के साथ, का अर्थ है प्राथमिक साक्ष्य (FIR, अदालती रिकॉर्ड, सरकारी आँकड़े, वीडियो) उसे असत्य दिखाते हैं।",
     tags: {corroborated: "स्थापित", confirmed: "प्रमाणित", developing: "विकसित हो रही", disputed: "स्रोतों में मतभेद", unverified: "अभी पुष्टि नहीं", pending: "अभी पुष्टि नहीं", single: "केवल एक स्रोत", false: "असत्य"},
     units: {m: "मिनट", h: "घंटे", d: "दिन"},
+    sections: {happened: "क्या हुआ", numbers: "आँकड़ों में", say: "किसने क्या कहा",
+               disputed: "विवादित या अपुष्ट", background: "पृष्ठभूमि", related: "जुड़ी घटनाएँ",
+               explained: "समझिए", next: "आगे क्या"},
   },
 };
 const VCOLOR = {established: "var(--v-established)", developing: "var(--v-unverified)", disputed: "var(--v-disputed)",
@@ -304,7 +312,15 @@ function essayHtml(nar, t) {
   };
   // everything is in the article itself (owner, Oct 2026); every statement is still listed in the
   // "Every statement" section below for anyone checking
-  return nar.paragraphs.map(para => "<p>" + para.map(sent).join(" ") + "</p>").join("");
+  // the article in sections, like an explainer (owner, Oct 7 2026); the opening (the news) has no heading
+  const keys = nar.section_keys || [];
+  let last = null;
+  return nar.paragraphs.map((para, k) => {
+    const key = keys[k];
+    const head = key && key !== last && key !== "news" && t.sections[key] ? `<h2 class="sec">${esc(t.sections[key])}</h2>` : "";
+    last = key || last;
+    return head + "<p>" + para.map(sent).join(" ") + "</p>";
+  }).join("");
 }
 
 function keyHtml(t, present) {

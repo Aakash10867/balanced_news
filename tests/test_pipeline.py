@@ -1374,7 +1374,9 @@ def test_context_is_kept_apart_from_the_story_event_and_written_after_it():
     p = {"timeline": [], "undated": [], "established": core, "contested": [], "context": ctx}
     assert [i["id"] for i in ordered_items(p)] == [1, 2]
     nar = {"model": "gemini-3.8-flash", "paragraphs": [[{"ids": [1]}]], "covers": [1], "rejected": 0}
-    assert essay_ok(nar, p)                                           # context is welcome, not required
+    # owner, Oct 7 2026: everything known goes in, context included (85% of all statements)
+    assert not essay_ok(nar, p)
+    assert essay_ok(dict(nar, covers=[1, 2]), p)
 
 
 def test_extraction_keeps_context_marked(store):
@@ -1555,7 +1557,7 @@ def test_new_story_waits_for_the_writer_and_is_then_written_once(store):
 
     class NoWriter(FakeBackend):
         def generate(self, model, prompt, json_mode, grounded):
-            if "Write the story below as ONE news article" in prompt or "Revise it into the final" in prompt:
+            if "Write the story below as ONE news article" in prompt or "You are completing a news article" in prompt:
                 return '{"paragraphs": []}', [], 10      # nothing usable
             return super().generate(model, prompt, json_mode, grounded)
     _seed(store)
@@ -1963,6 +1965,54 @@ def test_one_outlet_lines_are_written_in_purple():
 
 
 def test_the_writer_is_asked_for_every_statement_including_one_outlet_lines():
-    from nishpaksh.narrative import REVISE_PROMPT, WRITER_PROMPT
+    from nishpaksh.narrative import FILL_PROMPT, WRITER_PROMPT
     assert "Use EVERY statement" in WRITER_PROMPT and "may be left out" not in WRITER_PROMPT
-    assert "minor statement that adds nothing" not in REVISE_PROMPT
+    assert "every one must be used" in FILL_PROMPT
+
+
+def _sec_items():
+    mk = lambda i, text, **k: dict(_item(i, text, k.pop("verdict", "unverified"), k.pop("speaker", None)),  # noqa: E731
+                                   n_sources=k.pop("n_sources", 3), n_articles=3, minor=False, role=k.pop("role", "core"),
+                                   kind=k.pop("kind", "event"), **k)
+    return [mk(1, "A bridge collapsed in Kesarganj", verdict="corroborated"),
+            mk(2, "Rescue teams reached the site at noon"),
+            mk(3, "The repair budget was 40 crore rupees", kind="claim", frame={"value": "40 crore"}),
+            mk(4, "The contractor used substandard material", kind="claim", speaker="Residents"),
+            mk(5, "The engineer had left the job", n_sources=1),
+            mk(6, "The bridge was built in 1990", role="background"),
+            mk(7, "A probe report is due on Friday", role="next")]
+
+
+def test_every_statement_has_one_section_like_an_explainer():
+    """Owner, Oct 7 2026: the article in sections that cover everything known, with headings."""
+    from nishpaksh.narrative import assign_sections
+    sec = assign_sections(_sec_items())
+    assert sec == {1: "happened", 2: "happened", 3: "numbers", 4: "say", 5: "disputed", 6: "background", 7: "next"}
+
+
+def test_sections_left_short_are_filled_a_few_at_a_time():
+    """The first draft carries two statements; the fill pass asks for the missing ones, one group of
+    sections per call, and the article ends with every statement, each under its heading."""
+    from nishpaksh.narrative import essay_ok, write_narrative
+    items = _sec_items()
+    payload = _payload(items)
+    payload["context"] = [i for i in items if i["role"] != "core"]
+    payload["contested"] = [i for i in payload["contested"] if i["role"] == "core"]
+    calls = []
+
+    class Short(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            if "Write the story below as ONE news article" in prompt:
+                calls.append("draft")
+                return json.dumps({"sections": [{"key": "news", "paragraphs": [[{"text": "A bridge collapsed in Kesarganj.", "ids": [1]}]]},
+                                                {"key": "happened", "paragraphs": [[{"text": "Reportedly, rescue teams reached the site at noon.", "ids": [2]}]]}]}), [], 100
+            if "You are completing a news article written in sections" in prompt:
+                calls.append(prompt.split("Sections to rewrite:")[1].split("\n")[0].strip())
+            return super().generate(model, prompt, json_mode, grounded)
+    nar = write_narrative(_router(None, Short()), payload, set())
+    # the draft, then one call per group of sections that missed statements
+    assert calls == ["draft", "news, happened, numbers", "say, disputed", "background, next"]
+    assert set(nar["covers"]) == {1, 2, 3, 4, 5, 6, 7} and essay_ok(nar, payload)
+    keys = nar["section_keys"]
+    assert len(keys) == len(nar["paragraphs"]) and keys[0] == "news"
+    assert [k for k in dict.fromkeys(keys)] == ["news", "happened", "numbers", "say", "disputed", "background", "next"]

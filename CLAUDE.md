@@ -117,11 +117,17 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   joined in one sentence must share a subject; "Also reported" skips what the essay already says;
   one repair call rewrites failed sentences before anything is dropped. Headlines must keep who did
   what (`compose._actor_problem`). Reports naming different actors for one fact block green.
-- **Everything in the article (owner, Oct 5 2026):** no "Also reported" list. After the first draft, one
-  revision call works in every missing non-minor statement and fixes failed sentences (whole article
-  back, kept only if it covers at least as much); essay_ok needs 75% of the core's non-minor
-  statements. Leftovers stay in `narrative.not_in_essay` and the page's statement list only.
-  (`narrative.recolour`/`needs_rewrite` are no longer used for publishing: articles are closed.)
+- **Everything in the article, in sections with headings (owner, Oct 5 and Oct 7 2026):** code puts every
+  statement in exactly one section (`narrative.assign_sections`): news (the lead, no heading), What
+  happened, By the numbers, What they say, Disputed or unconfirmed (real disputes with both versions
+  and whose; one-outlet lines), Background, Related events, Explained, What next. One sectioned draft,
+  then a FILL pass: each group of sections (news+happened+numbers / say+disputed / background+related+
+  explained+next) that left statements out or has failed sentences gets its own small writer call,
+  kept only if the article then carries at least as much (Flash-Lite given all 40 statements wrote 10
+  sentences; a few at a time it uses them). `essay_ok` needs 85% of ALL statements (owner: the middle
+  way). `narrative.section_keys` (one per paragraph) drives the headings on the site, English and
+  Hindi. Leftovers stay in `narrative.not_in_essay`. (`recolour`/`needs_rewrite` unused: articles are
+  closed. The Oct 6 rule "a dispute sits with its subject" gave way to the Disputed section.)
 - **Introductions:** every person and body at first mention with the fullest name and role the
   statements give (`narrative._people` lists them for the writer); extraction names people in full.
 - **Attribution like a newspaper:** name a speaker once, continue with "he said" in the same
