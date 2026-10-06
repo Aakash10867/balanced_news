@@ -195,6 +195,7 @@ Hindi. At most 2 per clock hour.
 - Tests: `python -m pytest -q` (fake backend in `tests/fixtures.py`; add fakes for any new prompt).
 
 ## Open items
+- **Check next session (owner, Oct 7 2026):** do resumed drafts' extra fill rounds use up Flash writer quota early (desk `diagnostics` kind 'desk', `tier_calls`)? If Flash runs out by afternoon, drop the third round for resumed drafts first.
 - Green rule may be too strict (own-voice reporting rarely counts as an origin); revisit with data.
 - Thread timeline page (later). Weak fallback headlines when the model fails twice.
 - Perspective clusters flipped because they were noise (Oct 5 2026: 32 sources, 21% of pairs
