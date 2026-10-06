@@ -2059,3 +2059,14 @@ def test_a_short_article_is_finished_next_time_not_thrown_away(store):
     assert "writer_draft" not in an
     nar = store.one(select(published).where(published.c.story_id == sid))["payload_en"]["narrative"]
     assert nar["resumed"] and "drafted" not in nar
+
+    # a statement the draft cites is merged into another later: the sentence follows it, not dropped
+    from nishpaksh.db import canonical
+    from nishpaksh.match import _merge
+    cited = next(x for _, para in draft["sections"] for s in para for x in s["ids"])
+    assert str(cited) in draft["anchors"]
+    other = next(r["id"] for r in store.rows(select(canonical.c.id).where(canonical.c.story_id == sid)) if r["id"] != cited)
+    _merge(store, cited, other)
+    payload = {"timeline": [], "undated": [{"id": other, "kind": "event"}], "contested": [], "established": []}
+    moved = compose._remap_draft(store, draft, payload)
+    assert [x for _, para in moved["sections"] for s in para for x in s["ids"]] == [other]

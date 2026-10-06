@@ -19,7 +19,7 @@ import logging
 import re
 from collections import Counter, defaultdict
 
-from .db import Store, articles, published, select, stories, update, utcnow, insert
+from .db import Store, articles, claims, published, select, stories, update, utcnow, insert
 from .router import QuotaExhausted, Router
 from .timeline import build_timeline
 from .verify import _story_context, relation_text, support_summary
@@ -517,6 +517,48 @@ def _keepable(nar: dict | None) -> bool:
     return bool(m) and ("lite" not in m or lite_ok) and bool((nar or {}).get("paragraphs"))
 
 
+def _draft_ids(sections) -> set[int]:
+    """Statement numbers a kept draft cites: sections are [key, paragraph], a paragraph a list of sentences."""
+    return {x for _, para in sections or [] for sent in para or [] if isinstance(sent, dict)
+            for x in (sent.get("ids") or []) if isinstance(x, int)}
+
+
+def _draft_anchors(store: Store, sections) -> dict[str, int]:
+    """One report (claim) behind each statement the draft cites: when consolidation later merges that
+    statement into another, the report moves with it, so the draft's sentence can follow."""
+    ids = sorted(_draft_ids(sections))
+    out: dict[str, int] = {}
+    for r in store.rows(select(claims.c.id, claims.c.canonical_id).where(claims.c.canonical_id.in_(ids or [-1]))
+                        .order_by(claims.c.id)):
+        out.setdefault(str(r["canonical_id"]), r["id"])
+    return out
+
+
+def _remap_draft(store: Store, draft: dict | None, payload: dict) -> dict | None:
+    """A kept draft cites statement numbers from when it was written; statements merged since then are
+    renamed to the statement they joined, so their sentences are kept instead of dropped."""
+    if not draft or not draft.get("sections"):
+        return draft
+    from .narrative import ordered_items
+    known = {i["id"] for i in ordered_items(payload) + (payload.get("background") or []) if i.get("id") is not None}
+    anchors = draft.get("anchors") or {}
+    gone = {x: anchors[str(x)] for x in _draft_ids(draft["sections"]) if x not in known and str(x) in anchors}
+    if not gone:
+        return draft
+    now = {r["id"]: r["canonical_id"] for r in store.rows(
+        select(claims.c.id, claims.c.canonical_id).where(claims.c.id.in_(sorted(set(gone.values())))))}
+    to = {x: now.get(c) for x, c in gone.items() if now.get(c) in known}
+    if not to:
+        return draft
+    out = copy.deepcopy(draft)
+    for _, para in out["sections"]:
+        for sent in para or []:
+            if isinstance(sent, dict):
+                sent["ids"] = list(dict.fromkeys(to.get(x, x) for x in sent.get("ids") or []))
+    log.info("draft: %d merged statements renamed (%s)", len(to), to)
+    return out
+
+
 def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     """Write the article, once (editions.py, owner Oct 5 2026). Only the writer produces prose: a story
     is published with a good essay or not at all (it waits; Oct 2026: 85 of 91 live pages were
@@ -541,7 +583,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         return False
     # an earlier try that fell short of the bar is continued, not started again (owner, Oct 7 2026)
     an = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
-    draft = an.get("writer_draft")
+    draft = _remap_draft(store, an.get("writer_draft"), payload)
     nar = write_narrative(router, payload, banned, draft=draft if _keepable({"model": (draft or {}).get("model"),
                                                                              "paragraphs": [1]}) else None)
     drafted = nar.pop("drafted", None)
@@ -551,6 +593,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
             an = dict((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
             covered = len(set(nar.get("covers") or []))
             an["writer_draft"] = {"sections": drafted, "model": nar.get("model"), "covers": covered,
+                                  "anchors": _draft_anchors(store, drafted),
                                   "at": utcnow().isoformat(timespec="minutes")}
             store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
         log.info("story %s waits: the article carries %d statements, short of the bar; its draft is kept",

@@ -854,7 +854,8 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     first_reasons = dict(_reasons())
     filled = []
     # up to two rounds over the section groups: a group still short after its first fill gets one more
-    rounds = [g for _ in range(2) for g in FILL_GROUPS]
+    # (three for a resumed draft: statements may have joined the story since it was written)
+    rounds = [g for _ in range(3 if resumed else 2) for g in FILL_GROUPS]
     for n_call, group in enumerate(rounds):
         if not model or router is None:
             break
