@@ -36,16 +36,20 @@ tiers:
     - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
     - {id: gemini-3.1-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
 
-  # Writes the readable story from the checked statements. Flash only: Flash-Lite essays read
-  # badly (Oct 2026), and a story with no good essay waits rather than being published stitched.
-  # Red verdicts are on hold (no second model family on the free tier now that Gemma is out), so
-  # the judge makes no calls and the writer keeps nothing back for it.
+  # Writes the readable story from the checked statements, best model first: every Flash model,
+  # then 3.5 Flash-Lite as the last resort (owner, Oct 6 2026: Oct 5 every Flash model refused on
+  # all keys for hours and nothing was written). Older Flash-Lites read badly and are never used.
+  # A model refusing 3 times in a row is dropped on every key for the run (router.OVERLOAD_STREAK).
+  # 3.5 Flash-Lite also reads articles and decides colours: the writer stops using it while 300 of
+  # its 500 a day remain, so at most 200 a key go to essays. Red verdicts are on hold, so the judge
+  # makes no calls and the writer keeps nothing back for it.
   writer:
     - {id: gemini-3.8-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
     - {id: gemini-3.7-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
     - {id: gemini-3.6-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
     - {id: gemini-3.5-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
     - {id: gemini-3-flash, rpm: 5, tpm: 250000, rpd: 20, json_mode: true}
+    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true, keep: 300}
 
   # Verdicts on contested claims. Gemma (second tier) gives the independent second opinion.
   # gemini-2.5-flash is deliberately NOT here: its 20/day are reserved for search grounding.

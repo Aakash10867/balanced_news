@@ -22,8 +22,7 @@ log = logging.getLogger(__name__)
 EMBED_DIMS = 256
 PACIFIC = ZoneInfo("America/Los_Angeles")  # Gemini daily quotas reset at midnight Pacific
 PACE_SLACK_HOURS = 2   # how far ahead of an even spread a slot may run
-OVERLOAD_STREAK = 3    # consecutive overload errors before a model is dropped for the run
-TIER_OVERLOAD_STREAK = 10   # consecutive refusals across a whole tier before it is skipped for the run
+OVERLOAD_STREAK = 3    # consecutive overload errors of a model (on any key) before it is dropped for the run
 
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -245,7 +244,10 @@ class Router:
         # every request's outcome per model and key ("gemini-3.8-flash@k2" -> {"ok": 4, "overloaded 5xx": 9}),
         # so refusal rates can be compared by hour of day (owner, Oct 5 2026)
         self.call_log: dict[str, _C] = {}
-        self.tier_streak: dict[str, int] = {}   # consecutive overload refusals per tier
+        # consecutive overload refusals per model id, across keys: Google's overload hits a model on
+        # every key at once (Oct 5 2026), so a refusing model is dropped everywhere and the tier moves
+        # on to its next model (the writer's last one is Flash-Lite) instead of retrying it per key
+        self.model_streak: dict[str, int] = {}
         self.tier_log: dict[str, _C] = {}       # outcomes per tier ("writer" -> {"ok": 0, "overloaded 5xx": 40})
         # One slot per (key, model), shared by every tier that lists the model, so a model used by
         # two tiers is never counted against two separate quotas. `keep` lets a tier stop using a
@@ -400,13 +402,17 @@ class Router:
                 or "timeout" in low or "timed out" in low:
             slot.cooldown_until = time.time() + 45  # overloaded: let the other models in the tier work
             slot.fail_streak += 1
-            if slot.fail_streak >= OVERLOAD_STREAK:
+            self.model_streak[slot.id] = self.model_streak.get(slot.id, 0) + 1
+            if self.model_streak[slot.id] >= OVERLOAD_STREAK:
                 # Gemma on the free tier fails most calls ("high demand"): Oct 4 2026, ~840 booked
-                # Gemma requests gave 16 articles read. Each failure can hang until the timeout, so
-                # after a streak the model is dropped for the rest of the run.
-                slot.disabled = True
-                log.warning("model %s (key %d) overloaded %d times in a row; off for this run",
-                            slot.id, slot.key + 1, slot.fail_streak)
+                # Gemma requests gave 16 articles read; Oct 5 every Flash model refused on all keys for
+                # hours. Each failure can hang until the timeout, and refused calls appear to count
+                # against Google's daily limit, so after a streak the model is dropped on every key.
+                for s in self.all_slots():
+                    if s.id == slot.id:
+                        s.disabled = True
+                log.warning("model %s overloaded %d times in a row; off for this run on every key",
+                            slot.id, self.model_streak[slot.id])
         else:
             slot.cooldown_until = time.time() + 30
         log.warning("model %s (key %d) error: %s", slot.id, slot.key + 1, msg[:200])
@@ -435,10 +441,6 @@ class Router:
         json_retry_used = False
         errors: list[str] = []
         for _ in range(max_attempts):
-            if self.tier_streak.get(tier, 0) >= TIER_OVERLOAD_STREAK:
-                # every model of this tier has been refusing for load (Oct 5 2026: the writer made
-                # ~55 refused calls a run for hours): stop asking for the rest of this run
-                raise CallFailed(f"{tier}: models overloaded this run ({self.tier_streak[tier]} refusals in a row)")
             try:
                 slot = self._reserve(tier, est)
             except QuotaExhausted:
@@ -464,12 +466,10 @@ class Router:
                     self.error_log[f"{tier} | {slot.id} | {kind}"] += 1
                     self._outcome(slot, kind)
                     self.tier_log.setdefault(tier, _Counter())[kind] += 1
-                    if kind in ("overloaded 5xx", "timeout"):
-                        self.tier_streak[tier] = self.tier_streak.get(tier, 0) + 1
                 continue
             with self._lock:
                 slot.fail_streak = 0
-                self.tier_streak[tier] = 0
+                self.model_streak[slot.id] = 0
                 self._outcome(slot, "ok")
                 self.tier_log.setdefault(tier, _Counter())["ok"] += 1
                 if tokens and booked in slot.window:

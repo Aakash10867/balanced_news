@@ -1495,22 +1495,38 @@ def test_consolidation_takes_back_a_contradiction_it_does_not_confirm(store):
     assert store.one(select(canonical.c.conflicts).where(canonical.c.id == c1))["conflicts"] == []
 
 
-def test_a_tier_that_keeps_refusing_is_skipped_for_the_run():
-    from nishpaksh.router import CallFailed, TIER_OVERLOAD_STREAK
+def test_an_overloaded_model_is_dropped_on_every_key_and_the_writer_falls_back():
+    """Oct 5-6 2026: every Flash model refused (503) on all three keys for hours, and the refusals
+    appear to count against Google's daily limit. A model refusing 3 times in a row is dropped on
+    every key for the run; the writer moves down its list to 3.5 Flash-Lite."""
+    from collections import Counter
+    from nishpaksh.router import OVERLOAD_STREAK
 
     class Busy:
-        def __init__(self): self.n = 0
+        def __init__(self): self.calls = Counter()
         def generate(self, model, prompt, json_mode, grounded):
-            self.n += 1
-            raise RuntimeError("503 UNAVAILABLE: high demand")
+            self.calls[model] += 1
+            if "lite" not in model:
+                raise RuntimeError("503 UNAVAILABLE: high demand")
+            return '{"ok": 1}', [], 5
     b = Busy()
-    r = Router({"w": [dict(id=f"m{k}", rpm=100, tpm=10**6, rpd=100) for k in range(20)]}, b, max_wait=0.1)
-    for _ in range(10):
-        try:
-            r.call("w", "x", max_attempts=3)
-        except CallFailed:
-            pass
-    assert b.n <= TIER_OVERLOAD_STREAK + 2
+    cfg = {"writer": [dict(id=f"flash-{k}", rpm=100, tpm=10**6, rpd=20) for k in range(3)]
+           + [dict(id="gemini-3.5-flash-lite", rpm=100, tpm=10**6, rpd=500)]}
+    r = Router(cfg, [b, b, b], max_wait=0.1)
+    results = [r.call("writer", "x", max_attempts=12) for _ in range(5)]
+    assert all(x.model == "gemini-3.5-flash-lite" for x in results)
+    assert all(b.calls[f"flash-{k}"] <= OVERLOAD_STREAK for k in range(3))     # not 3 per key
+    assert b.calls["gemini-3.5-flash-lite"] == 5
+
+
+def test_writer_keeps_flash_and_3_5_flash_lite_essays_only():
+    from nishpaksh.compose import _keepable
+    para = [[{"text": "x"}]]
+    assert _keepable({"model": "gemini-3.8-flash", "paragraphs": para})
+    assert _keepable({"model": "gemini-3.5-flash-lite", "paragraphs": para})
+    assert not _keepable({"model": "gemini-3.1-flash-lite", "paragraphs": para})
+    assert not _keepable({"model": "gemini-2.5-flash-lite", "paragraphs": para})
+    assert not _keepable({"model": None, "paragraphs": para})          # stitched by code
 
 
 def test_health_flags_a_writer_that_wrote_nothing_for_two_runs(tmp_path):
@@ -1547,8 +1563,6 @@ def test_new_story_waits_for_the_writer_and_is_then_written_once(store):
     assert row["version"] == 1 and row["payload_en"]["written_at"]
     assert compose.publish_story(store, _router(store, FakeBackend()), sid) is False
     assert store.one(select(published).where(published.c.story_id == sid)) == row
-    # an essay by Flash-Lite is never kept
-    assert compose._keepable({"model": "gemini-3.5-flash-lite", "paragraphs": [[{}]]}) is False
 
 
 def test_published_article_is_closed_and_only_its_colours_mature(store):

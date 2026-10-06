@@ -499,11 +499,15 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
     return hi
 
 
+WRITER_LITE_OK = ("gemini-3.5-flash-lite",)   # owner, Oct 6 2026: the writer's last resort; older Lites read badly
+
+
 def _keepable(nar: dict | None) -> bool:
-    """An essay we may keep showing: written by the writer (Flash), not stitched by code and not by
-    Flash-Lite (its essays read badly, Oct 2026)."""
+    """An essay we may publish: written by the writer (a Flash model, or 3.5 Flash-Lite when every
+    Flash model is refusing), never stitched by code, never by an older Flash-Lite."""
     m = (nar or {}).get("model") or ""
-    return bool(m) and "lite" not in m and bool((nar or {}).get("paragraphs"))
+    lite_ok = any(m.startswith(x) for x in WRITER_LITE_OK)
+    return bool(m) and ("lite" not in m or lite_ok) and bool((nar or {}).get("paragraphs"))
 
 
 def publish_story(store: Store, router: Router | None, story_id: int) -> bool:

@@ -38,8 +38,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   never invent a speaker; "allegedly" stays as long as the outlets say it. Suicide stories get the
   Tele-MANAS helpline note.
 - **Only the writer produces prose (Oct 2026).** A new story is published only with a good essay
-  (`narrative.essay_ok`: written by a Flash model); otherwise it waits. Code-stitched pages and
-  Flash-Lite essays are never kept (`compose._keepable`). Rejected sentences are dropped, not
+  (`narrative.essay_ok`); otherwise it waits. Writer order (models.yaml): every Flash model, best
+  first, then **3.5 Flash-Lite as the last resort** (owner, Oct 6 2026, after Flash refused on all keys
+  for a day; it keeps 300/day per key for reading). Code-stitched pages and older Flash-Lite essays
+  are never kept (`compose._keepable`, `WRITER_LITE_OK`). Rejected sentences are dropped, not
   patched. A fallback headline never goes live. Writer failures per statement set are kept in
   `stories.analysis.writer_failures` (3 tries max).
 - **Editions: written once, like a newspaper (owner, Oct 5 2026; `editions.py`).**
@@ -117,6 +119,10 @@ essay) → Hindi → colours of published articles mature → retention → heal
 - Google counts **each text in an embedding batch** as one request: ~1,000 texts/day per key.
 - Flash models: 20/day each per key (writer/judge); Flash-Lite 500/day each per key; Gemma is
   unreliable on the free tier (overflow only). Grounded search ~20/day per model per key.
+- **Refused (503) calls appear to count against Google's daily limit** (Oct 5 2026: gemini-3.6-flash
+  key 1 had 0 successes all day and got Google's own per-day 429 after 13 refusals). A model refusing
+  3 times in a row (any key) is dropped on every key for the run (`router.OVERLOAD_STREAK`), and the
+  tier moves to its next model. Our counter still refunds refused calls; Google's 429 is the real limit.
 - Quotas reset at 00:00 Pacific = 12:30 IST. **Every tier is paced** over that day
   (`router.pace_fraction`: hours weighted 1.5 on 07:00-23:00 IST and 0.5 at night, plus 2 h
   slack; unused carries forward): unpaced, Flash-Lite ran
