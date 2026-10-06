@@ -92,9 +92,18 @@ def check_conflicts(router: Router | None, pairs: list[tuple[str, str]]) -> list
     return out
 
 
-def _create_canonical(store: Store, story_id: int, kind: str, text: str) -> int:
+def _create_canonical(store: Store, story_id: int, kind: str, text: str, frame: dict | None = None,
+                      time: dict | None = None) -> int:
+    # a statement's frame (frames.py) is kept with it: who / action / what / value, and its time
+    rel = {"frame": frame, "time": time} if frame else None
     return store.insert_returning_id(canonical, dict(story_id=story_id, kind=kind, text=text, conflicts=[],
-                                                     verdict="pending", checked_members=0))
+                                                     verdict="pending", checked_members=0, rel=rel))
+
+
+def frame_of(c: dict) -> tuple[dict | None, dict | None]:
+    """(frame, time) of a statement (canonical row), or (None, None) if it was read before frames."""
+    rel = c.get("rel") or {}
+    return (rel.get("frame"), rel.get("time")) if c.get("kind") != "relation" else (None, None)
 
 
 def _merge(store: Store, src: int, dst: int) -> None:
@@ -221,17 +230,32 @@ def match_story(store: Store, router: Router | None, story_id: int) -> None:
         rep_mat = vec.transform([t for _, t in reps]) if reps else None
         queued: list[tuple[int, int, str, str]] = []  # (new canonical, existing canonical, textA, textB)
 
+        from .frames import compare as frame_compare
+        frames_of = {c["id"]: frame_of(c) for c in canon}
+        frame_conflicts: list[tuple[int, int]] = []
         for r in new:
+            fr = ((r["rel"] or {}).get("frame")) if r["kind"] != "relation" else None
             v = vec.transform([r["text"]])
             best, best_sim = None, 0.0
+            sims = None
             if rep_mat is not None and rep_mat.shape[0]:
                 sims = cosine_similarity(v, rep_mat).ravel()
                 j = int(sims.argmax())
                 best, best_sim = rep_ids[j], float(sims[j])
-            if best is not None and best_sim >= SETTINGS.claim_same_cosine:
+            # frames first: the same who / action / what with agreeing values is the same fact, however
+            # worded; the same question with different answers is the only way to a contradiction
+            verdicts = {cid_: frame_compare(fr, f_, r["time"], t_) for cid_, (f_, t_) in frames_of.items()} if fr else {}
+            same = [cid_ for cid_, v_ in verdicts.items() if v_ == "same"]
+            if same:
+                cid = max(same, key=lambda x: float(sims[rep_ids.index(x)]) if sims is not None and x in rep_ids else 0.0)
+            elif best is not None and best_sim >= SETTINGS.claim_same_cosine and verdicts.get(best) in (None, "compatible"):
                 cid = best
             else:
-                cid = _create_canonical(store, story_id, r["kind"], r["text"])
+                cid = _create_canonical(store, story_id, r["kind"], r["text"], fr, r["time"])
+                frames_of[cid] = (fr, r["time"])
+                frame_conflicts += [(cid, x) for x, v_ in verdicts.items() if v_ == "conflict"]
+                if verdicts.get(best) in ("different", "unsure", "conflict"):
+                    best = None          # the frames have decided: no model question about this pair
                 if best is not None and best_sim >= SETTINGS.claim_candidate_cosine:
                     best_text = reps[rep_ids.index(best)][1]
                     queued.append((cid, best, r["text"], best_text))
@@ -239,9 +263,16 @@ def match_story(store: Store, router: Router | None, story_id: int) -> None:
                 reps.append((cid, r["text"]))
                 rep_mat = v if rep_mat is None or rep_mat.shape[0] == 0 else vstack([rep_mat, v])
             store.exec(update(claims).where(claims.c.id == r["id"]).values(canonical_id=cid))
+            if fr and not frames_of.get(cid, (None,))[0]:
+                # a statement read before frames gains the frame of a report that says the same
+                store.exec(update(canonical).where(canonical.c.id == cid).values(rel={"frame": fr, "time": r["time"]}))
+                frames_of[cid] = (fr, r["time"])
             if r["kind"] == "event":
                 store.exec(update(canonical).where(canonical.c.id == cid).values(kind="event"))
 
+        # before any merge below, which re-points conflicts of a merged statement
+        for a, b in frame_conflicts:
+            _add_conflict(store, a, b)
         if queued:
             labels = _llm_pairs(router, [(a, b) for _, _, a, b in queued])
             alias: dict[int, int] = {}
@@ -258,8 +289,8 @@ def match_story(store: Store, router: Router | None, story_id: int) -> None:
                 if label == "same":
                     _merge(store, a, b)
                     alias[a] = b
-                elif label == "contradict":
-                    _add_conflict(store, a, b)
+                elif label == "contradict" and not (frames_of.get(a, (None,))[0] and frames_of.get(b, (None,))[0]):
+                    _add_conflict(store, a, b)   # statements read before frames: the old way, re-judged later
 
     _match_relations(store, story_id)
 

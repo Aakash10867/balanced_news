@@ -1801,3 +1801,70 @@ def test_a_difference_is_a_contradiction_only_if_both_cannot_be_true(store):
     assert v[c1] != "disputed" and v[opened] != "disputed"
     # the answers are kept: consolidating again (new statement set) asks only about new pairs
     assert len(an["conflict_checks"]) == 4
+
+
+def test_frames_compare_statements_by_their_fields():
+    """Owner, Oct 6 2026: compare statements field by field (who / action / what / value), words reduced
+    to their roots, instead of a model judging two sentences each time."""
+    from nishpaksh.frames import compare, normalize as n
+    f = lambda **k: n(k)   # noqa: E731
+    # two different steps of one thing: different questions
+    assert compare(f(who="India and EFTA", action="sign", what="the trade agreement", value="March 2024"),
+                   f(who="The trade agreement", action="take effect", value="October 2025")) == "different"
+    # a target announced by one side, a pledge by the other: different questions
+    assert compare(f(who="Prime Minister", action="set", what="investment target", value="$100 billion"),
+                   f(who="EFTA states", action="invest", what="India", value="$100 billion")) == "different"
+    # a rounded figure is the same answer; a bound agrees with a larger figure
+    assert compare(f(who="voters", action="cast", what="valid votes", value="125.27 million"),
+                   f(who="voters", action="cast", what="votes", value="about 125 million")) == "same"
+    assert compare(f(who="people", action="die", what="collapse", value="at least 40"),
+                   f(who="people", action="died", what="the collapse", value="50")) == "same"
+    # the same question, two answers: the only contradiction
+    assert compare(f(who="people", action="die", what="collapse", value="40"),
+                   f(who="people", action="die", what="collapse", value="50")) == "conflict"
+    assert compare(f(who="Police", action="arrest", what="site engineer"),
+                   f(who="Uttar Pradesh Police", action="arrested", what="the engineer", negated=True)) == "conflict"
+    # roots: arrested / arrests, crore / million read as numbers
+    assert compare(f(who="police", action="arrests", what="two men", value="2"),
+                   f(who="Police", action="arrested", what="men", value="two")) in ("same", "compatible")
+    assert compare(f(who="state", action="allot", what="funds", value="1 crore"),
+                   f(who="state", action="allot", what="funds", value="10 million")) == "same"
+    # no values: never a dispute, but not merged on fields alone
+    assert compare(f(who="Police", action="say", what="the accused"), f(who="Police", action="say", what="the accused")) == "compatible"
+    # same kind of event on different dates: maybe two events, never merged, never a dispute
+    assert compare(f(who="Police", action="arrest", what="protesters", value="12"),
+                   f(who="Police", action="arrest", what="protesters", value="12"),
+                   {"start": "2026-10-01T10:00", "end": "2026-10-01T12:00"},
+                   {"start": "2026-10-03T10:00", "end": "2026-10-03T12:00"}) == "unsure"
+    assert compare(None, f(who="x", action="y")) is None
+
+
+def test_matching_uses_frames_before_wording(store):
+    """Reports worded differently but giving the same answer to the same question become one
+    statement; two steps of one thing stay two, with no dispute; the same question answered
+    differently is the one contradiction."""
+    from nishpaksh.db import claims as Cl
+    from nishpaksh.match import match_story
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=True, qualifies=False))
+    arts = [store.insert_returning_id(articles, dict(url=f"https://o{k}.in/x", outlet=f"O{k}", title="t", text="b",
+                                                     published_at=NOW, fetched_at=NOW, story_id=sid)) for k in range(6)]
+    rows = [
+        (0, "Approximately 125.27 million valid votes were cast", dict(who="voters", action="cast", what="valid votes", value="125.27 million")),
+        (1, "About 125 million Brazilians cast ballots in the election", dict(who="Brazilian voters", action="cast", what="votes", value="about 125 million")),
+        (2, "The trade agreement was signed in March 2024", dict(who="India and EFTA", action="sign", what="trade agreement", value="March 2024")),
+        (3, "The trade agreement entered into force last October", dict(who="trade agreement", action="enter into force", value="October 2025")),
+        (4, "Forty people died when the bridge fell", dict(who="people", action="die", what="bridge collapse", value="40")),
+        (5, "The collapse killed fifty, officials said", dict(who="people", action="died", what="the bridge collapse", value="50")),
+    ]
+    from nishpaksh.frames import normalize
+    for k, text, fr in rows:
+        store.exec(insert(Cl).values(story_id=sid, article_id=arts[k], local_id="c1", kind="claim", text=text,
+                                     stance="asserts", attributed_to="article", evidence="none",
+                                     rel={"frame": normalize(fr)}))
+    match_story(store, None, sid)
+    cid = {r["text"]: r["canonical_id"] for r in store.rows(select(Cl.c.text, Cl.c.canonical_id))}
+    conf = {r["id"]: r["conflicts"] for r in store.rows(select(canonical.c.id, canonical.c.conflicts))}
+    assert cid[rows[0][1]] == cid[rows[1][1]]                             # one fact, worded twice
+    assert cid[rows[2][1]] != cid[rows[3][1]]
+    assert conf[cid[rows[2][1]]] == [] and conf[cid[rows[3][1]]] == []   # two steps: no dispute
+    assert conf[cid[rows[4][1]]] == [cid[rows[5][1]]]                     # 40 vs 50 dead: the dispute

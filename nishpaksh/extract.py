@@ -13,6 +13,7 @@ import time
 from zoneinfo import ZoneInfo
 
 from .config import SETTINGS
+from .frames import normalize as normalize_frame
 from .db import Store, articles, claims, delete, insert, select, stories, update, utcnow
 from .router import CallFailed, QuotaExhausted, Router
 
@@ -45,11 +46,12 @@ Return ONE JSON object with exactly these keys:
   "events": [
     {{"id": "e1", "text": "...", "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null",
       "end": "YYYY-MM-DDTHH:MM or null", "precision": "exact|hour|part_of_day|day|week|month|unknown",
-      "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."]}}
+      "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
+      "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
   "claims": [
     {{"id": "c1", "text": "...", "stance": "asserts|attributes|denies", "attributed_to": "...",
-      "evidence": "...", "loaded_words": ["..."]}}
+      "evidence": "...", "loaded_words": ["..."], "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
   "relations": [
     {{"from": "e1", "to": "e2", "type": "before|caused", "stance": "asserts|attributes|denies", "attributed_to": "..."}}
@@ -58,7 +60,8 @@ Return ONE JSON object with exactly these keys:
     {{"id": "x1", "type": "background|related|explanation|reaction|next", "text": "...", "event": "...",
       "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null", "end": "YYYY-MM-DDTHH:MM or null",
       "precision": "exact|hour|part_of_day|day|week|month|unknown",
-      "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."]}}
+      "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
+      "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ]
 }}
 
@@ -101,7 +104,16 @@ Rules:
    "next" = what happens next (deadlines, hearings, required steps). Same rules for wording,
    stance and attribution. If the article is a roundup or live blog of UNRELATED news, ignore the
    unrelated items entirely: context is only what the article connects to the core event.
-9. Reply with the JSON only.
+9. "frame": the same item broken into fields, so items from different articles can be compared:
+   who = who acts, or what the item is about ("Police", "India and EFTA", "Prime Minister Narendra Modi");
+   action = what is done, as a base verb or verb phrase in English ("arrest", "sign", "take effect",
+   "die", "say", "allege", "invest"); for a statement that someone said something, the action is what
+   they did ("say", "allege", "deny") and "what" is what it was about; what = to what or whom;
+   value = the answer the item gives, if any: a number with its unit ("125.27 million", "47 per cent",
+   "at least 40"), a date, a place, or a short word ("corrupt", "guilty"); keep words like "about",
+   "at least", "nearly" with the number; where = place if given; negated = true only if the item says
+   it did NOT happen. Use the article's facts only; empty string when a field does not apply.
+10. Reply with the JSON only.
 """
 
 
@@ -150,6 +162,7 @@ def normalize_extraction(data: dict) -> dict | None:
                 "evidence": it.get("evidence") if it.get("evidence") in EVIDENCE else "none",
                 "loaded_words": _words(it.get("loaded_words")),
             }
+            item["frame"] = normalize_frame(it.get("frame"))
             if kind == "context":
                 item["context"] = it["type"]
                 item["event"] = str(it.get("event") or "").strip()[:160] if it["type"] == "related" else ""
@@ -190,7 +203,7 @@ def store_extraction(store: Store, article_id: int, story_id: int | None, ex: di
             rows.append(dict(story_id=story_id, article_id=article_id, local_id=it["id"], kind=kind,
                              text=it["text"], stance=it["stance"], attributed_to=it["attributed_to"],
                              evidence=it["evidence"], loaded_words=it["loaded_words"],
-                             time=it.get("time"), rel=None))
+                             time=it.get("time"), rel={"frame": it["frame"]} if it.get("frame") else None))
     for it in ex.get("context") or []:
         # context is stored like a statement, marked in `rel` (unused for statements): background and
         # related events are events (they have times), the rest are claims
@@ -198,7 +211,8 @@ def store_extraction(store: Store, article_id: int, story_id: int | None, ex: di
         rows.append(dict(story_id=story_id, article_id=article_id, local_id=it["id"], kind=kind,
                          text=it["text"], stance=it["stance"], attributed_to=it["attributed_to"],
                          evidence=it["evidence"], loaded_words=it["loaded_words"], time=it.get("time"),
-                         rel={"context": it["context"], "event": it.get("event") or ""}))
+                         rel={"context": it["context"], "event": it.get("event") or "",
+                              **({"frame": it["frame"]} if it.get("frame") else {})}))
     for i, r in enumerate(ex["relations"]):
         rows.append(dict(story_id=story_id, article_id=article_id, local_id=f"r{i + 1}", kind="relation",
                          text="", stance=r["stance"], attributed_to=r["attributed_to"], evidence="none",
@@ -212,7 +226,7 @@ def _extract_one(store: Store, router: Router, a: dict) -> str:
     prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
                                    title=a["title"] or "", text=(a["text"] or "")[: SETTINGS.max_article_chars])
     try:
-        res = router.call("bulk", prompt, json_out=True, max_output_tokens=4000)
+        res = router.call("bulk", prompt, json_out=True, max_output_tokens=6000)   # room for each item's frame
         ex = normalize_extraction(res.data)
         if ex is None:
             raise ValueError("empty extraction")

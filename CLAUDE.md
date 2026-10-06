@@ -78,6 +78,18 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   one statement adding a number: not disputes. "Unsure": not amber, but neither statement can be
   established (`analysis.doubtful_conflicts`). Answers cached in `analysis.conflict_checks`. The
   writer puts a real dispute with its subject, never in a closing "accounts differ" paragraph.
+- **Frames: statements compared field by field (owner, Oct 6 2026; `frames.py`).** Reading gives every
+  statement who / action (base verb) / what / value / where / negated; words are reduced to roots
+  (Snowball stemmer), numbers read as numbers (crore, million, "at least", "about"). Code compares:
+  same slot (who, action, what) + agreeing values = one fact (merged); same slot + incompatible values
+  or negation = contradiction (the ONLY way to one between statements with frames); a missing value =
+  compatible (never a dispute, wording decides merging); same slot at different times = unsure;
+  anything else = different. Model "contradict"/"same" judgements count only for statements read
+  before frames (those still go through `check_conflicts`). Stored in `claims.rel.frame` and
+  `canonical.rel.frame`.
+- **News first (Oct 6 2026):** the writer opens with what makes it news today (the newest or most
+  consequential act or statement), never the setting; the headline is written AFTER the article from
+  its opening paragraph (`compose._headline(lead=...)`), with the same checks.
 - **Three relations:** same / contradiction (both cannot be true as facts: amber) / RESPONSE (a party
   answers a claim or finding: both true as reports, written together, never amber). "No denial" in
   the green rule means nobody denies the EVENT happened, not that a party objects to it.

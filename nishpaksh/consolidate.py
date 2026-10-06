@@ -117,7 +117,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         return {}
     analysis = dict(story["analysis"] or {})
     _repair_aliases(store, story_id, analysis)
-    rows = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind, canonical.c.conflicts)
+    rows = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind, canonical.c.conflicts,
+                                         canonical.c.rel)
                                   .where(canonical.c.story_id == story_id)) if r["kind"] != "relation" and r["text"]]
     if len(rows) < 2 or analysis.get("consolidated") == _hash(rows):
         return {}
@@ -157,9 +158,9 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     response_pairs = {tuple(sorted(p)) for p in responses}
     # Proposed contradictions, from every source: the model naming two values, contradictions marked
     # earlier (re-judged with the whole story in view, Oct 2026), and statements the model calls the
-    # same fact whose numbers differ. A difference is not yet a contradiction: each goes through one
-    # question, can both be true (match.check_conflicts)? Only "cannot both be true" is kept. A party's
-    # answer to a claim is a response, never a contradiction.
+    # same fact whose numbers differ. A difference is not yet a contradiction. Between statements with
+    # frames, code decides (below); otherwise one question, can both be true (match.check_conflicts)?
+    # Only "cannot both be true" is kept. A party's answer to a claim is never a contradiction.
     proposed: set[tuple[int, int]] = set()
     for c in data.get("conflicts") or []:
         if not isinstance(c, list) or len(c) < 2:
@@ -177,13 +178,32 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                 ta, tb = by_id[a]["text"], by_id[b]["text"]
                 if NUM.findall(ta) and NUM.findall(tb) and set(NUM.findall(ta)) != set(NUM.findall(tb)):
                     proposed.add(tuple(sorted((a, b))))
+    # Frames (frames.py) decide every pair they cover, by code: the same who / action / what with
+    # incompatible values is a contradiction (the only way to one), with agreeing values one fact.
+    # The model's own "conflicts" and "same" count only between statements read before frames.
+    from .frames import compare as frame_compare
+    from .match import frame_of
+    fr = {r["id"]: frame_of(r) for r in rows}
+    with_frames = [r["id"] for r in rows if fr[r["id"]][0]]
+    by_frame: dict[tuple[int, int], str] = {}
+    for i, a in enumerate(with_frames):
+        for b in with_frames[i + 1:]:
+            by_frame[(a, b) if a < b else (b, a)] = frame_compare(fr[a][0], fr[b][0], fr[a][1], fr[b][1])
+    proposed = {p for p in proposed if p not in by_frame} | {p for p, v in by_frame.items() if v == "conflict"}
+    same_groups = [g for g in same_groups if not any(by_frame.get(tuple(sorted((x, y)))) in ("different", "conflict", "unsure")
+                                                     for i, x in enumerate(g) for y in g[i + 1:])]
+    same_groups += [list(p) for p, v in by_frame.items() if v == "same"]
     proposed -= response_pairs
+    # pairs without frames on both sides (read before frames) are asked "can both be true?"
     checks = dict(analysis.get("conflict_checks") or {})     # answers kept per pair of texts
     key = lambda p: hashlib.sha256(json.dumps([by_id[p[0]]["text"], by_id[p[1]]["text"]]).encode()).hexdigest()[:16]  # noqa: E731
-    ask = sorted(p for p in proposed if key(p) not in checks)
+    ask = sorted(p for p in proposed if p not in by_frame and key(p) not in checks)
     for p, ans in zip(ask, check_conflicts(router, [(by_id[a]["text"], by_id[b]["text"]) for a, b in ask])):
         checks[key(p)] = ans
-    verdict = {p: checks.get(key(p), "unsure") for p in proposed}
+    as_check = {"conflict": "cannot_both_be_true", "unsure": "unsure", "same": "both_true", "compatible": "both_true",
+                "different": "both_true"}
+    verdict = {p: as_check[by_frame[p]] if p in by_frame else checks.get(key(p), "unsure") for p in proposed}
+    frame_same = {p for p, v in by_frame.items() if v == "same"}
     conflicts = {p for p, v in verdict.items() if v == "cannot_both_be_true"}
     doubtful = {x for p, v in verdict.items() if v == "unsure" for x in p}
     for pair in earlier - conflicts:
@@ -200,7 +220,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
             if src == dst or tuple(sorted((src, dst))) in keep_apart:
                 continue
             a, b = by_id[src]["text"], by_id[dst]["text"]
-            if set(NUM.findall(a)) != set(NUM.findall(b)) and NUM.findall(a) and NUM.findall(b):
+            if (tuple(sorted((src, dst))) not in frame_same and NUM.findall(a) and NUM.findall(b)
+                    and set(NUM.findall(a)) != set(NUM.findall(b))):
                 continue     # one adds a number the other lacks: kept as two statements, not a dispute
             _merge(store, src, dst)
             gone.add(src)

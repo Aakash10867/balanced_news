@@ -72,7 +72,7 @@ def _interval(rows: list[dict]) -> dict:
 
 
 def _headline(router: Router | None, facts: list[str], banned: set[str], fallback: str,
-              unsettled: list[str] | None = None, thread: str = "") -> str:
+              unsettled: list[str] | None = None, thread: str = "", lead: str = "") -> str:
     """A specific headline. `facts` are established statements, `unsettled` the best-supported
     others. Checked: no loaded word, no lazy 'reports say', no cause/sequence link the statements
     do not make, no number the statements do not have."""
@@ -81,6 +81,9 @@ def _headline(router: Router | None, facts: list[str], banned: set[str], fallbac
         return fallback
     source = " ".join(facts + (unsettled or [])).lower()
     ctx = f"\nThis is a new development in an ongoing story: {thread}. Headline the NEW development.\n" if thread else ""
+    if lead:
+        # written after the article, from its opening: the writer has decided what the news is
+        ctx += f"\nThe article opens with the news; headline THIS: {lead}\n"
     prompt = HEADLINE_PROMPT.format(facts="\n".join(lines), thread=ctx)
     for _ in range(3):   # two retries, each told what was wrong
         try:
@@ -337,8 +340,9 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     # background that every report retells (a January protest) outranked this week's arrest, and the
     # model tied the two together with "after".
     contested_top = [i for i in contested if not i["minor"]][:8] or contested[:8]
-    headline = _headline(router, _newest_first(est_all), banned, fallback,
-                         _newest_first(contested_top), thread_ctx)
+    headline_input = dict(facts=_newest_first(est_all), banned=sorted(banned), fallback=fallback,
+                          unsettled=_newest_first(contested_top), thread=thread_ctx)
+    headline = _headline(router, headline_input["facts"], banned, fallback, headline_input["unsettled"], thread_ctx)
 
     analysis = story["analysis"] or {}
     persp = defaultdict(set)
@@ -394,6 +398,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         "background": background,
         "headline": headline,
         "headline_is_fallback": headline == fallback,
+        "_headline_input": headline_input,    # used once more after the article is written; not stored
         "has_established": bool(facts),
         "perspective_mode": analysis.get("mode"),
         "qualified_by": analysis.get("qualified_by"),
@@ -538,6 +543,13 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         log.info("story %s waits for a written essay", story_id)
         return False
     payload["narrative"] = nar
+    # the newspaper order: the article first, the headline from its opening (the news)
+    hl = payload.pop("_headline_input", None)
+    lead = " ".join(x["text"] for x in (nar.get("paragraphs") or [[]])[0])
+    if hl and lead and router is not None:
+        h = _headline(router, hl["facts"], set(hl["banned"]), hl["fallback"], hl["unsettled"], hl["thread"], lead=lead)
+        if h != hl["fallback"]:
+            payload["headline"] = h
     now = utcnow()
     payload["written_at"] = now.isoformat(timespec="seconds")
     hi = translate_payload(store, router, payload)

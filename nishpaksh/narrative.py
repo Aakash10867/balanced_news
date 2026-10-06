@@ -44,8 +44,10 @@ Statements marked CONTEXT are not the story's own event: background, a separate 
 an explanation, a reaction, or what happens next.
 
 Structure:
-1. Opening paragraph (1-2 sentences): who, where, what happened, and when, from the most important
-   statements of the story's own event.
+1. Opening paragraph (1-2 sentences): THE NEWS, the thing that makes this a story today: the newest
+   or most consequential thing someone did, decided or said, with who, where and when. Not the setting
+   or the background, even when that came first in time ("Donald Trump said 125 million people voted in
+   India's election, mixing up India with Brazil", not "Brazil held an election on Sunday").
 2. Then what happened, in time order.
 3. Then each party's account and response: a speaker with several statements gets their own paragraph.
 4. Then CONTEXT: background and related events, each clearly as a SEPARATE event with its own time
@@ -77,7 +79,7 @@ Attribution, the way a good newspaper does it (important):
   "accounts differ" without saying what the other account is. Only statements marked "contradicted
   by" disagree: two statements about different steps, dates, people or parts of the story do not.
 - NAMES DIFFER: when a statement says the reports name different actors, name both ("Creative Bakers,
-  named in some reports as Sugarr & Spice"), never pick one.
+  named in some reports as Sugarr & Spice"), never pick one; say it ONCE, at the first mention.
 - FALSE: say who claimed it and that the evidence shows it is false, citing the evidence given.
 
 Never add any fact, name, number, place, cause, motive, adjective or opinion that is not in the
@@ -341,7 +343,8 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
     if "disputed" in verdicts and not any(m in low for m in DISPUTE_MARKERS + ATTRIBUTION_VERBS):
         return _no("dispute stated as fact")
     # a dispute is written as the disagreement itself, never "other reports differ" with no content
-    if re.search(r"(?i)\b(other|some) (reports|accounts) (differ|disagree|vary)\b|accounts differ\W*$", text):
+    if re.search(r"(?i)\b(other|some) (reports|accounts) (differ|disagree|vary)\b|accounts differ\W*$"
+                 r"|\b(reports|accounts) (dispute|contradict|challenge|question) (this|that|it|these)\b", text):
         return _no("empty dispute")
     # never invent a speaker: "X said / alleged / claimed / denied" only for a statement that names one
     speakers = [by_id[i].get("speaker") for i in ids if by_id[i].get("speaker")]
