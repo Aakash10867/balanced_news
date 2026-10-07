@@ -65,7 +65,8 @@ Reply with JSON only:
  "name_conflicts": [{{"ids": [5, 9], "names": ["Company A", "Company B"]}}]}}"""
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
-CONSOLIDATE_VERSION = 4   # part of the cache key: stories are consolidated again when the task changes
+SAME_ASK_MAX = 30         # same-fact questions per consolidation, closest pairs first (the rest next time)
+CONSOLIDATE_VERSION = 5   # part of the cache key: stories are consolidated again when the task changes
 
 NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -193,10 +194,25 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     same_groups = [g for g in same_groups if not any(by_frame.get(tuple(sorted((x, y)))) in ("different", "conflict", "unsure")
                                                      for i, x in enumerate(g) for y in g[i + 1:])]
     same_groups += [list(p) for p, v in by_frame.items() if v == "same"]
+    # Frames worded differently ("take charge" / "take over") are not proof of two facts: code picks the
+    # pairs that may be one fact, a model answers one plain question twice (match.same_facts), and only
+    # "same" both times merges. Answers are kept per pair of texts.
+    from .frames import may_be_same
+    from .match import same_facts
+    key = lambda p: hashlib.sha256(json.dumps([by_id[p[0]]["text"], by_id[p[1]]["text"]]).encode()).hexdigest()[:16]  # noqa: E731
+    same_checks = dict(analysis.get("same_checks") or {})
+    in_groups = {tuple(sorted((x, y))) for g in same_groups for i, x in enumerate(g) for y in g[i + 1:]}
+    cand = sorted(((may_be_same(fr[a][0], fr[b][0], fr[a][1], fr[b][1]), (a, b)) for (a, b), v in by_frame.items()
+                   if v in ("different", "compatible") and (a, b) not in in_groups), reverse=True)
+    cand = [p for score, p in cand if score > 0][:SAME_ASK_MAX]
+    ask_same = [p for p in cand if key(p) not in same_checks]
+    for p, ok in zip(ask_same, same_facts(router, [(by_id[a]["text"], by_id[b]["text"]) for a, b in ask_same])):
+        same_checks[key(p)] = ok
+    model_same = {p for p in cand if same_checks.get(key(p))}
+    same_groups += [list(p) for p in model_same]
     proposed -= response_pairs
     # pairs without frames on both sides (read before frames) are asked "can both be true?"
     checks = dict(analysis.get("conflict_checks") or {})     # answers kept per pair of texts
-    key = lambda p: hashlib.sha256(json.dumps([by_id[p[0]]["text"], by_id[p[1]]["text"]]).encode()).hexdigest()[:16]  # noqa: E731
     ask = sorted(p for p in proposed if p not in by_frame and key(p) not in checks)
     for p, ans in zip(ask, check_conflicts(router, [(by_id[a]["text"], by_id[b]["text"]) for a, b in ask])):
         checks[key(p)] = ans
@@ -280,6 +296,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                     names={**(analysis.get("names") or {}), **names},
                     roles=roles, related_event=related, responses=[list(p) for p in all_resp],
                     name_conflicts=name_conf, conflict_checks=dict(list(checks.items())[-400:]),
+                    same_checks=dict(list(same_checks.items())[-400:]),
                     # a possible contradiction the check could not settle: not shown as a dispute, but
                     # neither statement can be established while it stands (verify.base_verdicts)
                     doubtful_conflicts=sorted(x for x in doubtful if alive(x)))

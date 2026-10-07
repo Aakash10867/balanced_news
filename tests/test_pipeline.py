@@ -2086,3 +2086,33 @@ def test_one_spelling_per_name_in_an_article():
     unify_article(payload)
     assert payload["headline"] == "Pilot Machhar praised"
     assert payload["narrative"]["paragraphs"][0][0]["text"] == "Captain Machhar flew."
+
+
+def test_same_fact_in_other_words_is_asked_twice_and_merged_only_on_two_yeses():
+    """Oct 7 2026, story 13809: "take charge" / "take over" frames made four outlets' one fact four
+    one-outlet lines. Code picks the pairs, the model answers same/different twice (A/B swapped)."""
+    from nishpaksh import match
+    from nishpaksh.frames import may_be_same
+    a = {"who": "Air Marshal Ashutosh Dixit", "action": "take charge", "what": "Chief of Air Staff", "value": ""}
+    b = {"who": "Ashutosh Dixit", "action": "take over", "what": "air chief marshal", "value": ""}
+    c = {"who": "Ashutosh Dixit", "action": "take charge", "what": "vice chief of the air staff", "value": "July 2026"}
+    d = {"who": "Amar Preet Singh", "action": "retire", "what": "Chief of Air Staff", "value": ""}
+    assert may_be_same(a, b) > 0 and may_be_same(a, c) > 0 and may_be_same(a, d) == 0
+    e = {"who": "Dixit", "action": "receive", "what": "Param Vishisht Seva Medal", "value": "2026"}
+    f = {"who": "Dixit", "action": "receive", "what": "Vishisht Seva Medal", "value": "2011-01-26"}
+    assert may_be_same(e, f) == 0                                  # two dates: never asked, never merged
+
+    class Flip(FakeBackend):                   # says "same" the first time, "different" when swapped
+        calls = 0
+        def generate(self, model, prompt, json_mode, grounded):
+            if "do A and B report the SAME single fact" in prompt:
+                Flip.calls += 1
+                return json.dumps({"results": [{"n": 1, "answer": "same" if Flip.calls == 1 else "different"}]}), [], 10
+            return super().generate(model, prompt, json_mode, grounded)
+    import nishpaksh.db as db
+    store = db.Store("sqlite://")
+    store.init()
+    assert match.same_facts(_router(store, Flip()), [("He will take charge.", "He took charge.")]) == [False]
+    assert Flip.calls == 2
+    assert match.same_facts(_router(store, FakeBackend()),
+                            [("Dixit will take charge as Chief of Air Staff.", "Dixit will take charge as the Chief of Air Staff on October 31.")]) == [True]

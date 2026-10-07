@@ -683,10 +683,35 @@ def _also(items: list[dict], covered: set[int], by_id: dict[int, dict], essay: l
     return out
 
 
+PER_SENTENCE_HEDGE = [
+    (re.compile(r"(?i)^(?:according to (?:one|another|a second|the other) report,\s*|"
+                r"(?:one|another|a second|the other) report (?:said|says|stated|added|claimed)(?: that)?,?\s+)"), ""),
+    (re.compile(r"(?i),?\s+(?:and|while|but|whereas)\s+(?:one|another|a second|the other) report "
+                r"(?:said|says|stated|added|claimed)(?: that)?,?\s+"), "; "),
+    (re.compile(r"(?i),\s+(?:one|another) report (?:said|says)(?=\.?$)"), ""),
+]
+
+
+def _one_hedge(text: str) -> str:
+    """"One report said X, and another report said Y" -> "X; Y": the paragraph carries one hedge (owner's
+    rule) and the colour marks each one-outlet line. Done by code: the writer models do not follow the
+    rule reliably (Oct 7 2026, story 13809: every sentence opened "One report said")."""
+    t = text
+    for pat, rep in PER_SENTENCE_HEDGE:
+        t = pat.sub(rep, t)
+    t = t.strip()
+    return t[:1].upper() + t[1:] if t else text
+
+
 def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict) -> dict:
     """Hedges, source numbers and colours for the essay and the statements it does not carry."""
     # names: capitalised words the statements use mid-sentence (so "Police" at a sentence start is not one)
     proper = {w for i in by_id.values() for w in re.findall(r"(?<=[a-z,;] )[A-Z][\w'-]+", i.get("text") or "")}
+    for para in paragraphs:
+        for x in para:
+            # a dispute keeps "one report said 40, another said 50": that is whose each version is
+            if not any(by_id[i]["verdict"] == "disputed" or by_id[i].get("conflicts_with") for i in x["ids"]):
+                x["text"] = _one_hedge(x["text"])
     for para in paragraphs:
         if any(_needs_hedge(x, by_id) for x in para) and not any(
                 m in x["text"].lower() for x in para for m in HEDGE_MARKERS):

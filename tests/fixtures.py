@@ -163,6 +163,14 @@ class FakeBackend:
             head = re.search(r"Headline: (.*)", prompt).group(1).lower()
             filler = "horoscope" in head or "rashifal" in head
             return json.dumps({"score": 4, "filler": filler, "reason": "state-level incident"}), [], 30
+        if "do A and B report the SAME single fact" in prompt:
+            # a simple stand-in: same when both sentences share every word of four letters or more of the shorter
+            res = []
+            for n, a, b in re.findall(r'^(\d+)\. A: "(.*?)" \| B: "(.*?)"$', prompt, flags=re.M):
+                wa, wb = ({w for w in re.findall(r"[a-z]{4,}", t.lower())} for t in (a, b))
+                small, big = sorted((wa, wb), key=len)
+                res.append({"n": int(n), "answer": "same" if small and small <= big else "different"})
+            return json.dumps({"results": res}), [], 30
         if "A news site has a NEW story and some EARLIER stories" in prompt:
             new = re.search(r"NEW: (.*)", prompt).group(1)
             earlier = re.findall(r"^(\d+)\. (.*)$", prompt, flags=re.M)

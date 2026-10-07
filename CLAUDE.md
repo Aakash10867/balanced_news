@@ -9,6 +9,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 - **Be efficient.** No hours of testing or polling live runs. Test on stored real data
   (`tools/replay.py`), push, and check the next run's results in one look.
 - He is truthful and disagreeable: give honest pushback, explain trade-offs plainly, no flattery.
+- **The models are simple (owner, Oct 7 2026).** Old, small, free-tier models: design every fix for them.
+  Code does the work wherever it can; a model gets one small, concrete question (a fixed choice like
+  same/different, short batches, worked examples including the traps, "if unsure: the safe answer");
+  a model answer that could make something green or merge facts is asked twice (order swapped) and
+  checked by code; a writing rule is enforced by code, never left to the prompt alone.
 - Overriding product rule: **minimise false positives.** Never show something as established
   (green) or false (red) when it is not; when unsure, be more cautious.
 
@@ -32,7 +37,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   **Purple = one outlet only (owner, Oct 7 2026):** a statement only one independent outlet reports
   (and not disputed or false) goes INTO the article, shown purple ("one outlet only": an exclusive,
   or a mistake), never as plain fact ("one report said", or pinned on its speaker; the paragraph
-  hedge reads "According to one report", ONCE per paragraph: never "one report said ... another report said" sentence by sentence; the colour marks each line). `narrative.shade`; the writer and the revision pass must
+  hedge reads "According to one report", ONCE per paragraph: never "one report said ... another report said" sentence by sentence; the colour marks each line; code removes such per-sentence hedges, `narrative._one_hedge`, except in disputes). `narrative.shade`; the writer and the revision pass must
   use every statement, one-outlet lines included (they were "minor" and optional before).
 - **Interim publishing rule** while perspectives are unknown: 3+ independent read outlets and 2+
   origins. Perspectives emerge from agreement data (no hand labels of outlets).
@@ -103,7 +108,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   same slot (who, action, what) + agreeing values = one fact (merged); same slot + incompatible values
   or negation = contradiction (the ONLY way to one between statements with frames); a missing value =
   compatible (never a dispute, wording decides merging); same slot at different times = unsure;
-  anything else = different. Dates are read as dates ("6 December 1986" = "1986-12-06"; a year agrees
+  anything else = different. **Same fact, other words (Oct 7 2026):** frames worded differently ("take
+  charge" / "take over") no longer veto a merge: code picks close pairs (`frames.may_be_same`: same who,
+  no disagreeing value or date, objects alike), `match.same_facts` asks "same single fact?" twice with
+  A/B swapped in batches of 6, and only two "same" answers merge (cached in `analysis.same_checks`, 30
+  pairs per consolidation). A day-precision date covers the whole day (`_times_apart`). Dates are read as dates ("6 December 1986" = "1986-12-06"; a year agrees
   with a full date in it), and a dispute needs the same object: a capitalised word in one name the other
   lacks makes two things ("Param Vishisht Seva Medal" / "Vishisht Seva Medal": different, Oct 7 2026). Model "contradict"/"same" judgements count only for statements read
   before frames (those still go through `check_conflicts`). Stored in `claims.rel.frame` and

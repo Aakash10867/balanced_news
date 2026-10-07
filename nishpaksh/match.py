@@ -92,6 +92,65 @@ def check_conflicts(router: Router | None, pairs: list[tuple[str, str]]) -> list
     return out
 
 
+SAME_CHECK_PROMPT = """Each numbered line has two sentences, A and B, from different news reports.
+Question: do A and B report the SAME single fact, only in different words?
+
+"same"      - yes: one fact, worded differently. Example: "He will take charge as Chief of Air Staff" and
+              "He will take over as the air chief" -> same. "Police arrested the engineer" and "The site
+              engineer was arrested by police" -> same.
+"different" - anything else: two different facts, two steps of one thing, two different times or posts,
+              or one says much more than the other. Example: "He was appointed chief" and "He will take
+              charge as chief" -> different (two steps). "He took charge as vice chief in July" and "He will
+              take charge as chief in October" -> different. "He is Deputy Chief of the Air Staff" and "He will be
+              Chief of the Air Staff" -> different (two posts). "He got the Param Vishisht Seva Medal" and "He
+              got the Vishisht Seva Medal" -> different (two medals).
+
+If you are not sure, answer "different".
+
+{pairs}
+
+Reply with JSON only: {{"results": [{{"n": 1, "answer": "same"}}, {{"n": 2, "answer": "different"}}]}}"""
+
+SAME_BATCH = 6     # small batches: the models answer short lists far better than long ones
+
+
+def same_facts(router: Router | None, pairs: list[tuple[str, str]]) -> list[bool]:
+    """Are these the same fact in other words? (Oct 7 2026: four outlets saying he takes charge on 31
+    October, in four wordings, stood as four one-outlet lines.) Asked twice, A/B swapped in the second
+    asking, in small batches with a plain yes/no choice: the models are simple, and a wrong "same" would
+    add outlets to a statement and could make it green. Only "same" both times counts."""
+    out = [False] * len(pairs)
+    if router is None or not pairs:
+        return out
+
+    def ask(ps: list[tuple[str, str]]) -> list[bool]:
+        got = [False] * len(ps)
+        for start in range(0, len(ps), SAME_BATCH):
+            chunk = ps[start:start + SAME_BATCH]
+            body = "\n".join(f'{i + 1}. A: "{a}" | B: "{b}"' for i, (a, b) in enumerate(chunk))
+            try:
+                res = router.call("light", SAME_CHECK_PROMPT.format(pairs=body), json_out=True, max_output_tokens=400)
+            except QuotaExhausted:
+                break
+            except Exception as e:  # noqa: BLE001
+                log.warning("same-fact check failed: %s", str(e)[:200])
+                continue
+            for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
+                try:
+                    n = int(item["n"]) - 1
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if 0 <= n < len(chunk):
+                    got[start + n] = str(item.get("answer") or "").strip().lower() == "same"
+        return got
+
+    first = ask(pairs)
+    again = [i for i, ok in enumerate(first) if ok]
+    for i, ok in zip(again, ask([(pairs[i][1], pairs[i][0]) for i in again])):
+        out[i] = ok
+    return out
+
+
 def _create_canonical(store: Store, story_id: int, kind: str, text: str, frame: dict | None = None,
                       time: dict | None = None) -> int:
     # a statement's frame (frames.py) is kept with it: who / action / what / value, and its time
