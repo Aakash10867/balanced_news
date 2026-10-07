@@ -2174,3 +2174,17 @@ def test_desk_tries_count_only_stories_the_writer_was_asked_to_write(store, monk
     monkeypatch.setattr(compose, "publish_story", fake)
     stats = desk.work(store, router=None, now=dt.datetime(2026, 10, 7, 13, 50))
     assert stats["published"] == [7, 8] and stats["skipped"] == {"not a follow-up yet": 6}
+
+
+def test_models_that_refused_last_desk_run_are_skipped_once(store):
+    from nishpaksh import desk
+    from nishpaksh.db import diagnostics, insert
+    now = dt.datetime(2026, 10, 7, 15, 45)
+    assert desk.refused_last_run(store, now) == set()
+    store.exec(insert(diagnostics).values(created_at=now - dt.timedelta(minutes=60), kind="desk",
+                                          report={"dropped": ["gemini-3.8-flash"], "skipping": []}))
+    assert desk.refused_last_run(store, now) == {"gemini-3.8-flash"}
+    # a run that skipped them drops nothing, so the run after tries them again
+    store.exec(insert(diagnostics).values(created_at=now, kind="desk", report={"dropped": [], "skipping": ["gemini-3.8-flash"]}))
+    assert desk.refused_last_run(store, now + dt.timedelta(minutes=60)) == set()
+    assert desk.refused_last_run(store, now + dt.timedelta(hours=3)) == set()

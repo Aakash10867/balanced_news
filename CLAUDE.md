@@ -87,7 +87,12 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (`desk_tries`, 5) counts only when the writer is asked; stories turned away before that (a follow-up
   refused, no headline) are counted in `skipped` and the desk moves on (at most 25 looked at), and a
   refused follow-up is not looked at again until a new outlet joins (Oct 7 2026: three refused
-  candidates used all five tries two runs in a row and nothing was written); it logs
+  candidates used all five tries two runs in a row and nothing was written). A failed headline no
+  longer stops a story before writing: the article is written, the headline written from its lead, and
+  if that fails too the finished article waits as a kept draft (outcome "headline failed"). Models that
+  refused on every key in the previous desk run (within 75 min, `router.dropped`, logged as `dropped`)
+  are skipped for one run (`desk.refused_last_run`, logged as `skipping`), so every other run tries
+  Flash again (Oct 7 2026: ~15 refused Flash calls per run before Flash-Lite wrote); it logs
   to `diagnostics` (kind 'desk'), never `runs` (the gate spaces pipeline runs by `runs`). The pipeline
   (:05) only prepares: every story with 3+ independent sources is rated from its HEADLINES
   (`priority.rank_new`, one Flash-Lite call per 20 stories, importance rubric 1-5 + filler), and only

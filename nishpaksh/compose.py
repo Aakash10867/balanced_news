@@ -582,9 +582,12 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         return _outcome(story_id, "already published")
     payload = build_payload(store, router, story_id)
     store.exec(update(stories).where(stories.c.id == story_id).values(dirty=False))
-    if payload is None or payload.get("headline_is_fallback"):
-        log.info("story %s waits: %s", story_id, "no longer qualifies" if payload is None else "no written headline")
-        return _outcome(story_id, "no payload" if payload is None else "no headline")
+    if payload is None:
+        log.info("story %s waits: no longer qualifies", story_id)
+        return _outcome(story_id, "no payload")
+    # a failed headline before writing no longer stops the story (Oct 7 2026: the headline model was
+    # overloaded and four stories a run were skipped): the headline is written again from the article's
+    # lead below, and if that fails too the finished article waits as a kept draft
     from .spelling import unify_article, unify_payload
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     parents = [x["story_id"] for x in payload.get("parents") or []]
@@ -600,8 +603,19 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     nar = write_narrative(router, payload, banned, draft=draft if _keepable({"model": (draft or {}).get("model"),
                                                                              "paragraphs": [1]}) else None)
     drafted = nar.pop("drafted", None)
-    if not (essay_ok(nar, payload) and _keepable(nar)):
-        _note_writer_failure(store, story_id, h, nar)
+    essay_good = essay_ok(nar, payload) and _keepable(nar)
+    if essay_good:
+        hl = payload.pop("_headline_input", None)
+        lead = " ".join(x["text"] for x in (nar.get("paragraphs") or [[]])[0])
+        if hl and lead and router is not None:
+            hd = _headline(router, hl["facts"], set(hl["banned"]), hl["fallback"], hl["unsettled"], hl["thread"], lead=lead)
+            if hd != hl["fallback"]:
+                payload["headline"] = hd
+                payload["headline_is_fallback"] = False
+    headline_missing = essay_good and payload.get("headline_is_fallback")
+    if not essay_good or headline_missing:
+        if not essay_good:
+            _note_writer_failure(store, story_id, h, nar)
         if drafted and _keepable({"model": nar.get("model"), "paragraphs": [1]}):   # a writer model's draft
             an = dict((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
             covered = len(set(nar.get("covers") or []))
@@ -609,6 +623,9 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
                                   "anchors": _draft_anchors(store, drafted),
                                   "at": utcnow().isoformat(timespec="minutes")}
             store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
+        if headline_missing:
+            log.info("story %s waits: written, but no headline passed; its draft is kept", story_id)
+            return _outcome(story_id, "headline failed")
         log.info("story %s waits: the article carries %d statements, short of the bar; its draft is kept",
                  story_id, len(set(nar.get("covers") or [])))
         return _outcome(story_id, "written short")
@@ -617,13 +634,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         an.pop("writer_draft", None)
         store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
     payload["narrative"] = nar
-    # the newspaper order: the article first, the headline from its opening (the news)
-    hl = payload.pop("_headline_input", None)
-    lead = " ".join(x["text"] for x in (nar.get("paragraphs") or [[]])[0])
-    if hl and lead and router is not None:
-        h = _headline(router, hl["facts"], set(hl["banned"]), hl["fallback"], hl["unsettled"], hl["thread"], lead=lead)
-        if h != hl["fallback"]:
-            payload["headline"] = h
+    payload.pop("_headline_input", None)    # the headline was written from the article's lead above
     unify_article(payload)                  # and in what the writer and the headline model wrote
     from .style import polish
     polish(payload)                         # surnames after the first mention; varied "he said" (by code)

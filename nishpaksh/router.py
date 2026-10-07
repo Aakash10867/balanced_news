@@ -249,6 +249,7 @@ class Router:
         # every key at once (Oct 5 2026), so a refusing model is dropped everywhere and the tier moves
         # on to its next model (the writer's last one is Flash-Lite) instead of retrying it per key
         self.model_streak: dict[str, int] = {}
+        self.dropped: set[str] = set()          # models dropped for refusing (the desk remembers them)
         self.tier_log: dict[str, _C] = {}       # outcomes per tier ("writer" -> {"ok": 0, "overloaded 5xx": 40})
         # One slot per (key, model), shared by every tier that lists the model, so a model used by
         # two tiers is never counted against two separate quotas. `keep` lets a tier stop using a
@@ -272,6 +273,12 @@ class Router:
             if slot.usage_key in usage:
                 slot.used_today, slot.tokens_today = usage[slot.usage_key]
                 slot.saved = usage[slot.usage_key]
+
+    def skip_models(self, ids) -> None:
+        """Leave these models out for this run, on every key."""
+        for s in self.all_slots():
+            if s.id in ids:
+                s.disabled = True
 
     def all_slots(self):
         seen = set()
@@ -419,6 +426,7 @@ class Router:
                 for s in self.all_slots():
                     if s.id == slot.id:
                         s.disabled = True
+                self.dropped.add(slot.id)
                 log.warning("model %s overloaded %d times in a row; off for this run on every key",
                             slot.id, self.model_streak[slot.id])
         else:

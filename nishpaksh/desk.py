@@ -73,6 +73,19 @@ def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
     return [sid for _, _, sid in out]
 
 
+def refused_last_run(store: Store, now: dt.datetime | None = None) -> set[str]:
+    """Models that refused on every key (dropped for overload) in the previous desk run, if it was
+    within the last 75 minutes: this run goes straight to the next model in the tier (Oct 7 2026: each
+    run spent ~15 refused Flash calls, which seem to count against Google's daily limit, and most of
+    its time before Flash-Lite wrote). The run after a skip tries them again."""
+    now = now or utcnow()
+    row = store.one(select(diagnostics.c.created_at, diagnostics.c.report).where(diagnostics.c.kind == "desk")
+                    .order_by(diagnostics.c.created_at.desc()).limit(1))
+    if not row or not row["created_at"] or now - row["created_at"] > dt.timedelta(minutes=75):
+        return set()
+    return set((row["report"] or {}).get("dropped") or [])
+
+
 def work(store: Store, router: Router, now: dt.datetime | None = None, until: float | None = None) -> dict:
     from . import compose, verify
     now = now or utcnow()
@@ -95,7 +108,7 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
             room -= 1
             continue
         why = compose.LAST_OUTCOME.get("outcome", "?")
-        if why == "written short":
+        if why in ("written short", "headline failed"):
             stats["tried"] += 1
         else:
             stats["skipped"][why] = stats["skipped"].get(why, 0) + 1
@@ -115,9 +128,12 @@ def main() -> None:
         raise SystemExit("GEMINI_API_KEY is not set")
     router = Router(load_yaml("models.yaml")["tiers"], [GeminiBackend(k) for k in keys], store)
     router.resolve()
+    skipping = refused_last_run(store)
+    router.skip_models(skipping)
     stats = work(store, router, until=t0 + a.minutes * 60)
     stats.update(seconds=round(time.time() - t0), trigger=os.environ.get("RUN_TRIGGER", "manual"),
-                 tier_calls={k: dict(v) for k, v in sorted(router.tier_log.items())})
+                 tier_calls={k: dict(v) for k, v in sorted(router.tier_log.items())},
+                 dropped=sorted(router.dropped), skipping=sorted(skipping))
     log.info("desk: %s", stats)
     # the desk's record goes to diagnostics, not runs: runs is what spaces the pipeline's own runs
     store.exec(insert(diagnostics).values(created_at=utcnow(), kind="desk", report=stats))
