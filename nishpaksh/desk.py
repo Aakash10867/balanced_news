@@ -27,6 +27,7 @@ from .db import Store, articles, diagnostics, insert, published, select, stories
 from .router import GeminiBackend, Router
 
 log = logging.getLogger("nishpaksh.desk")
+DESK_LOOK = 25      # stories looked at per run at most (each costs a few cheap page calls)
 
 
 def _hour_start(now: dt.datetime) -> dt.datetime:
@@ -52,6 +53,15 @@ def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
         sid = r["id"]
         if sid in closed or not editions.settled(store, sid, now):
             continue
+        # a follow-up refused and no new outlet since: it waits for coverage, not for another look
+        fu = ((r["analysis"] or {}).get("edition") or {}).get("followup") or {}
+        if fu.get("ok") is False and fu.get("at"):
+            last = editions.last_new_source(store, sid)
+            try:
+                if last is not None and last <= dt.datetime.fromisoformat(fu["at"]):
+                    continue
+            except ValueError:
+                pass
         arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency,
                                  articles.c.wire_group, articles.c.lang).where(articles.c.story_id == sid))
         groups = len(set(independence_groups(arts).values())) if arts else 0
@@ -72,14 +82,23 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         return stats
     queue = ready(store, now)
     stats["ready"] = len(queue)
-    for sid in queue[:SETTINGS.desk_tries]:
-        if room <= 0 or (until and time.time() > until):
+    stats["skipped"] = {}
+    for n, sid in enumerate(queue):
+        # a try is a story the writer was asked to write; stories turned away before that (not a
+        # follow-up yet, no headline) do not use one up, but at most DESK_LOOK stories are looked at
+        if room <= 0 or stats["tried"] >= SETTINGS.desk_tries or n >= DESK_LOOK or (until and time.time() > until):
             break
-        stats["tried"] += 1
         verify.base_verdicts(store, sid)            # the 6-hour clock moved since it was analysed
         if compose.publish_story(store, router, sid):
             stats["published"].append(sid)
+            stats["tried"] += 1
             room -= 1
+            continue
+        why = compose.LAST_OUTCOME.get("outcome", "?")
+        if why == "written short":
+            stats["tried"] += 1
+        else:
+            stats["skipped"][why] = stats["skipped"].get(why, 0) + 1
     return stats
 
 

@@ -2159,3 +2159,18 @@ def test_house_style_surnames_and_said_chains():
     assert t[2] == "Central agencies will take over the probe, he added."
     assert t[3] == "Sarma held a press conference in Tel Aviv."
     assert t[5] == "Ritesh Kumar Singh is accused of assisting Abhishek Kumar Singh."
+
+
+def test_desk_tries_count_only_stories_the_writer_was_asked_to_write(store, monkeypatch):
+    """Oct 7 2026: three follow-up candidates refused before writing used up the desk's five tries,
+    two runs in a row, and nothing was written."""
+    from nishpaksh import compose, desk, verify
+    queue = list(range(1, 11))
+    monkeypatch.setattr(desk, "ready", lambda store, now=None: queue)
+    monkeypatch.setattr(verify, "base_verdicts", lambda store, sid: None)
+
+    def fake(store, router, sid):
+        return compose._outcome(sid, "not a follow-up yet" if sid <= 6 else "published")
+    monkeypatch.setattr(compose, "publish_story", fake)
+    stats = desk.work(store, router=None, now=dt.datetime(2026, 10, 7, 13, 50))
+    assert stats["published"] == [7, 8] and stats["skipped"] == {"not a follow-up yet": 6}

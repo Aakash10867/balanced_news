@@ -559,6 +559,17 @@ def _remap_draft(store: Store, draft: dict | None, payload: dict) -> dict | None
     return out
 
 
+# why the last publish_story call ended: the desk counts a try only when the writer was asked
+# (Oct 7 2026: follow-up candidates refused before writing used up all five tries, two runs in a row)
+LAST_OUTCOME: dict[str, str] = {}
+
+
+def _outcome(story_id: int, what: str) -> bool:
+    LAST_OUTCOME.clear()
+    LAST_OUTCOME.update(story=str(story_id), outcome=what)
+    return what == "published"
+
+
 def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     """Write the article, once (editions.py, owner Oct 5 2026). Only the writer produces prose: a story
     is published with a good essay or not at all (it waits; Oct 2026: 85 of 91 live pages were
@@ -568,21 +579,21 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     from .editions import follow_up_ok
     from .narrative import essay_ok, input_hash, sections_from_payload, write_narrative
     if store.one(select(published.c.story_id).where(published.c.story_id == story_id)):
-        return False
+        return _outcome(story_id, "already published")
     payload = build_payload(store, router, story_id)
     store.exec(update(stories).where(stories.c.id == story_id).values(dirty=False))
     if payload is None or payload.get("headline_is_fallback"):
         log.info("story %s waits: %s", story_id, "no longer qualifies" if payload is None else "no written headline")
-        return False
+        return _outcome(story_id, "no payload" if payload is None else "no headline")
     from .spelling import unify_article, unify_payload
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     parents = [x["story_id"] for x in payload.get("parents") or []]
     if parents and not follow_up_ok(store, router, story_id, payload, parents):
-        return False
+        return _outcome(story_id, "not a follow-up yet")
     h = input_hash(sections_from_payload(payload), payload.get("background"))
     banned = set(payload["loaded_words"])
     if router is None or not _writer_attempt_allowed(store, story_id, h):
-        return False
+        return _outcome(story_id, "writer tries used up")
     # an earlier try that fell short of the bar is continued, not started again (owner, Oct 7 2026)
     an = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     draft = _remap_draft(store, an.get("writer_draft"), payload)
@@ -600,7 +611,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
             store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
         log.info("story %s waits: the article carries %d statements, short of the bar; its draft is kept",
                  story_id, len(set(nar.get("covers") or [])))
-        return False
+        return _outcome(story_id, "written short")
     if draft:
         an = dict((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
         an.pop("writer_draft", None)
@@ -622,7 +633,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     payload["version"] = hi["version"] = 1
     store.exec(insert(published).values(story_id=story_id, version=1, updated_at=now, headline_en=payload["headline"],
                                         headline_hi=hi["headline"], payload_en=payload, payload_hi=hi))
-    return True
+    return _outcome(story_id, "published")
 
 
 WRITER_TRIES = 3   # failed writes of the same statements before waiting for new ones

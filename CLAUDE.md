@@ -83,7 +83,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   at most two. The writer is its own job (`desk.py`, workflow `writer.yml`, dispatched at :45 UTC = :15 IST by
   pg_cron `public.dispatch_desk()`, same Vault token; GitHub schedule :55 as backup; pg_cron is UTC, the
   pipeline starts :05 UTC = :35 IST): it writes the
-  settled stories most important first until the clock hour has `desk_per_hour` (2) articles; it logs
+  settled stories most important first until the clock hour has `desk_per_hour` (2) articles; a try
+  (`desk_tries`, 5) counts only when the writer is asked; stories turned away before that (a follow-up
+  refused, no headline) are counted in `skipped` and the desk moves on (at most 25 looked at), and a
+  refused follow-up is not looked at again until a new outlet joins (Oct 7 2026: three refused
+  candidates used all five tries two runs in a row and nothing was written); it logs
   to `diagnostics` (kind 'desk'), never `runs` (the gate spaces pipeline runs by `runs`). The pipeline
   (:05) only prepares: every story with 3+ independent sources is rated from its HEADLINES
   (`priority.rank_new`, one Flash-Lite call per 20 stories, importance rubric 1-5 + filler), and only
