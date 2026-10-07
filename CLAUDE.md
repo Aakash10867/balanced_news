@@ -32,7 +32,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   **Purple = one outlet only (owner, Oct 7 2026):** a statement only one independent outlet reports
   (and not disputed or false) goes INTO the article, shown purple ("one outlet only": an exclusive,
   or a mistake), never as plain fact ("one report said", or pinned on its speaker; the paragraph
-  hedge reads "According to one report"). `narrative.shade`; the writer and the revision pass must
+  hedge reads "According to one report", ONCE per paragraph: never "one report said ... another report said" sentence by sentence; the colour marks each line). `narrative.shade`; the writer and the revision pass must
   use every statement, one-outlet lines included (they were "minor" and optional before).
 - **Interim publishing rule** while perspectives are unknown: 3+ independent read outlets and 2+
   origins. Perspectives emerge from agreement data (no hand labels of outlets).
@@ -103,7 +103,9 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   same slot (who, action, what) + agreeing values = one fact (merged); same slot + incompatible values
   or negation = contradiction (the ONLY way to one between statements with frames); a missing value =
   compatible (never a dispute, wording decides merging); same slot at different times = unsure;
-  anything else = different. Model "contradict"/"same" judgements count only for statements read
+  anything else = different. Dates are read as dates ("6 December 1986" = "1986-12-06"; a year agrees
+  with a full date in it), and a dispute needs the same object: a capitalised word in one name the other
+  lacks makes two things ("Param Vishisht Seva Medal" / "Vishisht Seva Medal": different, Oct 7 2026). Model "contradict"/"same" judgements count only for statements read
   before frames (those still go through `check_conflicts`). Stored in `claims.rel.frame` and
   `canonical.rel.frame`.
 - **News first (Oct 6 2026):** the writer opens with what makes it news today (the newest or most

@@ -99,8 +99,11 @@ Attribution, the way a good newspaper does it (important):
   named in some reports as Sugarr & Spice"), never pick one; say it ONCE, at the first mention.
 - FALSE: say who claimed it and that the evidence shows it is false, citing the evidence given.
 - ONE OUTLET ONLY: a single outlet reports it; it may be an exclusive or it may be wrong. Include it,
-  never as plain fact: pin it on its speaker if it has one, otherwise "one report said ..." (never
-  "reports said" for it).
+  never as plain fact: pin it on its speaker if it has one; otherwise it shares the paragraph's ONE
+  hedge at its start ("According to one report, ..." when all such lines in the paragraph come from
+  one outlet, else "According to reports, ..."). Never hedge sentence by sentence: no "One report
+  said ..., and another report said ...", no "One report said" opening sentence after sentence (the
+  page colours each such line already).
 
 Never add any fact, name, number, place, cause, motive, adjective or opinion that is not in the
 statements. Events may be told in order ("after", "later", "then"), but never link two events by cause

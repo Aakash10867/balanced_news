@@ -104,11 +104,49 @@ def same_slot(a: dict, b: dict) -> bool:
             and _overlap(words(a.get("what")), words(b.get("what"))) >= 0.5)
 
 
+MONTHS = {m: n for n, ms in enumerate((("jan", "january"), ("feb", "february"), ("mar", "march"), ("apr", "april"),
+                                       ("may",), ("jun", "june"), ("jul", "july"), ("aug", "august"),
+                                       ("sep", "sept", "september"), ("oct", "october"), ("nov", "november"),
+                                       ("dec", "december")), 1) for m in ms}
+
+
+def date_of(text: str | None) -> tuple | None:
+    """(year, month, day) with None for a part not given, when the value is a date: "1986-12-06",
+    "6 December 1986", "December 6, 1986", "31st October", "July 2026". Oct 7 2026: "6 December 1986"
+    and "1986-12-06" were read as the numbers 6 and 1986 and shown as a dispute."""
+    t = (text or "").lower()
+    m = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", t)
+    if m:
+        return int(m.group(1)), int(m.group(2)), int(m.group(3))
+    m = re.search(r"\b(" + "|".join(sorted(MONTHS, key=len, reverse=True)) + r")\b\.?", t)
+    if not m:
+        return None
+    month = MONTHS[m.group(1)]
+    day = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\b(?!\s*(?:hours|years|crore|lakh|%|per))", t[:m.start()][-8:] + " " + t[m.end():m.end() + 6])
+    year = re.search(r"\b(1[89]\d\d|20\d\d)\b", t)
+    d = int(day.group(1)) if day and 1 <= int(day.group(1)) <= 31 else None
+    return (int(year.group(1)) if year else None), month, d
+
+
+def _dates_agree(x: tuple, y: tuple) -> bool:
+    return all(p is None or q is None or p == q for p, q in zip(x, y))
+
+
 def values_agree(a: dict, b: dict) -> bool | None:
     """True / False when both give a value; None when one or both give none."""
     va, vb = (a.get("value") or "").strip(), (b.get("value") or "").strip()
     if not va or not vb:
         return None
+    da, db = date_of(va), date_of(vb)
+    year = lambda v: (int(m.group(1)), None, None) if (m := re.fullmatch(r"\D*\b(1[89]\d\d|20\d\d)\b\D*", v)) else None  # noqa: E731
+    if da and not db:
+        db = year(vb)
+    elif db and not da:
+        da = year(va)
+    if da and db:
+        return _dates_agree(da, db)
+    if da or db:
+        return None          # a date and something else: not comparable, so not a dispute
     na, nb = numbers(va), numbers(vb)
     if na and nb:
         x, y = na[0], nb[0]
@@ -127,17 +165,30 @@ def values_agree(a: dict, b: dict) -> bool | None:
     return _overlap(wa, wb) >= 0.5
 
 
+def _named_apart(x: str | None, y: str | None) -> bool:
+    """One object's name has a capitalised word the other lacks: two named things ("Param Vishisht Seva
+    Medal" / "Vishisht Seva Medal"), not one described more fully ("the site engineer" / "the engineer")."""
+    wx, wy = words(x), words(y)
+    for text, extra in ((x, wx - wy), (y, wy - wx)):
+        caps = {_stem(t.lower()) for t in re.findall(r"\b[A-Z][A-Za-z0-9]*", text or "")}
+        if extra & caps:
+            return True
+    return False
+
+
 def compare(a: dict | None, b: dict | None, when_a: dict | None = None, when_b: dict | None = None) -> str | None:
     """None when either statement has no frame (read before frames existed)."""
     if not a or not b:
         return None
     if not same_slot(a, b):
         return "different"
-    if a.get("negated") != b.get("negated"):
-        return "conflict"            # "arrested" vs "not arrested"
     agree = values_agree(a, b)
-    if agree is False:
-        return "conflict"            # same question, two answers
+    if a.get("negated") != b.get("negated") or agree is False:
+        # a dispute only about exactly the same thing: "Param Vishisht Seva Medal" and "Vishisht Seva
+        # Medal" share every word of the shorter name but are two medals (Oct 7 2026)
+        if _named_apart(a.get("what"), b.get("what")):
+            return "different"
+        return "conflict"            # "arrested" vs "not arrested"; same question, two answers
     if _times_apart(when_a, when_b):
         return "unsure"              # maybe two events of the same kind: never a dispute, never merged
     # one fact only when both give the answer and it agrees; without values ("police said something
