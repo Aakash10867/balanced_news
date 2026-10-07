@@ -86,9 +86,11 @@
   sup a:hover { color: var(--brand); text-decoration: underline; }
 
   /* after the story */
-  .key { font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); margin: 2.6rem 0 0;
-         padding-top: 1rem; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: .35rem 1.1rem;
-         align-items: center; }
+  /* the colour key sits between the headline and the article (owner, Oct 7 2026): the colour, not
+     words like "according to reports", says how well each sentence is supported */
+  .key { font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); margin: .9rem 0 1.4rem;
+         padding: .6rem 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+         display: flex; flex-wrap: wrap; gap: .35rem 1.1rem; align-items: center; }
   .key i { display: inline-block; width: .62em; height: .62em; border-radius: 50%; margin-right: .4em;
            vertical-align: .02em; }
   .key label { margin-left: auto; cursor: pointer; display: inline-flex; align-items: center; gap: .35rem; }
@@ -394,8 +396,8 @@ async function story(id) {
     <a class="back" href="#/">${esc(t.back)}</a>
     <h1>${esc(p.headline)}</h1>
     <div class="meta"><span title="${esc(t.sameOwner)}">${esc(t.sources(n, (p.counts || {}).outlets))}</span>, ${esc(t.updated)} ${esc(ago(row.updated_at))}</div>
-    <div class="story ${plain ? "plain" : ""}" id="story">${essayHtml(nar, t)}</div>
     ${keyHtml(t, present)}
+    <div class="story ${plain ? "plain" : ""}" id="story">${essayHtml(nar, t)}</div>
     <div class="after">
       ${p.has_established ? "" : `<p class="note">${esc(t.unsettled)}</p>`}
       ${p.qualified_by === "interim" && p.perspective_mode !== "global" ? `<p class="note">${esc(t.interim)}</p>` : ""}

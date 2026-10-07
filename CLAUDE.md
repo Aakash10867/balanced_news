@@ -36,15 +36,23 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (FIR, court record, official data, video) shows it false, two model families agreeing.
   **Purple = one outlet only (owner, Oct 7 2026):** a statement only one independent outlet reports
   (and not disputed or false) goes INTO the article, shown purple ("one outlet only": an exclusive,
-  or a mistake), never as plain fact ("one report said", or pinned on its speaker; the paragraph
-  hedge reads "According to one report", ONCE per paragraph: never "one report said ... another report said" sentence by sentence; the colour marks each line; code removes such per-sentence hedges, `narrative._one_hedge`, except in disputes). `narrative.shade`; the writer and the revision pass must
+  or a mistake); the colour, not words, says so (see "One author's voice"). `narrative.shade`; the writer and the revision pass must
   use every statement, one-outlet lines included (they were "minor" and optional before).
 - **Interim publishing rule** while perspectives are unknown: 3+ independent read outlets and 2+
   origins. Perspectives emerge from agreement data (no hand labels of outlets).
 - **Option B:** a page we could not read (headline/blurb only) is listed as "could not be read",
   never used for facts. Tavily reads blocked pages on budget.
+- **One author's voice; the colour carries the support (owner, Oct 7 2026, option A).** No "according
+  to reports", "reportedly", "reports said", "one report said" anywhere: the article reads as one author
+  writing for a reader, and the colour key sits between the headline and the article (site). Kept in
+  words only what colour cannot carry: a named speaker's claim ("police said"), "allegedly" where the
+  outlets use it, and a dispute's two versions and whose. Code removes hedge words
+  (`narrative._one_hedge`, not in disputes) and no longer adds a paragraph hedge. House style by code
+  (`style.py`, after the spelling pass): a person's full name and title once, then the surname (not
+  when two names share it; only with evidence it is a person: a title or role before it, a speech verb
+  after it, or a speaker), and "He said ... He added ..." runs become "..., he said."
 - **Writing:** no outlet names in the text (source numbers carry them); claims pinned on whoever makes
-  them; at most one hedge per paragraph; "after" is fine, cause words only if a statement has them;
+  them; no hedge words (above); "after" is fine, cause words only if a statement has them;
   never invent a speaker; "allegedly" stays as long as the outlets say it. Suicide stories get the
   Tele-MANAS helpline note.
 - **Only the writer produces prose (Oct 2026).** A new story is published only with a good essay
@@ -132,8 +140,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   brackets), are two people and never "named in reports as" each other (`consolidate.named_together`,
   Oct 7 2026: two arrested men written as one).
 - **Everything in the article, in sections with headings (owner, Oct 5 and Oct 7 2026):** code puts every
-  statement in exactly one section (`narrative.assign_sections`): news (the lead, no heading), What
-  happened, By the numbers, What they say, Background, Related events, Explained, What next. NO
+  statement in exactly one section (`narrative.assign_sections`), and code puts them in this order
+  (`narrative._in_order`, owner Oct 7 2026: a reader with no prior knowledge gets the context first):
+  news (1-2 sentence lead, no heading), Background, Explained, What happened, By the numbers, What they
+  say, Related events, What next. NO
   disputed section (owner, Oct 7 2026): a disagreement is written where its subject is, with both
   versions and whose; contradicting statements and claim/response pairs share a section; purple
   one-outlet lines stay with their subject (the colour marks them). One sectioned draft,
@@ -147,8 +157,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 - **Introductions:** every person and body at first mention with the fullest name and role the
   statements give (`narrative._people` lists them for the writer); extraction names people in full.
 - **Attribution like a newspaper:** name a speaker once, continue with "he said" in the same
-  paragraph (validator honours the paragraph's speaker scope); "reports said" at most once per
-  paragraph, as a leading "According to reports,"; a dispute states both versions and whose they
+  paragraph (validator honours the paragraph's speaker scope); a dispute states both versions and whose they
   are, never "other reports differ".
 - **Red verdicts on hold** (`SETTINGS.model_verdicts = False`): no second model family on the free
   tier now Gemma fails most calls. Code verdicts still run. Tests keep the machinery on (conftest).

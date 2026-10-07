@@ -1960,9 +1960,9 @@ def test_one_outlet_lines_are_written_in_purple():
                             [{"text": "Police detained 40 protesters.", "ids": [2]}]], [], by, {"model": "m"})
     classes = [[s["class"] for s in p] for p in nar["paragraphs"]]
     assert classes == [["single"], ["established", "single"], ["unverified"]]
-    # the paragraph's hedge says how many reports: one, not "reports"
-    assert nar["paragraphs"][0][0]["text"].startswith("According to one report, the minister")
-    assert nar["paragraphs"][2][0]["text"].startswith("According to reports, police")
+    # no hedge words (owner, Oct 7 2026, option A): the colour says how well each line is supported
+    assert nar["paragraphs"][0][0]["text"] == "The minister met the protesters on Monday."
+    assert not any("report" in s["text"].lower() for p in nar["paragraphs"] for s in p)
 
 
 def test_the_writer_is_asked_for_every_statement_including_one_outlet_lines():
@@ -2017,7 +2017,8 @@ def test_sections_left_short_are_filled_a_few_at_a_time():
     assert set(nar["covers"]) == {1, 2, 3, 4, 5, 6, 7} and essay_ok(nar, payload)
     keys = nar["section_keys"]
     assert len(keys) == len(nar["paragraphs"]) and keys[0] == "news"
-    assert [k for k in dict.fromkeys(keys)] == ["news", "happened", "numbers", "say", "background", "next"]
+    # context before the full account (owner, Oct 7 2026)
+    assert [k for k in dict.fromkeys(keys)] == ["news", "background", "happened", "numbers", "say", "next"]
 
 
 def test_a_short_article_is_finished_next_time_not_thrown_away(store):
@@ -2126,3 +2127,35 @@ def test_two_names_in_one_sentence_are_two_people():
     assert not named_together(names, ["Abhishek Kumar Singh alias Ritesh Kumar Singh was arrested."])
     assert not named_together(names, ["Abhishek Kumar Singh (Ritesh Kumar Singh) was arrested."])
     assert not named_together(names, ["Abhishek Kumar Singh was arrested.", "Ritesh Kumar Singh was arrested."])
+
+
+
+def test_no_hedge_words_in_the_article_but_disputes_keep_whose():
+    """Owner, Oct 7 2026, option A: one author's voice; the colour carries how well each line is supported."""
+    from nishpaksh.narrative import _one_hedge
+    assert _one_hedge("According to reports, the police detained 40 people.") == "The police detained 40 people."
+    assert _one_hedge("The STF reportedly seized a phone.") == "The STF seized a phone."
+    assert _one_hedge("Two men were arrested, reports said.") == "Two men were arrested."
+    assert _one_hedge("It is reported that the bridge fell.") == "The bridge fell."
+    assert _one_hedge("He was arrested on Friday, according to media reports.") == "He was arrested on Friday."
+    assert _one_hedge("The accused allegedly sold the data.") == "The accused allegedly sold the data."
+    assert _one_hedge("Police said the bridge fell.") == "Police said the bridge fell."
+
+
+def test_house_style_surnames_and_said_chains():
+    """Owner, Oct 7 2026: read like one author: full name once, then the surname; no "He said ... He
+    added ..." chains. Places, bodies and shared surnames are left alone."""
+    from nishpaksh.style import shorten_names, vary_attribution
+    P = [[{"text": "Assam Chief Minister Himanta Biswa Sarma said two men were arrested in East Champaran."},
+          {"text": "He said that the two were passing information to Pakistan."},
+          {"text": "He added that central agencies will take over the probe."}],
+         [{"text": "Assam Chief Minister Himanta Biswa Sarma held a press conference in Tel Aviv."},
+          {"text": "Police said Abhishek Kumar Singh and retired jawan Ritesh Kumar Singh were held in Tel Aviv."},
+          {"text": "Ritesh Kumar Singh is accused of assisting Abhishek Kumar Singh."}]]
+    shorten_names(P)
+    vary_attribution(P)
+    t = [s["text"] for p in P for s in p]
+    assert t[1] == "The two were passing information to Pakistan, he said."
+    assert t[2] == "Central agencies will take over the probe, he added."
+    assert t[3] == "Sarma held a press conference in Tel Aviv."
+    assert t[5] == "Ritesh Kumar Singh is accused of assisting Abhishek Kumar Singh."

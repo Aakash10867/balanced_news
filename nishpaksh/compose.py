@@ -614,6 +614,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         if h != hl["fallback"]:
             payload["headline"] = h
     unify_article(payload)                  # and in what the writer and the headline model wrote
+    from .style import polish
+    polish(payload)                         # surnames after the first mention; varied "he said" (by code)
     now = utcnow()
     payload["written_at"] = now.isoformat(timespec="seconds")
     hi = translate_payload(store, router, payload)

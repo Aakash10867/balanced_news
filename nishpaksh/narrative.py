@@ -8,8 +8,10 @@ Division of labour:
 
 Attribution (decided with the reader in mind): outlet names never appear in the text; the colour
 and the numbered source links already say who reported what. A claim is pinned on the person or
-body that makes it ("his parents alleged", "police said"). Anything not established that has no
-such speaker carries a light hedge, at most once per paragraph ("reports said").
+body that makes it ("his parents alleged", "police said"). Nothing carries "according to reports",
+"reportedly" or "one report said" (owner, Oct 7 2026, option A): the article reads as written by one
+author, and the colour, with its key under the headline, says how well each sentence is supported.
+Only a dispute keeps whose each version is, and "allegedly" stays where the outlets use it.
 
 A sentence is rejected (and replaced by plain wording) if it cites nothing valid, names an outlet,
 contains a number not in the statements it cites, uses a loaded word any outlet used, states an
@@ -28,7 +30,7 @@ import threading
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
-WRITER_VERSION = 8   # part of the cache key: pages written by an older writer are rewritten once
+WRITER_VERSION = 9   # part of the cache key: pages written by an older writer are rewritten once
 
 RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "single": 3,
         "disputed": 4, "false": 5}
@@ -55,19 +57,19 @@ when it happened, which statements contradict it, and which statements are a par
 Statements marked CONTEXT are not the story's own event: background, a separate related event,
 an explanation, a reaction, or what happens next.
 
-Structure: the article is written in SECTIONS, like a full explainer, so that a reader gets everything
-known about the story: what happened, who says what, how it came about and what comes next. The
-statements below are already sorted into sections; write each section from its own statements:
+Structure: the article is written in SECTIONS, in this order, so that a reader who knows nothing about
+the story first learns why it matters today, then how it came about, and then follows it as one
+coherent story. The statements below are already sorted into sections; write each from its own:
   news        1-2 sentences: THE NEWS, the thing that makes this a story today: the newest or most
               consequential thing someone did, decided or said, with who, where and when. Never the setting
               or background ("Donald Trump said 125 million people voted in India's election, mixing up
               India with Brazil", not "Brazil held an election on Sunday"). Use the "happened" statements.
+  background  how this came about: earlier events, each clearly with its own time
+  explained   what a rule, term, post, finding or number means
   happened    what happened, in time order (the statements of the news are not repeated here)
   numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
   say         what each person or body says: claims, allegations, positions, and the responses to them
-  background  how this came about: earlier events, each clearly with its own time
   related     separate events the reports connect to this one, each clearly SEPARATE, with its time
-  explained   what a rule, term, finding or number means
   next        what happens next: hearings, deadlines, required steps
 Write only the sections that have statements (and "news"); skip the others.
 A disagreement is written where its subject is, in the same paragraph as the rest of that subject, with
@@ -77,17 +79,20 @@ because they share a status, and never join two statements in one sentence unles
 same person, body, place or thing. Say each fact ONCE: if two statements say the same thing, write it
 once and cite both ids. Length: about {length} sentences, as the material allows; do not pad.
 
+Write as ONE author telling the story to a reader, not as a summary of reports. The page colours every
+sentence by how well it is supported, so the words never need to: NEVER write "according to reports",
+"reportedly", "reports said", "one report said", "another report said", "it is reported".
+
 Attribution, the way a good newspaper does it (important):
 - NEVER name a newspaper, channel or website. Do not write "X reported", "according to X" for an outlet.
-- ESTABLISHED: state plainly as fact, with no attribution.
+- ESTABLISHED and REPORTED (no "said by"): state plainly, with no attribution and no hedge.
 - A statement with "said by": name the speaker ONCE, at the start of the run of their statements
   ("Ukraine's foreign minister Andrii Sybiha said India's proposal was the most comprehensive."),
   then continue in the same paragraph with "he said", "he added", "the minister said" while it is
   still that speaker. No empty set-up sentences ("X set out their position."). Name
   the next speaker when the speaker changes. Do not end every sentence with "according to <name>".
   An accusation must always name who makes it.
-- REPORTED without "said by": not confirmed. Hedge ONCE for the paragraph, at its start
-  ("According to reports, ..."). Never end sentences with "reports said".
+- An accusation of a crime stays "allegedly" / "alleged" wherever the statement says so.
 - RESPONSE: write the claim or finding and the party's response together, each pinned on its source:
   "A food analyst declared the sample unsafe; Nestle India said its product is safe." A response is
   not a contradiction: do not write "accounts differ" for it.
@@ -98,12 +103,8 @@ Attribution, the way a good newspaper does it (important):
 - NAMES DIFFER: when a statement says the reports name different actors, name both ("Creative Bakers,
   named in some reports as Sugarr & Spice"), never pick one; say it ONCE, at the first mention.
 - FALSE: say who claimed it and that the evidence shows it is false, citing the evidence given.
-- ONE OUTLET ONLY: a single outlet reports it; it may be an exclusive or it may be wrong. Include it,
-  never as plain fact: pin it on its speaker if it has one; otherwise it shares the paragraph's ONE
-  hedge at its start ("According to one report, ..." when all such lines in the paragraph come from
-  one outlet, else "According to reports, ..."). Never hedge sentence by sentence: no "One report
-  said ..., and another report said ...", no "One report said" opening sentence after sentence (the
-  page colours each such line already).
+- ONE OUTLET ONLY: a single outlet reports it; include it, written plainly (pinned on its speaker if
+  it has one). The page colours it purple; never add "one report said".
 
 Never add any fact, name, number, place, cause, motive, adjective or opinion that is not in the
 statements. Events may be told in order ("after", "later", "then"), but never link two events by cause
@@ -113,7 +114,8 @@ is itself reported speech ("A said that B claimed X"), keep it reported: never m
 Every sentence must make sense on its own: never write "denied this" unless the sentence just before
 says what was denied. Introduce every person and body at first mention with the fullest name and role
 the statements give ("AAP Delhi chief Saurabh Bharadwaj", "Supreme Court judge Ujjal Bhuyan"); after
-that, the surname or a short form. Never use a surname alone for someone not yet introduced.
+that, the surname ("Bharadwaj") or a short form. Never use a surname alone for someone not yet
+introduced. Vary how you attribute: not "He said ... He added ... He stated ..." sentence after sentence.
 No headings, no bullet points.
 Never use any of these words: {banned}
 Every sentence lists in "ids" every statement it uses. Use EVERY statement at least once, including
@@ -123,8 +125,8 @@ background), the present and what happens next.
 {people}{background}Statements, by section:
 {statements}
 
-Reply with JSON only, the sections in this order (news, happened, numbers, say, background, related,
-explained, next), each with its paragraphs:
+Reply with JSON only, the sections in this order (news, background, explained, happened, numbers, say,
+related, next), each with its paragraphs:
 {{"sections": [{{"key": "news", "paragraphs": [[{{"text": "...", "ids": [3]}}]]}},
                {{"key": "happened", "paragraphs": [[{{"text": "...", "ids": [5, 7]}}], [ ... ]]}}, ...]}}"""
 
@@ -135,8 +137,8 @@ they are. The rest of the article is shown so you continue it: do not repeat wha
 do not introduce again a person it already introduced.
 Rules as before: only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
-disputes give both versions and whose they are; ONE OUTLET ONLY statements never as plain fact ("one
-report said ..."); no cause words unless a statement has them; nothing loaded: {banned}.
+disputes give both versions and whose they are; write as one author: never "according to reports",
+"reportedly" or "one report said" (the page colours each sentence); no cause words unless a statement has them; nothing loaded: {banned}.
 
 The article so far:
 {article}
@@ -151,9 +153,11 @@ Failed sentences in these sections:
 
 Reply with JSON only: {{"sections": [{{"key": "...", "paragraphs": [[{{"text": "...", "ids": [3]}}]]}}]}}"""
 
-SECTIONS = [("news", "The news"), ("happened", "What happened"), ("numbers", "By the numbers"),
-            ("say", "What they say"), ("background", "Background"),
-            ("related", "Related events"), ("explained", "Explained"), ("next", "What next")]
+# the order on the page (owner, Oct 7 2026): the news in a line or two, then the context a reader with
+# no prior knowledge needs, then the story in full
+SECTIONS = [("news", "The news"), ("background", "Background"), ("explained", "Explained"),
+            ("happened", "What happened"), ("numbers", "By the numbers"), ("say", "What they say"),
+            ("related", "Related events"), ("next", "What next")]
 SECTION_KEYS = [k for k, _ in SECTIONS]
 # the fill pass works on a few sections at a time: small tasks are done completely (owner, Oct 7 2026:
 # Flash-Lite given all 40 statements wrote 10 sentences; given 8-10 at a time it uses them all)
@@ -675,27 +679,28 @@ def _also(items: list[dict], covered: set[int], by_id: dict[int, dict], essay: l
                         "ids": [claim["id"], resp["id"]]})
             done.update({claim["id"], resp["id"]})
         else:
-            text = plain_sentence(i)
-            if _needs_hedge({"ids": [i["id"]]}, by_id) and not any(m in text.lower() for m in HEDGE_MARKERS):
-                text = _hedge(text)
-            out.append({"text": text, "ids": [i["id"]]})
+            out.append({"text": plain_sentence(i), "ids": [i["id"]]})   # coloured; no hedge words
             done.add(i["id"])
     return out
 
 
+_WHO = r"(?:one|another|a second|the other|some|other|several|many|media|news|early|initial|unconfirmed)"
 PER_SENTENCE_HEDGE = [
-    (re.compile(r"(?i)^(?:according to (?:one|another|a second|the other) report,\s*|"
-                r"(?:one|another|a second|the other) report (?:said|says|stated|added|claimed)(?: that)?,?\s+)"), ""),
-    (re.compile(r"(?i),?\s+(?:and|while|but|whereas)\s+(?:one|another|a second|the other) report "
-                r"(?:said|says|stated|added|claimed)(?: that)?,?\s+"), "; "),
-    (re.compile(r"(?i),\s+(?:one|another) report (?:said|says)(?=\.?$)"), ""),
+    (re.compile(rf"(?i)^(?:according to (?:{_WHO} )?reports?,?\s*|(?:{_WHO} )?reports? (?:said|says|say|stated|"
+                rf"added|claimed|suggest(?:ed)?|indicated?)(?: that)?,?\s+|it (?:is|was|has been) reported(?: that)?,?\s+)"), ""),
+    (re.compile(rf"(?i),?\s+(?:and|while|but|whereas)\s+(?:{_WHO} )?reports? (?:said|says|say|stated|added|claimed)"
+                r"(?: that)?,?\s+"), "; "),
+    (re.compile(rf"(?i),?\s+(?:according to (?:{_WHO} )?reports?|(?:{_WHO} )?reports? (?:said|say|says))(?=\s*[.;]?$)"), ""),
+    (re.compile(rf"(?i),\s+according to (?:{_WHO} )?reports?,\s+"), ", "),
+    (re.compile(r"(?i)\breportedly\s+"), ""),
+    (re.compile(r"(?i),\s*reportedly(?=[,.])"), ""),
 ]
 
 
 def _one_hedge(text: str) -> str:
-    """"One report said X, and another report said Y" -> "X; Y": the paragraph carries one hedge (owner's
-    rule) and the colour marks each one-outlet line. Done by code: the writer models do not follow the
-    rule reliably (Oct 7 2026, story 13809: every sentence opened "One report said")."""
+    """No "according to reports", "reportedly", "one report said ... another report said" (owner, Oct 7
+    2026, option A: one author's voice; the colour says how well each sentence is supported). Done by
+    code: the writer models do not follow the rule reliably."""
     t = text
     for pat, rep in PER_SENTENCE_HEDGE:
         t = pat.sub(rep, t)
@@ -709,17 +714,9 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
     proper = {w for i in by_id.values() for w in re.findall(r"(?<=[a-z,;] )[A-Z][\w'-]+", i.get("text") or "")}
     for para in paragraphs:
         for x in para:
-            # a dispute keeps "one report said 40, another said 50": that is whose each version is
+            # a dispute keeps "some reports say 40, others 50": that is whose each version is
             if not any(by_id[i]["verdict"] == "disputed" or by_id[i].get("conflicts_with") for i in x["ids"]):
                 x["text"] = _one_hedge(x["text"])
-    for para in paragraphs:
-        if any(_needs_hedge(x, by_id) for x in para) and not any(
-                m in x["text"].lower() for x in para for m in HEDGE_MARKERS):
-            first = next(x for x in para if _needs_hedge(x, by_id))
-            first["raw"] = first["text"]          # the hedge is code's: dropped again if no longer needed
-            single = all(shade(by_id[x]) == "single" for x in first["ids"]
-                         if by_id[x]["verdict"] not in ("corroborated", "confirmed") and not by_id[x].get("speaker"))
-            first["text"] = _hedge(first["text"], proper, single)
     numbering: dict[str, int] = {}
     for sent in [x for para in paragraphs for x in para] + also:
         for x in sent["ids"]:
@@ -841,7 +838,15 @@ def _article_with_sections(drafted: list[tuple[str, list]]) -> str:
     return "\n".join(out)
 
 
+def _in_order(drafted: list[tuple[str, list]]) -> list[tuple[str, list]]:
+    """The sections in the page's order (SECTIONS), whatever order the model wrote them in; paragraphs
+    keep their order within a section."""
+    order = {k: n for n, k in enumerate(SECTION_KEYS)}
+    return sorted(drafted, key=lambda kp: order.get(kp[0], 99))
+
+
 def _check_sections(drafted, by_id, banned, outlets):
+    drafted = _in_order(drafted)
     paragraphs, failed, rejected = _check_paragraphs([p for _, p in drafted], by_id, banned, outlets)
     keys = [drafted[k][0] for k in getattr(_TL, "kept", [])]
     for f in failed:
@@ -878,6 +883,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
                                       length=_target_length(items), people=_people(items))
         drafted, model, failure = _call_writer(router, prompt)
 
+    drafted = _in_order(drafted)
     paragraphs, keys, failed, rejected = _check_sections(drafted, by_id, banned, outlets)
     first_reasons = dict(_reasons())
     filled = []
@@ -927,6 +933,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
             trial = sorted(trial + new, key=lambda kp: order.get(kp[0], 99))
         saved = dict(_reasons())
         _reasons().clear()
+        trial = _in_order(trial)
         p2, k2, f2, r2 = _check_sections(trial, by_id, banned, outlets)
         cov2 = {x for para in p2 for s_ in para for x in s_["ids"]}
         if len(cov2) >= len(covered):
