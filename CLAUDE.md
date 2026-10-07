@@ -127,7 +127,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   it; a statement and its contradiction/response are both in the essay or both under it; statements
   joined in one sentence must share a subject; "Also reported" skips what the essay already says;
   one repair call rewrites failed sentences before anything is dropped. Headlines must keep who did
-  what (`compose._actor_problem`). Reports naming different actors for one fact block green.
+  what (`compose._actor_problem`). Reports naming different actors for one fact block green; code checks every such model call: names
+  appearing together in one sentence of a statement or report, not joined as aliases ("alias", "urf",
+  brackets), are two people and never "named in reports as" each other (`consolidate.named_together`,
+  Oct 7 2026: two arrested men written as one).
 - **Everything in the article, in sections with headings (owner, Oct 5 and Oct 7 2026):** code puts every
   statement in exactly one section (`narrative.assign_sections`): news (the lead, no heading), What
   happened, By the numbers, What they say, Background, Related events, Explained, What next. NO

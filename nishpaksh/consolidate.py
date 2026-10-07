@@ -19,7 +19,7 @@ import json
 import logging
 import re
 
-from .db import Store, canonical, claims, select, stories, update
+from .db import Store, articles, canonical, claims, select, stories, update
 from .match import _add_conflict, _merge
 from .router import QuotaExhausted, Router
 
@@ -66,7 +66,7 @@ Reply with JSON only:
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
 SAME_ASK_MAX = 30         # same-fact questions per consolidation, closest pairs first (the rest next time)
-CONSOLIDATE_VERSION = 5   # part of the cache key: stories are consolidated again when the task changes
+CONSOLIDATE_VERSION = 6   # part of the cache key: stories are consolidated again when the task changes
 
 NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -86,6 +86,26 @@ def is_spelling_variant(a: str, b: str) -> bool:
     if a == b or len(a.split()) != len(b.split()):
         return False
     return SequenceMatcher(None, a, b).ratio() >= 0.6 and a[0] == b[0]
+
+
+ALIAS = re.compile(r"(?i)\b(?:alias|urf|also known as|a\.?k\.?a\.?|also called|known as|or)\b|[(/]|उर्फ")
+
+
+def named_together(names: list[str], texts: list[str | None]) -> bool:
+    """Two of the names appear in one sentence of a statement or report, not joined as aliases ("X
+    alias Y", "X (Y)"): they are two people. Code's check on the model's "reports name different
+    people for one fact"."""
+    low = [n.lower() for n in names if n and len(n) >= 4]
+    for text in texts:
+        for sent in re.split(r"(?<=[.!?।])\s+", text or ""):
+            s = sent.lower()
+            found = sorted((s.find(n), n) for n in low if n in s)
+            for (i, a), (j, b) in zip(found, found[1:]):
+                if a == b or a in b or b in a:
+                    continue
+                if not ALIAS.search(sent[i + len(a):j]):
+                    return True
+    return False
 
 
 def _apply_names(text: str, names: dict[str, str]) -> str:
@@ -290,6 +310,14 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         for x in ids(g.get("ids")):
             if alive(x):
                 name_conf[str(x)] = names_g[:4]
+    # checked by code, every time (earlier entries too): two names that appear together in one statement
+    # or one report, not joined as aliases, are two people, not one person named two ways (Oct 7 2026,
+    # story 11569: "Ritesh Kumar Singh is accused of assisting Abhishek Kumar Singh", yet the page said
+    # "Ritesh Kumar Singh, named in reports as Abhishek Kumar Singh")
+    if name_conf:
+        texts = [r["text"] for r in store.rows(select(canonical.c.text).where(canonical.c.story_id == story_id))]
+        texts += [r["text"] for r in store.rows(select(articles.c.text).where(articles.c.story_id == story_id))]
+        name_conf = {k: v for k, v in name_conf.items() if not named_together(v, texts)}
     after = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind)
                                    .where(canonical.c.story_id == story_id)) if r["kind"] != "relation" and r["text"]]
     analysis.update(consolidated=_hash(after), speakers=speakers,

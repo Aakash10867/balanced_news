@@ -2116,3 +2116,13 @@ def test_same_fact_in_other_words_is_asked_twice_and_merged_only_on_two_yeses():
     assert Flip.calls == 2
     assert match.same_facts(_router(store, FakeBackend()),
                             [("Dixit will take charge as Chief of Air Staff.", "Dixit will take charge as the Chief of Air Staff on October 31.")]) == [True]
+
+
+def test_two_names_in_one_sentence_are_two_people():
+    """Oct 7 2026, story 11569: two arrested men were written as one man "named in reports as" the other."""
+    from nishpaksh.consolidate import named_together
+    names = ["Abhishek Kumar Singh", "Ritesh Kumar Singh"]
+    assert named_together(names, ["Ritesh Kumar Singh is accused of assisting Abhishek Kumar Singh in espionage."])
+    assert not named_together(names, ["Abhishek Kumar Singh alias Ritesh Kumar Singh was arrested."])
+    assert not named_together(names, ["Abhishek Kumar Singh (Ritesh Kumar Singh) was arrested."])
+    assert not named_together(names, ["Abhishek Kumar Singh was arrested.", "Ritesh Kumar Singh was arrested."])
