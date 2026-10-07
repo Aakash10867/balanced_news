@@ -310,7 +310,12 @@ function essayHtml(nar, t) {
         : `<a href="#src-${a}" title="${esc(names[a] || "")}" data-src="${a}">${a}</a>–<a href="#src-${b}" title="${esc(names[b] || "")}" data-src="${b}">${b}</a>`).join(",");
     const who = [...new Set(nums.map(n => names[n]).filter(Boolean))].join(", ");
     const tag = x.class === "false" ? `<span class="ftag">${esc(t.falseTag)}</span>` : "";
-    return `${tag}<span class="s ${esc(x.class)}" title="${esc(who)}">${esc(x.text)}</span><sup>${sup}</sup>`;
+    // a sentence in parts (owner, Oct 7 2026): the well-supported fact and the detail fewer outlets
+    // report each take their own colour; the source numbers follow the whole sentence
+    const body = (x.parts && x.parts.length > 1)
+      ? x.parts.map(p => `<span class="s ${esc(p.class)}" title="${esc(who)}">${esc(p.text)}</span>`).join(" ")
+      : `<span class="s ${esc(x.class)}" title="${esc(who)}">${esc(x.text)}</span>`;
+    return `${tag}${body}<sup>${sup}</sup>`;
   };
   // everything is in the article itself (owner, Oct 2026); every statement is still listed in the
   // "Every statement" section below for anyone checking
@@ -373,7 +378,7 @@ async function story(id) {
   document.title = `${p.headline} · Nishpaksh`;
   const n = (p.counts || {}).independent_sources || 0;
   const paragraphs = nar.paragraphs || [];
-  const present = new Set(paragraphs.flat().map(x => x.class));
+  const present = new Set(paragraphs.flat().flatMap(x => (x.parts && x.parts.length > 1) ? x.parts.map(p => p.class) : [x.class]));
 
   const framing = (p.framing || []).length ? (() => {
     const persp = [...new Set(p.framing.flatMap(f => Object.keys(f.words)))].sort();

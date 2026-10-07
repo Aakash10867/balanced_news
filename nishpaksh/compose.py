@@ -502,6 +502,9 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
     for para in (hi.get("narrative") or {}).get("paragraphs", []):
         for x in para:
             x["text"] = tr(x["text"])
+            # Hindi word order differs: parts cannot be translated apart, so a Hindi sentence has one
+            # colour, the weakest (its "class"), as before parts existed
+            x.pop("parts", None)
     hi["translation_complete"] = all(_key(s) in cache for s in strings)
     return hi
 
@@ -626,11 +629,18 @@ def fold_covered(payload: dict, covered: dict) -> int:
     """A line another line says in full, with more (relate.py), is not written on its own: its outlets
     are listed as sources of the detailed line, which keeps its own colour (it never borrows their
     support, so its extra details cannot turn green on another outlet's report)."""
+    from .narrative import RANK, shade
     items = {i["id"]: i for i in _all_items_of(payload) + list(payload.get("context") or [])}
     gone = set()
     for small, big in covered.items():
         small, big = int(small), int(big)
         if small in items and big in items and small != big and big not in gone:
+            # the short line is better supported than the detailed one (four outlets vs one): both are
+            # kept and written as one sentence in two parts, so its fact can take its own colour
+            # (owner, Oct 7 2026); otherwise there is nothing to gain and the short line folds away
+            if RANK.get(shade(items[small]), 2) < RANK.get(shade(items[big]), 2) and not items[big].get("adds_to"):
+                items[big]["adds_to"] = small
+                continue
             have = {s["url"] for s in items[big].get("sources") or []}
             items[big]["sources"] = list(items[big].get("sources") or []) + [
                 s for s in items[small].get("sources") or [] if s["url"] not in have]

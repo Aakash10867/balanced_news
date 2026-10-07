@@ -2242,9 +2242,39 @@ def test_the_written_article_never_says_the_same_thing_twice():
 
 def test_a_covered_line_is_folded_into_the_detailed_one_without_lending_it_colour():
     from nishpaksh.compose import fold_covered
-    big = {"id": 1, "verdict": "unverified", "sources": [{"url": "a"}], "text": "x"}
-    small = {"id": 2, "verdict": "corroborated", "sources": [{"url": "b"}, {"url": "c"}], "text": "y"}
+    # equally supported: the short line folds into the detailed one, which keeps its own colour
+    big = {"id": 1, "verdict": "unverified", "n_sources": 1, "sources": [{"url": "a"}], "text": "x"}
+    small = {"id": 2, "verdict": "unverified", "n_sources": 1, "sources": [{"url": "b"}], "text": "y"}
     p = {"timeline": [[big, small]], "undated": [], "established": [], "contested": [], "context": []}
     assert fold_covered(p, {"2": 1}) == 1
-    assert p["timeline"] == [[big]] and [s["url"] for s in big["sources"]] == ["a", "b", "c"]
-    assert big["verdict"] == "unverified"
+    assert p["timeline"] == [[big]] and [s["url"] for s in big["sources"]] == ["a", "b"]
+    # the short line better supported: both kept, written as one sentence in two parts
+    big = {"id": 1, "verdict": "unverified", "n_sources": 1, "sources": [{"url": "a"}], "text": "x"}
+    small = {"id": 2, "verdict": "corroborated", "n_sources": 4, "sources": [{"url": "b"}], "text": "y"}
+    p = {"timeline": [[big, small]], "undated": [], "established": [], "contested": [], "context": []}
+    assert fold_covered(p, {"2": 1}) == 0 and big["adds_to"] == 2 and big["verdict"] == "unverified"
+
+
+def test_a_sentence_in_parts_colours_each_part_and_never_paints_a_detail_green():
+    """Owner, Oct 7 2026: the well-supported fact green, the detail one outlet reports its own colour.
+    Each part is checked on its own: a number the part's statements do not have takes the parts away."""
+    from nishpaksh.narrative import _check_paragraphs, _finish
+    est = {"id": 1, "kind": "event", "text": "12 crew members were injured in the attack", "verdict": "corroborated",
+           "n_sources": 4, "sources": [{"url": "a"}], "conflicts_with": []}
+    one = {"id": 2, "kind": "claim", "text": "11 of the injured crew members are Indian nationals", "verdict": "unverified",
+           "n_sources": 1, "sources": [{"url": "b"}], "conflicts_with": []}
+    by = {1: est, 2: one}
+    good = {"parts": [{"text": "12 crew members were injured in the attack,", "ids": [1]},
+                      {"text": "11 of them Indian nationals.", "ids": [2]}]}
+    bad = {"parts": [{"text": "12 crew members, 11 of them Indian, were injured,", "ids": [1]},
+                     {"text": "in the attack.", "ids": [2]}]}
+    payload = {"sources": [{"url": "a"}, {"url": "b"}], "timeline": [], "undated": [est, one],
+               "established": [], "contested": []}
+    for sent, want in ((good, ["established", "single"]), (bad, None)):
+        paras, failed, rejected = _check_paragraphs([[sent]], by, set(), [])
+        s1 = _finish(payload, paras, [], by, {"model": "m"})["paragraphs"][0][0]
+        assert s1["class"] == "single"                 # the sentence as a whole: its weakest colour
+        if want:
+            assert [p["class"] for p in s1["parts"]] == want
+        else:
+            assert "parts" not in s1                   # "11" sat in the part citing the other statement

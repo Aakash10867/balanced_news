@@ -146,9 +146,18 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (`analysis.covered`), folded into the detailed line by `compose.fold_covered` (its outlets listed as
   sources, the detailed line's colour unchanged). Last net: `narrative._drop_repeats` drops a written
   sentence that an earlier one already says (its ids join the earlier one; a colour can only get
-  weaker). Both `match.py` (arrival: code "same" only) and `consolidate.py` use it. Disputes are a
-  separate, later step (frames still propose contradictions). Next step agreed with the owner: colour
-  part of a sentence (the well-supported part green, the extra detail its own colour).
+  weaker; a later sentence in the same paragraph that says all of an earlier one and more replaces it).
+  Both `match.py` (arrival: code "same" only) and `consolidate.py` use it. Disputes are a separate,
+  later step (frames still propose contradictions).
+- **A sentence in coloured parts (owner, Oct 7 2026).** A sentence joining statements of different
+  statuses is written in at most two "parts" (main fact first, split at a comma or "and"), each citing
+  only its own statements; the site colours each part, the source numbers follow the sentence. Code
+  checks every part on its own (`narrative._part_ok`: its numbers, names and most of its words from its
+  own statements; the parts together are the sentence and all its ids); any failure removes the parts
+  and the sentence has one colour, the weakest, as before. A covered short line that is BETTER supported
+  than the detailed line is not folded away: the detailed line gets `adds_to` and the writer is told to
+  write the two as one sentence in two parts. Parts mature like sentences (`editions.mature`); the
+  Hindi page has no parts (one colour per sentence); the said-chain rewrite skips sentences in parts.
 - **News first (Oct 6 2026):** the writer opens with what makes it news today (the newest or most
   consequential act or statement), never the setting; the headline is written AFTER the article from
   its opening paragraph (`compose._headline(lead=...)`), with the same checks.

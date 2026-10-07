@@ -302,6 +302,11 @@ def mature(store: Store, sid: int) -> bool:
                 if ranks and s.get("class") != CLASS[max(ranks)]:
                     s["class"] = CLASS[max(ranks)]
                     changed = True
+                for part in s.get("parts") or []:      # each part of a sentence matures on its own ids
+                    pr = [RANK.get(shade(by_id.get(x) or {}), 2) for x in part.get("ids") or [] if x in by_id]
+                    if pr and part.get("class") != CLASS[max(pr)]:
+                        part["class"] = CLASS[max(pr)]
+                        changed = True
         est = any(i.get("verdict") in ("corroborated", "confirmed") for i in by_id.values())
         if est and not p.get("has_established"):
             p["has_established"] = True      # the "nothing confirmed yet" note goes

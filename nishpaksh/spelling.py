@@ -91,3 +91,5 @@ def unify_article(payload: dict) -> None:
     for para in (payload.get("narrative") or {}).get("paragraphs") or []:
         for s in para:
             s["text"] = apply(s.get("text"), names)
+            for part in s.get("parts") or []:
+                part["text"] = apply(part.get("text"), names)

@@ -85,18 +85,28 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
         return
     title = rf"(?:(?:the\s+)?(?:[A-Z][a-z]+\s+)?(?:(?:{'|'.join(map(re.escape, TITLES))})\s+)+)?"
     seen: set[str] = set()
+
+    def shorten(t: str) -> str:
+        for full, short in names.items():
+            pat = re.compile(rf"{title}\b{re.escape(full)}\b")
+
+            def sub(m, full=full, short=short):
+                if full not in seen:
+                    seen.add(full)
+                    return m.group(0)
+                return short
+            t = pat.sub(sub, t)
+        return t
+
     for para in paragraphs:
         for sent in para:
-            t = sent["text"]
-            for full, short in names.items():
-                pat = re.compile(rf"{title}\b{re.escape(full)}\b")
-
-                def sub(m, full=full, short=short):
-                    if full not in seen:
-                        seen.add(full)
-                        return m.group(0)
-                    return short
-                t = pat.sub(sub, t)
+            if sent.get("parts"):          # a sentence in coloured parts: each part, in order
+                for k, part in enumerate(sent["parts"]):
+                    t = shorten(part["text"])
+                    part["text"] = t[:1].upper() + t[1:] if k == 0 else t
+                sent["text"] = " ".join(p["text"].strip() for p in sent["parts"])
+                continue
+            t = shorten(sent["text"])
             sent["text"] = t[:1].upper() + t[1:]
 
 
@@ -110,6 +120,8 @@ def vary_attribution(paragraphs: list[list[dict]]) -> None:
     """In a run of sentences by one speaker, the second and later carry the attribution at the end."""
     for para in paragraphs:
         for k in range(1, len(para)):
+            if para[k].get("parts"):
+                continue                  # moving words across parts would break their colours
             prev, cur = para[k - 1]["text"], para[k]["text"]
             m = CHAIN.match(cur.strip())
             if not m or not ATTRIB.search(prev) or ATTRIB.search(m.group("body")):

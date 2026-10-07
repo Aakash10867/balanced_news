@@ -30,7 +30,7 @@ import threading
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
-WRITER_VERSION = 9   # part of the cache key: pages written by an older writer are rewritten once
+WRITER_VERSION = 10   # part of the cache key: pages written by an older writer are rewritten once
 
 RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "single": 3,
         "disputed": 4, "false": 5}
@@ -118,6 +118,11 @@ that, the surname ("Bharadwaj") or a short form. Never use a surname alone for s
 introduced. Vary how you attribute: not "He said ... He added ... He stated ..." sentence after sentence.
 No headings, no bullet points.
 Never use any of these words: {banned}
+PARTS: when one sentence joins statements with DIFFERENT statuses (an ESTABLISHED fact and a detail
+only ONE OUTLET reports, say), write it in two parts, the main fact first, each part with only its own
+ids, split at a comma or "and": {{"parts": [{{"text": "Twelve crew members were injured in the
+attack,", "ids": [4]}}, {{"text": "11 of them Indian nationals.", "ids": [9]}}]}}. Every number and name
+in a part must come from that part's own statements. Otherwise write a sentence as one piece.
 Every sentence lists in "ids" every statement it uses. Use EVERY statement at least once, including
 those only one outlet reports: the reader gets everything known about the story, the past (CONTEXT
 background), the present and what happens next.
@@ -137,7 +142,8 @@ they are. The rest of the article is shown so you continue it: do not repeat wha
 do not introduce again a person it already introduced.
 Rules as before: only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
-disputes give both versions and whose they are; write as one author: never "according to reports",
+disputes give both versions and whose they are; a sentence joining statements of different statuses is
+written in two "parts", each with only its own ids (as before); write as one author: never "according to reports",
 "reportedly" or "one report said" (the page colours each sentence); no cause words unless a statement has them; nothing loaded: {banned}.
 
 The article so far:
@@ -151,7 +157,8 @@ Their statements (every one must be used):
 Failed sentences in these sections:
 {failed}
 
-Reply with JSON only: {{"sections": [{{"key": "...", "paragraphs": [[{{"text": "...", "ids": [3]}}]]}}]}}"""
+Reply with JSON only: {{"sections": [{{"key": "...", "paragraphs": [[{{"text": "...", "ids": [3]}},
+  {{"parts": [{{"text": "...,", "ids": [4]}}, {{"text": "...", "ids": [9]}}]}}]]}}]}}"""
 
 # the order on the page (owner, Oct 7 2026): the news in a line or two, then the context a reader with
 # no prior knowledge needs, then the story in full
@@ -340,6 +347,9 @@ def _statement_line(i: dict) -> str:
         line += " | denied" + (f" by: {', '.join(deniers)}" if deniers else " in some reports")
     if i["verdict"] == "false" and i.get("check"):
         line += f" | evidence: {'; '.join(i['check'].get('reasons') or [])}"
+    if i.get("adds_to"):
+        line += (f" | says all of #{i['adds_to']} and more: write the two as ONE sentence in two parts, "
+                 f"#{i['adds_to']}'s fact first, then what this adds")
     when = english_when(i.get("time") or {})
     if when:
         line += f" | when: {when}"
@@ -574,6 +584,88 @@ def _partners(i: dict) -> set[int]:
             if isinstance(x, int) and x >= 0}
 
 
+# ------------------------------------------------------------------ parts of a sentence (owner, Oct 7 2026)
+# A sentence that joins a well-supported fact and a detail fewer outlets report is written in two
+# PARTS, each citing its own statements, so the site can colour the main fact green and the detail
+# its own colour. Code checks every part on its own: its numbers, names and words must come from its
+# own statements. A part that fails takes the parts away, and the sentence has one colour, the
+# weakest, as before: the worst case is the old page, never a wrong green.
+MAX_PARTS = 2
+
+
+def _join_parts(parts: list[dict]) -> str:
+    return re.sub(r"\s+", " ", " ".join(str(p.get("text") or "").strip() for p in parts)).strip()
+
+
+def _from_parts(sent):
+    """A sentence given as parts: its text is the parts joined, its ids all of theirs."""
+    if not isinstance(sent, dict) or not isinstance(sent.get("parts"), list) or not sent["parts"]:
+        return sent
+    parts = [p for p in sent["parts"] if isinstance(p, dict) and str(p.get("text") or "").strip()]
+    if not parts:
+        return sent
+    out = dict(sent)
+    out["text"] = _join_parts(parts)
+    if not out.get("ids"):
+        out["ids"] = [x for p in parts for x in (p.get("ids") or [])]
+    out["parts"] = parts
+    return out
+
+
+def _part_ok(part: dict, ids: list[int], by_id: dict) -> bool:
+    from .relate import Profile
+    src = " ".join(by_id[i]["text"] + " " + str(by_id[i].get("speaker") or "") + " "
+                   + str(((by_id[i].get("time") or {}).get("when_text")) or "") for i in ids)
+    text = str(part.get("text") or "")
+    if not _numbers(text) <= _numbers(src):
+        return False
+    pt, ps = Profile(text), Profile(src)
+    if not pt.names <= ps.names | ps.roots:
+        return False
+    own = pt.roots - pt.names
+    return not own or len(own & (ps.roots | ps.names)) >= 0.5 * len(own)
+
+
+def _with_parts(out: dict, drafted: dict, by_id: dict) -> dict:
+    parts = drafted.get("parts") if isinstance(drafted, dict) else None
+    if not parts or not (2 <= len(parts) <= MAX_PARTS):
+        return out
+    checked = []
+    for part in parts:
+        pid = []
+        for x in part.get("ids") or []:
+            m = re.search(r"-?\d+", str(x))
+            if m and int(m.group(0)) in out["ids"]:
+                pid.append(int(m.group(0)))
+        if not pid or not _part_ok(part, pid, by_id):
+            return out
+        checked.append({"text": str(part["text"]).strip(), "ids": list(dict.fromkeys(pid))})
+    norm = lambda t: re.sub(r"\W+", " ", t).strip().lower()  # noqa: E731
+    if {x for p in checked for x in p["ids"]} != set(out["ids"]) or norm(_join_parts(checked)) != norm(out["text"]):
+        return out
+    out["parts"] = checked
+    return out
+
+
+def map_text(sent: dict, fn, inner=None) -> None:
+    """Change a sentence's words, part by part when it has parts (the joined text follows). `inner` is
+    used for the parts after the first, when the change differs mid-sentence (no capital letter)."""
+    if sent.get("parts"):
+        for k, p in enumerate(sent["parts"]):
+            p["text"] = (fn if k == 0 or inner is None else inner)(p["text"])
+        sent["text"] = _join_parts(sent["parts"])
+    else:
+        sent["text"] = fn(sent["text"])
+
+
+def _one_hedge_inner(text: str) -> str:
+    """A hedge removed inside a sentence: no capital letter added."""
+    t = text
+    for pat, rep_ in PER_SENTENCE_HEDGE[1:]:
+        t = pat.sub(rep_, t)
+    return t.strip()
+
+
 def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool = True) -> tuple[list[list[dict]], list[dict], int]:
     """Validated sentences only. Sentences that depend on each other stand or fall together
     (Oct 2026: "Nestle India denied this" survived while the claim it denied was dropped):
@@ -585,7 +677,7 @@ def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool =
     flat: list[tuple[int, int, dict]] = []
     for p, para in enumerate(drafted):
         for k, sent in enumerate(para):
-            flat.append((p, k, sent))
+            flat.append((p, k, _from_parts(sent)))
     n = len(flat)
     leans_on: dict[int, int] = {}       # sentence -> the sentence before it that it depends on
 
@@ -631,7 +723,8 @@ def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool =
     kept: list[int] = []
     _TL.kept = kept          # which drafted paragraphs survived (their sections, for the headings)
     for p, para in enumerate(drafted):
-        out = [{"text": re.sub(r"\.{2,}$", ".", flat[i][2]["text"].strip()), "ids": ok_ids[i]}
+        out = [_with_parts({"text": re.sub(r"\.{2,}$", ".", flat[i][2]["text"].strip()), "ids": ok_ids[i]},
+                           flat[i][2], by_id)
                for i in range(n) if flat[i][0] == p and alive[i]]
         if out:
             kept.append(p)
@@ -739,7 +832,16 @@ def _drop_repeats(paragraphs: list, by_id: dict) -> tuple[list, list[int]]:
             host = next((s for s, ps in seen if relate(s["text"], x["text"], pa=ps, pb=p) in ("same", "a_covers_b")), None)
             if host is not None:
                 host["ids"] = list(dict.fromkeys(host["ids"] + x["ids"]))
+                host.pop("parts", None)     # which part the repeat belongs to is unknown: one colour
                 continue
+            # this sentence says all of an earlier one in the same paragraph, and more: the earlier,
+            # shorter one goes, its statements join this one (one colour, the weakest)
+            for y in [y for y in keep if not y.get("parts") and relate(y["text"], x["text"], pb=p) == "b_covers_a"
+                      and not any(by_id[i]["verdict"] == "disputed" or by_id[i].get("conflicts_with") for i in y["ids"])]:
+                keep.remove(y)
+                seen[:] = [(s_, ps_) for s_, ps_ in seen if s_ is not y]
+                x["ids"] = list(dict.fromkeys(y["ids"] + x["ids"]))
+                x.pop("parts", None)
             seen.append((x, p))
             keep.append(x)
         if keep:
@@ -756,7 +858,7 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
         for x in para:
             # a dispute keeps "some reports say 40, others 50": that is whose each version is
             if not any(by_id[i]["verdict"] == "disputed" or by_id[i].get("conflicts_with") for i in x["ids"]):
-                x["text"] = _one_hedge(x["text"])
+                map_text(x, _one_hedge, _one_hedge_inner)
     paragraphs, kept = _drop_repeats(paragraphs, by_id)
     if meta.get("section_keys"):
         meta = dict(meta, section_keys=[meta["section_keys"][k] for k in kept if k < len(meta["section_keys"])])
@@ -769,6 +871,11 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
         numbering.setdefault(s["url"], len(numbering) + 1)
     for sent in [x for para in paragraphs for x in para] + also:
         sent["class"] = CLASS[max(RANK.get(shade(by_id[x]), 2) for x in sent["ids"])]
+        if sent.get("parts"):
+            for part in sent["parts"]:
+                part["class"] = CLASS[max(RANK.get(shade(by_id[x]), 2) for x in part["ids"])]
+            if len({part["class"] for part in sent["parts"]}) < 2:
+                sent.pop("parts")     # one colour anyway: no parts needed
         sent["sources"] = sorted({numbering[s["url"]] for x in sent["ids"] for s in by_id[x]["sources"]})
     src_meta = {s["url"]: s for s in payload["sources"]}
     source_list = [{"n": n, "url": url, "outlet": src_meta.get(url, {}).get("outlet", ""),
