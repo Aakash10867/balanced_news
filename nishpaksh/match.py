@@ -16,6 +16,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from .config import SETTINGS
 from .db import Store, canonical, claims, delete, select, update
+from .relate import relate
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -148,6 +149,58 @@ def same_facts(router: Router | None, pairs: list[tuple[str, str]]) -> list[bool
     again = [i for i, ok in enumerate(first) if ok]
     for i, ok in zip(again, ask([(pairs[i][1], pairs[i][0]) for i in again])):
         out[i] = ok
+    return out
+
+
+COVER_PROMPT = """Each numbered line has two sentences from news reports: A (longer) and B (shorter).
+Question: does A say everything that B says? A may say more.
+
+"yes" - every fact in B is also in A, perhaps in other words. Example: A "12 crew members, including 11
+        Indians, were injured in the attack" and B "12 crew members were injured in the incident" -> yes.
+"no"  - B says something A does not, or says it differently. Example: A "12 crew members were injured in
+        the attack" and B "12 crew members were killed" -> no (injured is not killed). A "Police arrested
+        him in 2019 in another case" and B "Police arrested him" -> no (a different arrest).
+
+If you are not sure, answer "no".
+
+{pairs}
+
+Reply with JSON only: {{"results": [{{"n": 1, "answer": "yes"}}, {{"n": 2, "answer": "no"}}]}}"""
+
+
+def covers_facts(router: Router | None, pairs: list[tuple[str, str]]) -> list[bool]:
+    """(detailed, short) pairs: does the detailed line say everything the short one says? Asked twice,
+    the second time in reverse order of lines; only two "yes" answers count (simple models answer
+    by position and length as much as by meaning)."""
+    out = [False] * len(pairs)
+    if router is None or not pairs:
+        return out
+
+    def ask(idx: list[int]) -> dict[int, bool]:
+        got: dict[int, bool] = {}
+        for start in range(0, len(idx), SAME_BATCH):
+            chunk = idx[start:start + SAME_BATCH]
+            body = "\n".join(f'{k + 1}. A: "{pairs[i][0]}" | B: "{pairs[i][1]}"' for k, i in enumerate(chunk))
+            try:
+                res = router.call("light", COVER_PROMPT.format(pairs=body), json_out=True, max_output_tokens=400)
+            except QuotaExhausted:
+                break
+            except Exception as e:  # noqa: BLE001
+                log.warning("cover check failed: %s", str(e)[:200])
+                continue
+            for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
+                try:
+                    n = int(item["n"]) - 1
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if 0 <= n < len(chunk):
+                    got[chunk[n]] = str(item.get("answer") or "").strip().lower() == "yes"
+        return got
+
+    first = ask(list(range(len(pairs))))
+    again = ask([i for i in reversed(range(len(pairs))) if first.get(i)])
+    for i, ok in again.items():
+        out[i] = ok and first.get(i, False)
     return out
 
 
@@ -301,20 +354,25 @@ def match_story(store: Store, router: Router | None, story_id: int) -> None:
                 sims = cosine_similarity(v, rep_mat).ravel()
                 j = int(sims.argmax())
                 best, best_sim = rep_ids[j], float(sims[j])
-            # frames first: the same who / action / what with agreeing values is the same fact, however
-            # worded; the same question with different answers is the only way to a contradiction
+            # the same fact is decided on the WORDS (relate.py, Oct 7 2026): identical or plainly the same
+            # wording joins the statement; the frames no longer veto that (two readings labelled one
+            # sentence differently and it stayed two statements). Frames still propose contradictions.
             verdicts = {cid_: frame_compare(fr, f_, r["time"], t_) for cid_, (f_, t_) in frames_of.items()} if fr else {}
-            same = [cid_ for cid_, v_ in verdicts.items() if v_ == "same"]
+            texts_ = dict(reps)
+            same = [cid_ for cid_ in texts_ if relate(r["text"], texts_[cid_], r["time"], (frames_of.get(cid_) or (None, None))[1]) == "same"]
             if same:
                 cid = max(same, key=lambda x: float(sims[rep_ids.index(x)]) if sims is not None and x in rep_ids else 0.0)
-            elif best is not None and best_sim >= SETTINGS.claim_same_cosine and verdicts.get(best) in (None, "compatible"):
-                cid = best
             else:
                 cid = _create_canonical(store, story_id, r["kind"], r["text"], fr, r["time"])
                 frames_of[cid] = (fr, r["time"])
                 frame_conflicts += [(cid, x) for x, v_ in verdicts.items() if v_ == "conflict"]
-                if verdicts.get(best) in ("different", "unsure", "conflict"):
-                    best = None          # the frames have decided: no model question about this pair
+                if best is not None and relate(r["text"], texts_.get(best, "")) == "different" and verdicts.get(best) != "same":
+                    best = None          # plainly different words: no model question about this pair
+                # statements read with frames are compared by the story review (consolidate.py, one
+                # structure with code first and a model asked twice); the one-shot pair question is kept
+                # only for statements read before frames
+                if fr:
+                    best = None
                 if best is not None and best_sim >= SETTINGS.claim_candidate_cosine:
                     best_text = reps[rep_ids.index(best)][1]
                     queued.append((cid, best, r["text"], best_text))
@@ -341,11 +399,12 @@ def match_story(store: Store, router: Router | None, story_id: int) -> None:
                     x = alias[x]
                 return x
 
+            texts_by = {cid_: t for cid_, t in reps}
             for (cnew, cold, _, _), label in zip(queued, labels):
                 a, b = find(cnew), find(cold)
                 if a == b:
                     continue
-                if label == "same":
+                if label == "same" and relate(texts_by.get(a, ""), texts_by.get(b, "")) != "different":
                     _merge(store, a, b)
                     alias[a] = b
                 elif label == "contradict" and not (frames_of.get(a, (None,))[0] and frames_of.get(b, (None,))[0]):

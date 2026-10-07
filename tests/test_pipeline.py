@@ -1872,7 +1872,8 @@ def test_matching_uses_frames_before_wording(store):
     match_story(store, None, sid)
     cid = {r["text"]: r["canonical_id"] for r in store.rows(select(Cl.c.text, Cl.c.canonical_id))}
     conf = {r["id"]: r["conflicts"] for r in store.rows(select(canonical.c.id, canonical.c.conflicts))}
-    assert cid[rows[0][1]] == cid[rows[1][1]]                             # one fact, worded twice
+    # worded differently, the same fact is merged by the story review (relate.py + the twice-asked
+    # question), not on arrival from the frames' labels
     assert cid[rows[2][1]] != cid[rows[3][1]]
     assert conf[cid[rows[2][1]]] == [] and conf[cid[rows[3][1]]] == []   # two steps: no dispute
     assert conf[cid[rows[4][1]]] == [cid[rows[5][1]]]                     # 40 vs 50 dead: the dispute
@@ -2093,16 +2094,6 @@ def test_same_fact_in_other_words_is_asked_twice_and_merged_only_on_two_yeses():
     """Oct 7 2026, story 13809: "take charge" / "take over" frames made four outlets' one fact four
     one-outlet lines. Code picks the pairs, the model answers same/different twice (A/B swapped)."""
     from nishpaksh import match
-    from nishpaksh.frames import may_be_same
-    a = {"who": "Air Marshal Ashutosh Dixit", "action": "take charge", "what": "Chief of Air Staff", "value": ""}
-    b = {"who": "Ashutosh Dixit", "action": "take over", "what": "air chief marshal", "value": ""}
-    c = {"who": "Ashutosh Dixit", "action": "take charge", "what": "vice chief of the air staff", "value": "July 2026"}
-    d = {"who": "Amar Preet Singh", "action": "retire", "what": "Chief of Air Staff", "value": ""}
-    assert may_be_same(a, b) > 0 and may_be_same(a, c) > 0 and may_be_same(a, d) == 0
-    e = {"who": "Dixit", "action": "receive", "what": "Param Vishisht Seva Medal", "value": "2026"}
-    f = {"who": "Dixit", "action": "receive", "what": "Vishisht Seva Medal", "value": "2011-01-26"}
-    assert may_be_same(e, f) == 0                                  # two dates: never asked, never merged
-
     class Flip(FakeBackend):                   # says "same" the first time, "different" when swapped
         calls = 0
         def generate(self, model, prompt, json_mode, grounded):
@@ -2215,3 +2206,45 @@ def test_a_context_line_must_share_something_with_the_story():
                                                  "second most widely read Hindi newspaper in India."}
     p = {"timeline": [[core]], "undated": [], "established": [], "contested": [], "context": [bg1, bg2, junk]}
     assert drop_unrelated_context(p) == 1 and p["context"] == [bg1, bg2]
+
+
+
+def test_one_structure_decides_the_same_fact_on_the_words():
+    """Owner, Oct 7 2026 (story 13652): identical lines stayed two because two readings labelled them
+    differently; the words now decide, labels never veto; a detailed line covers a short one."""
+    from nishpaksh.relate import group, relate
+    T = {1: "11 of the 12 injured crew members are Indian nationals.",
+         2: "11 of the 12 injured crew members are Indian nationals.",
+         3: "12 crew members, including 11 Indian nationals, were injured in the attack.",
+         4: "Injured crew members were evacuated and are receiving medical treatment in Khasab, Oman.",
+         5: "Injured crew members were evacuated to Khasab, Oman, for medical treatment.",
+         6: "17 of the total 19 crew members are Indian nationals.",
+         7: "The ship had a total crew of 19, of whom 17 were Indian nationals."}
+    same, covered, ask, ask_cover = group(T)
+    assert (1, 2) in same and (4, 5) in same and covered.get(1) == 3 and (6, 7) in ask
+    assert relate("Police arrested Ravi Kumar.", "Police did not arrest Ravi Kumar.") == "different"
+    assert relate("12 crew members were injured.", "12 crew members were killed.") == "ask"     # never by code
+    # a detailed line that adds a year or "another" may be a different event: the model is asked
+    assert relate("Police arrested Ravi Kumar in 2019 in another case.", "Police arrested Ravi Kumar.") == "ask_a_covers_b"
+
+
+
+def test_the_written_article_never_says_the_same_thing_twice():
+    from nishpaksh.narrative import _drop_repeats
+    by = {i: {"verdict": "unverified", "conflicts_with": []} for i in (1, 2, 3, 4)}
+    paras = [[{"text": "12 crew members, including 11 Indian nationals, were injured in the attack.", "ids": [1]}],
+             [{"text": "11 of the 12 injured crew members are Indian nationals.", "ids": [2]}],
+             [{"text": "Injured crew members were evacuated to Khasab, Oman, for medical treatment.", "ids": [3]},
+              {"text": "Injured crew members were evacuated to Khasab, Oman, for medical treatment.", "ids": [4]}]]
+    out, kept = _drop_repeats(paras, by)
+    assert kept == [0, 2] and out[0][0]["ids"] == [1, 2] and len(out[1]) == 1 and out[1][0]["ids"] == [3, 4]
+
+
+def test_a_covered_line_is_folded_into_the_detailed_one_without_lending_it_colour():
+    from nishpaksh.compose import fold_covered
+    big = {"id": 1, "verdict": "unverified", "sources": [{"url": "a"}], "text": "x"}
+    small = {"id": 2, "verdict": "corroborated", "sources": [{"url": "b"}, {"url": "c"}], "text": "y"}
+    p = {"timeline": [[big, small]], "undated": [], "established": [], "contested": [], "context": []}
+    assert fold_covered(p, {"2": 1}) == 1
+    assert p["timeline"] == [[big]] and [s["url"] for s in big["sources"]] == ["a", "b", "c"]
+    assert big["verdict"] == "unverified"

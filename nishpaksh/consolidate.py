@@ -66,7 +66,7 @@ Reply with JSON only:
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
 SAME_ASK_MAX = 30         # same-fact questions per consolidation, closest pairs first (the rest next time)
-CONSOLIDATE_VERSION = 6   # part of the cache key: stories are consolidated again when the task changes
+CONSOLIDATE_VERSION = 7   # part of the cache key: stories are consolidated again when the task changes
 
 NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -211,25 +211,38 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         for b in with_frames[i + 1:]:
             by_frame[(a, b) if a < b else (b, a)] = frame_compare(fr[a][0], fr[b][0], fr[a][1], fr[b][1])
     proposed = {p for p in proposed if p not in by_frame} | {p for p, v in by_frame.items() if v == "conflict"}
-    same_groups = [g for g in same_groups if not any(by_frame.get(tuple(sorted((x, y)))) in ("different", "conflict", "unsure")
-                                                     for i, x in enumerate(g) for y in g[i + 1:])]
-    same_groups += [list(p) for p, v in by_frame.items() if v == "same"]
-    # Frames worded differently ("take charge" / "take over") are not proof of two facts: code picks the
-    # pairs that may be one fact, a model answers one plain question twice (match.same_facts), and only
-    # "same" both times merges. Answers are kept per pair of texts.
-    from .frames import may_be_same
-    from .match import same_facts
+    # ONE structure decides the same fact (relate.py, owner Oct 7 2026): the words first, by code; a
+    # model asked twice only about the middle cases; the consolidation model's "same" groups and the
+    # frames' "same" are proposals, checked the same way. The frames no longer veto anything here.
+    from .match import covers_facts, same_facts
+    from .relate import Profile, group, numbers_close, relate, resolve_covered
     key = lambda p: hashlib.sha256(json.dumps([by_id[p[0]]["text"], by_id[p[1]]["text"]]).encode()).hexdigest()[:16]  # noqa: E731
+    texts = {i: by_id[i]["text"] for i in by_id}
+    times = {i: fr[i][1] for i in by_id}
+    prof = {i: Profile(t) for i, t in texts.items()}
+    code_same, covered, ask_pairs, ask_cover = group(texts, times)
+    proposals = {tuple(sorted((x, y))) for g in same_groups for i, x in enumerate(g) for y in g[i + 1:] if x != y}
+    proposals |= {p for p, v in by_frame.items() if v == "same"}
+    code_same_set = {tuple(sorted(p)) for p in code_same}
+    for a, b in sorted(proposals - code_same_set):
+        r = relate(texts[a], texts[b], times[a], times[b], prof[a], prof[b])
+        # a model or the frames said "same": checked by the twice-asked question, unless the words plainly
+        # differ (one negated, or numbers that do not agree even after rounding)
+        if r in ("same", "ask") or (prof[a].neg == prof[b].neg and numbers_close(prof[a], prof[b])):
+            ask_pairs.append((a, b))
+    ask_pairs = list(dict.fromkeys(tuple(sorted(p)) for p in ask_pairs if tuple(sorted(p)) not in code_same_set))
     same_checks = dict(analysis.get("same_checks") or {})
-    in_groups = {tuple(sorted((x, y))) for g in same_groups for i, x in enumerate(g) for y in g[i + 1:]}
-    cand = sorted(((may_be_same(fr[a][0], fr[b][0], fr[a][1], fr[b][1]), (a, b)) for (a, b), v in by_frame.items()
-                   if v in ("different", "compatible") and (a, b) not in in_groups), reverse=True)
-    cand = [p for score, p in cand if score > 0][:SAME_ASK_MAX]
-    ask_same = [p for p in cand if key(p) not in same_checks]
-    for p, ok in zip(ask_same, same_facts(router, [(by_id[a]["text"], by_id[b]["text"]) for a, b in ask_same])):
+    todo = [p for p in ask_pairs if key(p) not in same_checks][:SAME_ASK_MAX]
+    for p, ok in zip(todo, same_facts(router, [(texts[a], texts[b]) for a, b in todo])):
         same_checks[key(p)] = ok
-    model_same = {p for p in cand if same_checks.get(key(p))}
-    same_groups += [list(p) for p in model_same]
+    ckey = lambda p: "c" + key(p)  # noqa: E731
+    todo = [p for p in ask_cover if ckey(p) not in same_checks][:SAME_ASK_MAX]
+    for p, ok in zip(todo, covers_facts(router, [(texts[a], texts[b]) for a, b in todo])):
+        same_checks[ckey(p)] = ok
+    for big, small in ask_cover:
+        if same_checks.get(ckey((big, small))):
+            covered.setdefault(small, big)
+    same_groups = [list(p) for p in code_same_set] + [list(p) for p in ask_pairs if same_checks.get(key(p))]
     proposed -= response_pairs
     # pairs without frames on both sides (read before frames) are asked "can both be true?"
     checks = dict(analysis.get("conflict_checks") or {})     # answers kept per pair of texts
@@ -239,7 +252,6 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     as_check = {"conflict": "cannot_both_be_true", "unsure": "unsure", "same": "both_true", "compatible": "both_true",
                 "different": "both_true"}
     verdict = {p: as_check[by_frame[p]] if p in by_frame else checks.get(key(p), "unsure") for p in proposed}
-    frame_same = {p for p, v in by_frame.items() if v == "same"}
     conflicts = {p for p, v in verdict.items() if v == "cannot_both_be_true"}
     doubtful = {x for p, v in verdict.items() if v == "unsure" for x in p}
     for pair in earlier - conflicts:
@@ -247,6 +259,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     keep_apart = {p for p, v in verdict.items() if v != "both_true"}
     merged = 0
     gone: set[int] = set()
+    merged_into: dict[int, int] = {}
     for g in same_groups:
         g = [x for x in g if x not in gone]
         if len(g) < 2:
@@ -255,11 +268,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         for src in g:
             if src == dst or tuple(sorted((src, dst))) in keep_apart:
                 continue
-            a, b = by_id[src]["text"], by_id[dst]["text"]
-            if (tuple(sorted((src, dst))) not in frame_same and NUM.findall(a) and NUM.findall(b)
-                    and set(NUM.findall(a)) != set(NUM.findall(b))):
-                continue     # one adds a number the other lacks: kept as two statements, not a dispute
             _merge(store, src, dst)
+            merged_into[src] = dst
             gone.add(src)
             merged += 1
     added = 0
@@ -325,6 +335,10 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                     roles=roles, related_event=related, responses=[list(p) for p in all_resp],
                     name_conflicts=name_conf, conflict_checks=dict(list(checks.items())[-400:]),
                     same_checks=dict(list(same_checks.items())[-400:]),
+                    # a line another line says in full, with more: not written on its own (relate.py)
+                    covered={str(k): v for k, v in resolve_covered(
+                        {merged_into.get(k, k): merged_into.get(v, v) for k, v in covered.items()}).items()
+                        if alive(k) and alive(v)},
                     # a possible contradiction the check could not settle: not shown as a dispute, but
                     # neither statement can be established while it stands (verify.base_verdicts)
                     doubtful_conflicts=sorted(x for x in doubtful if alive(x)))

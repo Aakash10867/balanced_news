@@ -125,15 +125,30 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   same slot (who, action, what) + agreeing values = one fact (merged); same slot + incompatible values
   or negation = contradiction (the ONLY way to one between statements with frames); a missing value =
   compatible (never a dispute, wording decides merging); same slot at different times = unsure;
-  anything else = different. **Same fact, other words (Oct 7 2026):** frames worded differently ("take
-  charge" / "take over") no longer veto a merge: code picks close pairs (`frames.may_be_same`: same who,
-  no disagreeing value or date, objects alike), `match.same_facts` asks "same single fact?" twice with
-  A/B swapped in batches of 6, and only two "same" answers merge (cached in `analysis.same_checks`, 30
-  pairs per consolidation). A day-precision date covers the whole day (`_times_apart`). Dates are read as dates ("6 December 1986" = "1986-12-06"; a year agrees
+  anything else = different. Frames now only PROPOSE: they no longer decide or veto whether two lines
+  are the same fact (see "One structure for the same fact"). A day-precision date covers the whole day (`_times_apart`). Dates are read as dates ("6 December 1986" = "1986-12-06"; a year agrees
   with a full date in it), and a dispute needs the same object: a capitalised word in one name the other
   lacks makes two things ("Param Vishisht Seva Medal" / "Vishisht Seva Medal": different, Oct 7 2026). Model "contradict"/"same" judgements count only for statements read
   before frames (those still go through `check_conflicts`). Stored in `claims.rel.frame` and
   `canonical.rel.frame`.
+- **One structure for the same fact (owner, Oct 7 2026; `relate.py`).** Replaced the veto chain
+  (frames vetoing identical text, `may_be_same`, the NUM veto, frame auto-merges): two identical lines
+  from two outlets stayed two statements because two readings labelled them differently. The words
+  outrank the labels. `relate.relate(a, b)` decides by code on numbers (as numbers, ordinals, "eleven"),
+  names (capitalised words; the names both lines share are left out of the word overlap) and root words:
+  same / a covers b / ask / ask-covers / different; one negated and one not, or different times, is
+  always different. Code merges only "same"; "ask" goes to `match.same_facts` (asked twice, A/B swapped)
+  and "ask-covers" to `match.covers_facts` (asked twice, reversed order); proposals from the
+  consolidation model and the frames go through the same question. A detailed line COVERS a short one
+  when it has every number, name and nearly every word of it (code alone only when it adds no number
+  and no word like "another", "earlier"; else the model is asked): the short line is not merged (its
+  outlets would lend support to details they never reported) but kept as covered
+  (`analysis.covered`), folded into the detailed line by `compose.fold_covered` (its outlets listed as
+  sources, the detailed line's colour unchanged). Last net: `narrative._drop_repeats` drops a written
+  sentence that an earlier one already says (its ids join the earlier one; a colour can only get
+  weaker). Both `match.py` (arrival: code "same" only) and `consolidate.py` use it. Disputes are a
+  separate, later step (frames still propose contradictions). Next step agreed with the owner: colour
+  part of a sentence (the well-supported part green, the extra detail its own colour).
 - **News first (Oct 6 2026):** the writer opens with what makes it news today (the newest or most
   consequential act or statement), never the setting; the headline is written AFTER the article from
   its opening paragraph (`compose._headline(lead=...)`), with the same checks.

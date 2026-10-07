@@ -721,6 +721,33 @@ def _one_hedge(text: str) -> str:
     return t[:1].upper() + t[1:] if t else text
 
 
+def _drop_repeats(paragraphs: list, by_id: dict) -> tuple[list, list[int]]:
+    """The last net against repetition, by code on the written article (owner, Oct 7 2026): a sentence
+    that says nothing an earlier sentence has not said (relate.py: the same, or covered by it) is
+    dropped, and its statements join the earlier sentence. Its colour can only get weaker (a sentence
+    takes the weakest colour of its statements), never stronger. Disputes are never touched."""
+    from .relate import Profile, relate
+    seen: list[tuple[dict, Profile]] = []
+    out, kept = [], []
+    for n, para in enumerate(paragraphs):
+        keep = []
+        for x in para:
+            if any(by_id[i]["verdict"] == "disputed" or by_id[i].get("conflicts_with") for i in x["ids"]):
+                keep.append(x)
+                continue
+            p = Profile(x["text"])
+            host = next((s for s, ps in seen if relate(s["text"], x["text"], pa=ps, pb=p) in ("same", "a_covers_b")), None)
+            if host is not None:
+                host["ids"] = list(dict.fromkeys(host["ids"] + x["ids"]))
+                continue
+            seen.append((x, p))
+            keep.append(x)
+        if keep:
+            out.append(keep)
+            kept.append(n)
+    return out, kept
+
+
 def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict) -> dict:
     """Hedges, source numbers and colours for the essay and the statements it does not carry."""
     # names: capitalised words the statements use mid-sentence (so "Police" at a sentence start is not one)
@@ -730,6 +757,9 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
             # a dispute keeps "some reports say 40, others 50": that is whose each version is
             if not any(by_id[i]["verdict"] == "disputed" or by_id[i].get("conflicts_with") for i in x["ids"]):
                 x["text"] = _one_hedge(x["text"])
+    paragraphs, kept = _drop_repeats(paragraphs, by_id)
+    if meta.get("section_keys"):
+        meta = dict(meta, section_keys=[meta["section_keys"][k] for k in kept if k < len(meta["section_keys"])])
     numbering: dict[str, int] = {}
     for sent in [x for para in paragraphs for x in para] + also:
         for x in sent["ids"]:

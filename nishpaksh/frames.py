@@ -210,33 +210,3 @@ def _times_apart(x: dict | None, y: dict | None) -> bool:
         return cut(x.get("end") or x["start"]) < cut(y["start"]) or cut(y.get("end") or y["start"]) < cut(x["start"])
     except TypeError:
         return False
-
-
-def may_be_same(a: dict | None, b: dict | None, when_a: dict | None = None, when_b: dict | None = None) -> float:
-    """Worth asking "same fact in other words?" (match.same_facts): the frames' wording differs ("take
-    charge" / "take over", "Chief of Air Staff" / "air chief marshal"; the reading model words frames
-    differently each time), but nothing in them says two facts. 0 = do not ask; higher = closer."""
-    if not a or not b or a.get("negated") != b.get("negated") or _times_apart(when_a, when_b):
-        return 0.0
-    who = _overlap(words(a.get("who")), words(b.get("who")))
-    if who < 0.5 or values_agree(a, b) is False:
-        return 0.0
-    # a date in one statement's value and the other's own date must not differ ("took charge as vice
-    # chief in July" / "takes charge as chief on 31 October")
-    da = date_of(a.get("value")) or _day(when_a)
-    db = date_of(b.get("value")) or _day(when_b)
-    if da and db and not _dates_agree(da, db):
-        return 0.0
-    wa, wb = words(a.get("what")), words(b.get("what"))
-    what = len(wa & wb) / len(wa | wb) if wa and wb else 0.0
-    same_value = values_agree(a, b) is True
-    same_action = action_key(a.get("action")) == action_key(b.get("action"))
-    # only close pairs are asked: a simple model asked many loose pairs says "same" too often
-    if what < 0.5 and not (same_value and (what > 0 or same_action)):
-        return 0.0
-    return who + what + (2 if same_value else 0) + (1 if same_action else 0)
-
-
-def _day(when: dict | None) -> tuple | None:
-    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", str((when or {}).get("start") or ""))
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m and (when or {}).get("precision") in (None, "day", "part_of_day", "hour") else None

@@ -622,6 +622,29 @@ def drop_unrelated_context(payload: dict) -> int:
     return dropped
 
 
+def fold_covered(payload: dict, covered: dict) -> int:
+    """A line another line says in full, with more (relate.py), is not written on its own: its outlets
+    are listed as sources of the detailed line, which keeps its own colour (it never borrows their
+    support, so its extra details cannot turn green on another outlet's report)."""
+    items = {i["id"]: i for i in _all_items_of(payload) + list(payload.get("context") or [])}
+    gone = set()
+    for small, big in covered.items():
+        small, big = int(small), int(big)
+        if small in items and big in items and small != big and big not in gone:
+            have = {s["url"] for s in items[big].get("sources") or []}
+            items[big]["sources"] = list(items[big].get("sources") or []) + [
+                s for s in items[small].get("sources") or [] if s["url"] not in have]
+            items[big].setdefault("covers_ids", []).append(small)
+            gone.add(small)
+    if gone:
+        for key in ("undated", "established", "contested", "context"):
+            payload[key] = [i for i in payload.get(key) or [] if i["id"] not in gone]
+        payload["timeline"] = [t for t in ([i for i in tier if i["id"] not in gone]
+                                           for tier in payload.get("timeline") or []) if t]
+        log.info("%d lines folded into the more detailed lines that say them", len(gone))
+    return len(gone)
+
+
 def _all_items_of(payload: dict) -> list[dict]:
     out, seen = [], set()
     for tier in payload.get("timeline") or []:
@@ -663,6 +686,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     from .spelling import unify_article, unify_payload
     drop_outlet_self_talk(payload)
     drop_unrelated_context(payload)
+    fold_covered(payload, ((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {})
+                           .get("analysis") or {}).get("covered") or {})
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     parents = [x["story_id"] for x in payload.get("parents") or []]
     if parents and not follow_up_ok(store, router, story_id, payload, parents):
