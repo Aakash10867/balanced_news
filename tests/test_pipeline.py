@@ -2201,3 +2201,17 @@ def test_a_page_about_its_own_publisher_is_not_the_story():
     p = {"sources": [{"outlet": "Hindustan"}], "undated": [own, news], "established": [quoted], "contested": [],
          "context": [], "timeline": []}
     assert drop_outlet_self_talk(p) == 1 and p["undated"] == [news] and p["established"] == [quoted]
+
+
+def test_a_context_line_must_share_something_with_the_story():
+    """Owner, Oct 7 2026: "Hindustan was established in 1936 ..." sat in the Background of a story on
+    stubble burning; background that shares no specific word with the story's event is not its context."""
+    from nishpaksh.compose import drop_unrelated_context
+    core = {"id": 1, "role": "core", "text": "The Commission for Air Quality Management deployed flying squads in "
+                                              "34 districts of Punjab and Haryana to curb stubble burning."}
+    bg1 = {"id": 2, "role": "background", "text": "Stubble burning is a practice where farmers set fire to crop residue."}
+    bg2 = {"id": 3, "role": "background", "text": "Air pollution in Delhi-NCR in winter is attributed to stubble burning and vehicles."}
+    junk = {"id": 4, "role": "background", "text": "Hindustan was established in 1936 by Madan Mohan Malaviya and is the "
+                                                 "second most widely read Hindi newspaper in India."}
+    p = {"timeline": [[core]], "undated": [], "established": [], "contested": [], "context": [bg1, bg2, junk]}
+    assert drop_unrelated_context(p) == 1 and p["context"] == [bg1, bg2]

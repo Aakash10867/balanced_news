@@ -592,6 +592,45 @@ def drop_outlet_self_talk(payload: dict) -> int:
     return dropped
 
 
+GENERIC = {"india", "indian", "government", "state", "states", "said", "says", "also", "year", "years", "time",
+           "people", "officials", "official", "report", "reports", "according", "country", "national", "today",
+           "week", "month", "first", "second", "third", "most", "more", "many", "several", "after", "before"}
+
+
+def drop_unrelated_context(payload: dict) -> int:
+    """A context line (background, related event, explanation, what next) must share a specific word or
+    name with the story's own event; one that shares none is not this story's context and is dropped by
+    code (owner, Oct 7 2026: "Hindustan was founded in 1936 ..." sat in the Background of a story on
+    stubble burning). Words are compared by their roots; common words do not count as a link."""
+    from .frames import words as roots
+    from .narrative import _subject_words, is_core
+    core = [i for i in _all_items_of(payload) if is_core(i)]
+    if not core:
+        return 0
+    link = set()
+    for i in core:
+        link |= roots(" ".join(_subject_words(i.get("text") or "") - GENERIC))
+    keep, dropped = [], 0
+    for i in payload.get("context") or []:
+        mine = roots(" ".join(_subject_words(i.get("text") or "") - GENERIC))
+        if mine & link:
+            keep.append(i)
+        else:
+            dropped += 1
+            log.info("context line dropped, nothing in common with the story: %s", (i.get("text") or "")[:100])
+    payload["context"] = keep
+    return dropped
+
+
+def _all_items_of(payload: dict) -> list[dict]:
+    out, seen = [], set()
+    for tier in payload.get("timeline") or []:
+        out += tier
+    for k in ("undated", "established", "contested"):
+        out += payload.get(k) or []
+    return [i for i in out if not (id(i) in seen or seen.add(id(i)))]
+
+
 # why the last publish_story call ended: the desk counts a try only when the writer was asked
 # (Oct 7 2026: follow-up candidates refused before writing used up all five tries, two runs in a row)
 LAST_OUTCOME: dict[str, str] = {}
@@ -623,6 +662,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     # lead below, and if that fails too the finished article waits as a kept draft
     from .spelling import unify_article, unify_payload
     drop_outlet_self_talk(payload)
+    drop_unrelated_context(payload)
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     parents = [x["story_id"] for x in payload.get("parents") or []]
     if parents and not follow_up_ok(store, router, story_id, payload, parents):

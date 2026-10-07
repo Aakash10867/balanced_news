@@ -266,7 +266,9 @@ Hindi. At most 2 per clock hour.
   (`compose.drop_outlet_self_talk`) and extraction is told to ignore it; (3) every article opens with a
   news lead: a missing "news" section triggers the news fill, and failing that the first "What happened"
   paragraph becomes the lead; (4) "By the numbers" takes figures only, never years or dates
-  (`narrative._is_figure`).
+  (`narrative._is_figure`); (5) a context line (background, related, explained, next) must share a
+  specific word or name, by root, with the story's own event, or code drops it
+  (`compose.drop_unrelated_context`; common words like India, government, said do not count).
 - One spelling per name in an article by code (`spelling.py`, Oct 7 2026: Machhar / Machar / Matchar /
   Machchhar on one page): capitalised words with the same key (tch/chh = ch, ee = i, oo = u, doubled letters
   single) take the spelling most reports use; applied to statements before writing and to the article and
