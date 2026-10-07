@@ -204,7 +204,8 @@ def assign_sections(items: list[dict], background: list[dict] | None = None) -> 
     # subject is (owner, Oct 7 2026: no separate section for disputes; purple lines stay with their
     # subject too, the colour says they are unconfirmed)
     for i in items:
-        for x in (i.get("responded_by") or []) + (i.get("conflicts_with") or []):
+        for x in (i.get("responded_by") or []) + (i.get("conflicts_with") or []) + \
+                ([i["updated_by"]] if i.get("updated_by") else []):
             if x in out and i["id"] in out:
                 out[x] = out[i["id"]]
     for b in background or []:
@@ -347,6 +348,11 @@ def _statement_line(i: dict) -> str:
         line += " | denied" + (f" by: {', '.join(deniers)}" if deniers else " in some reports")
     if i["verdict"] == "false" and i.get("check"):
         line += f" | evidence: {'; '.join(i['check'].get('reasons') or [])}"
+    if i.get("update_of"):
+        line += (f" | the NEWEST figure (later reports than #{i['update_of']}): write it as the latest and "
+                 f"mention #{i['update_of']} as the earlier figure, in the same sentence or the next")
+    if i.get("updated_by"):
+        line += f" | an EARLIER figure, since updated by #{i['updated_by']}: write it with #{i['updated_by']}"
     if i.get("adds_to"):
         line += (f" | says all of #{i['adds_to']} and more: write the two as ONE sentence in two parts, "
                  f"#{i['adds_to']}'s fact first, then what this adds")
@@ -857,7 +863,8 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
     for para in paragraphs:
         for x in para:
             # a dispute keeps "some reports say 40, others 50": that is whose each version is
-            if not any(by_id[i]["verdict"] == "disputed" or by_id[i].get("conflicts_with") for i in x["ids"]):
+            if not any(by_id[i]["verdict"] == "disputed" or by_id[i].get("conflicts_with") or by_id[i].get("update_of")
+                       or by_id[i].get("updated_by") for i in x["ids"]):
                 map_text(x, _one_hedge, _one_hedge_inner)
     paragraphs, kept = _drop_repeats(paragraphs, by_id)
     if meta.get("section_keys"):

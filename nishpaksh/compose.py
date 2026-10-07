@@ -625,6 +625,21 @@ def drop_unrelated_context(payload: dict) -> int:
     return dropped
 
 
+def link_updates(payload: dict, updates: dict) -> int:
+    """An older figure and the newer one that replaced it (disputes.py: every report of the newer one
+    came clearly later): both are written, together, the newest first ("the toll rose to 50; earlier
+    reports put it at 40"); neither is a dispute, each keeps its own colour (owner, Oct 7 2026)."""
+    items = {i["id"]: i for i in _all_items_of(payload) + list(payload.get("context") or [])}
+    n = 0
+    for old, new in updates.items():
+        old, new = int(old), int(new)
+        if old in items and new in items:
+            items[new]["update_of"] = old
+            items[old]["updated_by"] = new
+            n += 1
+    return n
+
+
 def fold_covered(payload: dict, covered: dict) -> int:
     """A line another line says in full, with more (relate.py), is not written on its own: its outlets
     are listed as sources of the detailed line, which keeps its own colour (it never borrows their
@@ -696,8 +711,9 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     from .spelling import unify_article, unify_payload
     drop_outlet_self_talk(payload)
     drop_unrelated_context(payload)
-    fold_covered(payload, ((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {})
-                           .get("analysis") or {}).get("covered") or {})
+    an_ = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
+    fold_covered(payload, an_.get("covered") or {})
+    link_updates(payload, an_.get("updates") or {})
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     parents = [x["story_id"] for x in payload.get("parents") or []]
     if parents and not follow_up_ok(store, router, story_id, payload, parents):

@@ -66,9 +66,8 @@ Reply with JSON only:
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
 SAME_ASK_MAX = 30         # same-fact questions per consolidation, closest pairs first (the rest next time)
-CONSOLIDATE_VERSION = 7   # part of the cache key: stories are consolidated again when the task changes
+CONSOLIDATE_VERSION = 8   # part of the cache key: stories are consolidated again when the task changes
 
-NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
 
 def _hash(rows: list[dict]) -> str:
@@ -174,34 +173,21 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                 out.append(x)
         return out
 
-    from .match import _remove_conflict, check_conflicts, real_difference
+    from .match import _remove_conflict
     responses = [tuple(p) for p in (ids(p) for p in data.get("responses") or []) if len(p) == 2 and p[0] != p[1]]
     response_pairs = {tuple(sorted(p)) for p in responses}
-    # Proposed contradictions, from every source: the model naming two values, contradictions marked
-    # earlier (re-judged with the whole story in view, Oct 2026), and statements the model calls the
-    # same fact whose numbers differ. A difference is not yet a contradiction. Between statements with
-    # frames, code decides (below); otherwise one question, can both be true (match.check_conflicts)?
-    # Only "cannot both be true" is kept. A party's answer to a claim is never a contradiction.
+    # Possible disputes, from every source, are only PROPOSALS: the consolidation model's "conflicts",
+    # disputes marked earlier, and the frames. One gate decides them all (disputes.py, owner Oct 7 2026).
     proposed: set[tuple[int, int]] = set()
     for c in data.get("conflicts") or []:
-        if not isinstance(c, list) or len(c) < 2:
-            continue
-        pair = ids(c[:2])
-        if len(pair) == 2 and pair[0] != pair[1] and real_difference(
-                by_id[pair[0]]["text"], by_id[pair[1]]["text"], c[2] if len(c) > 2 else None):
-            proposed.add(tuple(sorted(pair)))
+        if isinstance(c, list) and len(c) >= 2:
+            pair = ids(c[:2])
+            if len(pair) == 2 and pair[0] != pair[1]:
+                proposed.add(tuple(sorted(pair)))
     earlier = {tuple(sorted((r["id"], o))) for r in rows for o in r["conflicts"] or [] if o in by_id}
     proposed |= earlier
     same_groups = [[x for x in dict.fromkeys(ids(g))] for g in data.get("same") or []]
-    for g in same_groups:
-        for i, a in enumerate(g):
-            for b in g[i + 1:]:
-                ta, tb = by_id[a]["text"], by_id[b]["text"]
-                if NUM.findall(ta) and NUM.findall(tb) and set(NUM.findall(ta)) != set(NUM.findall(tb)):
-                    proposed.add(tuple(sorted((a, b))))
-    # Frames (frames.py) decide every pair they cover, by code: the same who / action / what with
-    # incompatible values is a contradiction (the only way to one), with agreeing values one fact.
-    # The model's own "conflicts" and "same" count only between statements read before frames.
+    # the frames only propose (same facts and disputes); they decide nothing
     from .frames import compare as frame_compare
     from .match import frame_of
     fr = {r["id"]: frame_of(r) for r in rows}
@@ -210,7 +196,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     for i, a in enumerate(with_frames):
         for b in with_frames[i + 1:]:
             by_frame[(a, b) if a < b else (b, a)] = frame_compare(fr[a][0], fr[b][0], fr[a][1], fr[b][1])
-    proposed = {p for p in proposed if p not in by_frame} | {p for p, v in by_frame.items() if v == "conflict"}
+    proposed |= {p for p, v in by_frame.items() if v == "conflict"}
     # ONE structure decides the same fact (relate.py, owner Oct 7 2026): the words first, by code; a
     # model asked twice only about the middle cases; the consolidation model's "same" groups and the
     # frames' "same" are proposals, checked the same way. The frames no longer veto anything here.
@@ -243,20 +229,21 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         if same_checks.get(ckey((big, small))):
             covered.setdefault(small, big)
     same_groups = [list(p) for p in code_same_set] + [list(p) for p in ask_pairs if same_checks.get(key(p))]
-    proposed -= response_pairs
-    # pairs without frames on both sides (read before frames) are asked "can both be true?"
-    checks = dict(analysis.get("conflict_checks") or {})     # answers kept per pair of texts
-    ask = sorted(p for p in proposed if p not in by_frame and key(p) not in checks)
-    for p, ans in zip(ask, check_conflicts(router, [(by_id[a]["text"], by_id[b]["text"]) for a, b in ask])):
-        checks[key(p)] = ans
-    as_check = {"conflict": "cannot_both_be_true", "unsure": "unsure", "same": "both_true", "compatible": "both_true",
-                "different": "both_true"}
-    verdict = {p: as_check[by_frame[p]] if p in by_frame else checks.get(key(p), "unsure") for p in proposed}
-    conflicts = {p for p, v in verdict.items() if v == "cannot_both_be_true"}
-    doubtful = {x for p, v in verdict.items() if v == "unsure" for x in p}
+    # disputes: one gate (code finds the same question with a different answer; figures that changed
+    # over time are updates; the model asked "can both be true?" twice decides the rest)
+    from .disputes import judge
+    rtimes: dict[int, list] = {}
+    for r in store.rows(select(claims.c.canonical_id, articles.c.published_at, articles.c.fetched_at)
+                        .select_from(claims.join(articles, articles.c.id == claims.c.article_id))
+                        .where(claims.c.story_id == story_id, claims.c.canonical_id.is_not(None))):
+        t = r["published_at"] or r["fetched_at"]
+        if t is not None:
+            rtimes.setdefault(r["canonical_id"], []).append(t)
+    checks = dict(analysis.get("conflict_checks") or {})     # answers kept per (ordered) pair of texts
+    conflicts, doubtful, updates = judge(router, texts, rtimes, proposed, response_pairs, checks)
     for pair in earlier - conflicts:
-        _remove_conflict(store, *pair)       # not confirmed: taken back
-    keep_apart = {p for p, v in verdict.items() if v != "both_true"}
+        _remove_conflict(store, *pair)       # not confirmed by the gate: taken back
+    keep_apart = conflicts | {tuple(sorted(p)) for p in updates.items()}
     merged = 0
     gone: set[int] = set()
     merged_into: dict[int, int] = {}
@@ -341,7 +328,10 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                         if alive(k) and alive(v)},
                     # a possible contradiction the check could not settle: not shown as a dispute, but
                     # neither statement can be established while it stands (verify.base_verdicts)
-                    doubtful_conflicts=sorted(x for x in doubtful if alive(x)))
+                    doubtful_conflicts=sorted(x for x in doubtful if alive(x)),
+                    # an older figure and the newer one that replaced it (both true when reported)
+                    updates={str(merged_into.get(k, k)): merged_into.get(v, v) for k, v in updates.items()
+                             if alive(merged_into.get(k, k)) and alive(merged_into.get(v, v))})
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis))
     log.info("consolidate story %s: %d merged, %d contradictions, %d names", story_id, merged, added, len(names))
     return {"merged": merged, "conflicts": added, "names": len(names)}

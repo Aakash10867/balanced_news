@@ -107,17 +107,23 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),
   consolidation can re-label statements (`analysis.roles`). Headline, timeline and essay_ok use the
   core only; context is written after it and coloured like everything else.
-- **A contradiction names its values (Oct 5 2026):** "contradict" only with two values that cannot both
-  be true ("40 vs 50", "Friday vs Saturday", "arrested vs not arrested"), checked in code
-  (`match.real_difference`); the quick pairwise check trusts only numbers, names, dates and negation
-  (`typed_difference`); consolidation re-judges every earlier contradiction with the whole story in
-  view and takes back what it does not confirm. The same event told from two sides is "same".
-  **Different is not incompatible (Oct 6 2026):** every proposed contradiction (model, earlier mark,
-  or "same" statements with different numbers) must pass one separately asked question, "can both be
-  true?" (`match.check_conflicts`): kept only for "cannot both be true" (same question, different
-  answers). Two steps of one thing (signed / took effect), a target vs a pledge of the same figures,
-  one statement adding a number: not disputes. "Unsure": not amber, but neither statement can be
-  established (`analysis.doubtful_conflicts`). Answers cached in `analysis.conflict_checks`. The
+- **Disputes: one gate (owner, Oct 7 2026; `disputes.py`).** Replaced nine paths (frames adding
+  contradictions on arrival and deciding them in review with no check, the one-shot "contradict" question,
+  `real_difference` / `typed_difference`, the model's own list, "same" lines with different numbers): "17 of
+  the 19 crew are Indian" / "11 of the 12 injured are Indian" was shown amber. A dispute is the SAME
+  QUESTION with a DIFFERENT ANSWER. (1) Code (`disputes.candidate`): the speaker taken off ("Police said",
+  "according to"), the answer taken out (numbers, number words, dates, weekdays, "not"); what remains
+  must be nearly the same words (with `relate.SYNONYM`) and the same names; rounding, bounds ("at least"),
+  and "X of Y" with different totals are cleared by code. Proposals (the consolidation model, the frames,
+  earlier marks) pass the same gate. (2) Figures over time: when every report of one figure was
+  published at least 1 h after every report of the other, it is an UPDATE (`analysis.updates`, old ->
+  new), not a dispute: written together, the newest first, the older mentioned; each keeps its colour.
+  (3) `match.check_conflicts` asked twice, A/B swapped: two "cannot both be true" = amber (however many
+  outlets on each side; an official against an outlet is a dispute too); any "unsure", the answers
+  disagreeing, or not yet asked = doubtful (`analysis.doubtful_conflicts`: no amber, no green). Answers
+  cached per ordered pair in `analysis.conflict_checks`. Claim/response pairs are never disputes. Only
+  the story review makes disputes; arrival (`match.match_story`) only joins plainly identical wording.
+  Outlet denials (a report that denies a claim, `verify.py`) are a separate relation, unchanged. The
   writer puts a real dispute with its subject, never in a closing "accounts differ" paragraph.
 - **Frames: statements compared field by field (owner, Oct 6 2026; `frames.py`).** Reading gives every
   statement who / action (base verb) / what / value / where / negated; words are reduced to roots
@@ -125,8 +131,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   same slot (who, action, what) + agreeing values = one fact (merged); same slot + incompatible values
   or negation = contradiction (the ONLY way to one between statements with frames); a missing value =
   compatible (never a dispute, wording decides merging); same slot at different times = unsure;
-  anything else = different. Frames now only PROPOSE: they no longer decide or veto whether two lines
-  are the same fact (see "One structure for the same fact"). A day-precision date covers the whole day (`_times_apart`). Dates are read as dates ("6 December 1986" = "1986-12-06"; a year agrees
+  anything else = different. Frames now only PROPOSE, for merging and for disputes; they decide
+  nothing (see "One structure for the same fact" and "Disputes: one gate"). A day-precision date covers the whole day (`_times_apart`). Dates are read as dates ("6 December 1986" = "1986-12-06"; a year agrees
   with a full date in it), and a dispute needs the same object: a capitalised word in one name the other
   lacks makes two things ("Param Vishisht Seva Medal" / "Vishisht Seva Medal": different, Oct 7 2026). Model "contradict"/"same" judgements count only for statements read
   before frames (those still go through `check_conflicts`). Stored in `claims.rel.frame` and
@@ -138,7 +144,9 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   names (capitalised words; the names both lines share are left out of the word overlap) and root words:
   same / a covers b / ask / ask-covers / different; one negated and one not, or different times, is
   always different. Code merges only "same"; "ask" goes to `match.same_facts` (asked twice, A/B swapped)
-  and "ask-covers" to `match.covers_facts` (asked twice, reversed order); proposals from the
+  and "ask-covers" to `match.covers_facts` (asked twice, reversed order); a short synonym list
+  (`relate.SYNONYM`: injured/hurt/wounded, arrested/detained, part/section...; never injured/killed)
+  is read as one word; proposals from the
   consolidation model and the frames go through the same question. A detailed line COVERS a short one
   when it has every number, name and nearly every word of it (code alone only when it adds no number
   and no word like "another", "earlier"; else the model is asked): the short line is not merged (its

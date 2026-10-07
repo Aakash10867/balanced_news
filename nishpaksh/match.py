@@ -1,18 +1,12 @@
-"""Stage 5: decide which statements across articles are the same fact.
-
-Clear matches and clear non-matches are decided by text similarity (code).
-Only the ambiguous middle band goes to a Flash-Lite model, which answers
-same / contradict / different. If that quota is gone, ambiguous pairs stay
-separate: we would rather under-corroborate than wrongly merge.
+"""Statements across a story's reports: on arrival, a new report's statement joins one whose words are
+plainly the same (relate.py) or becomes a new statement. The model questions the story review asks are
+here: same fact? (same_facts), says it all? (covers_facts), can both be true? (check_conflicts). Each is
+one plain question, asked in small batches; the callers ask twice and decide (relate.py, disputes.py).
 """
 from __future__ import annotations
 
 import logging
 import re
-
-from scipy.sparse import vstack
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 from .config import SETTINGS
 from .db import Store, canonical, claims, delete, select, update
@@ -20,26 +14,6 @@ from .relate import relate
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
-
-MATCH_PROMPT = """Each numbered line has two statements, A and B, from different news reports about the same story.
-For each line decide:
-  "same"       - A and B state the same fact (wording or tone may differ), including the same event told
-                 from two sides ("X filed a complaint" / "police received X's complaint"),
-  "contradict" - A and B cannot both be true as facts (different numbers, times or places for the
-                 same thing, or one says it happened and the other says it did not). A person's or
-                 body's answer to an allegation ("the company says its product is safe") is NOT a
-                 contradiction of the report that the allegation was made: label that "different",
-  "different"  - neither of the above.
-Judge only the facts stated, not the tone.
-
-{pairs}
-
-For "contradict", also give "differs": the two incompatible values, as "A's value vs B's value"
-(e.g. "40 people vs 50 people", "Friday vs Saturday", "arrested vs not arrested"). If you cannot name
-two values that cannot both be true, it is not a contradiction.
-
-Reply with JSON only: {{"results": [{{"n": 1, "label": "same"}}, {{"n": 2, "label": "contradict", "differs": "40 vs 50"}}, ...]}}"""
-
 
 CONFLICT_CHECK_PROMPT = """Each numbered line has two statements, A and B, from news reports about the same story.
 For each line, decide whether A and B can both be true at the same time.
@@ -239,71 +213,11 @@ def _add_conflict(store: Store, a: int, b: int) -> None:
             store.exec(update(canonical).where(canonical.c.id == x).values(conflicts=sorted((r["conflicts"] or []) + [y])))
 
 
-def real_difference(a: str, b: str, differs) -> bool:
-    """A contradiction must name two values that cannot both be true, each found in its statement
-    (Oct 2026: "three journalists filed complaints" and "police received complaints from three
-    journalists" were marked contradictory and shown as a dispute). Code checks the model's claim:
-    the two sides differ, and each shares a number or word with one statement and not only the other."""
-    if not isinstance(differs, str) or " vs " not in differs.lower():
-        return False
-    left, right = re.split(r"(?i)\s+vs\.?\s+", differs.strip(), maxsplit=1)
-    words = lambda t: {w for w in re.findall(r"[a-z0-9]+", t.lower()) if len(w) >= 2} - {"the", "and", "of", "in", "on", "at", "to", "a", "an"}  # noqa: E731
-    lw, rw, aw, bw = words(left), words(right), words(a), words(b)
-    if not lw or not rw or lw == rw:
-        return False
-    if "not" in lw ^ rw or "no" in lw ^ rw:      # "arrested vs not arrested"
-        return bool((lw | rw) & (aw | bw))
-    in_a_l, in_b_r = lw & aw - bw, rw & bw - aw
-    in_b_l, in_a_r = lw & bw - aw, rw & aw - bw
-    return bool((in_a_l and in_b_r) or (in_b_l and in_a_r))
-
-
-def typed_difference(differs) -> bool:
-    """Values a quick pairwise look can be trusted on: numbers, dates or names (capitalised), or one
-    side denying the other. Other contradictions ("murdered vs died in an accident") are left to
-    consolidation, which reads the whole story."""
-    if not isinstance(differs, str) or " vs " not in differs.lower():
-        return False
-    left, right = re.split(r"(?i)\s+vs\.?\s+", differs.strip(), maxsplit=1)
-    typed = lambda t: bool(re.search(r"\d|\b[A-Z][a-z]+", t))   # noqa: E731
-    neg = lambda t: bool(re.search(r"(?i)\b(not|no|never|didn't|did not)\b", t))   # noqa: E731
-    return (typed(left) and typed(right)) or (neg(left) != neg(right))
-
-
 def _remove_conflict(store: Store, a: int, b: int) -> None:
     for x, y in ((a, b), (b, a)):
         r = store.one(select(canonical).where(canonical.c.id == x))
         if r and y in (r["conflicts"] or []):
             store.exec(update(canonical).where(canonical.c.id == x).values(conflicts=[c for c in r["conflicts"] if c != y]))
-
-
-def _llm_pairs(router: Router | None, pairs: list[tuple[str, str]]) -> list[str]:
-    labels = ["different"] * len(pairs)
-    if router is None:
-        return labels
-    for start in range(0, len(pairs), SETTINGS.match_batch_size):
-        chunk = pairs[start:start + SETTINGS.match_batch_size]
-        body = "\n".join(f'{i + 1}. A: "{a}" | B: "{b}"' for i, (a, b) in enumerate(chunk))
-        try:
-            res = router.call("light", MATCH_PROMPT.format(pairs=body), json_out=True, max_output_tokens=1500)
-        except QuotaExhausted:
-            log.info("match: light tier exhausted; %d ambiguous pairs left separate", len(pairs) - start)
-            break
-        except Exception as e:  # noqa: BLE001
-            log.warning("match call failed: %s", e)
-            continue
-        for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
-            try:
-                n = int(item["n"]) - 1
-                label = item.get("label")
-                if (0 <= n < len(chunk) and label == "contradict"
-                        and not (real_difference(*chunk[n], item.get("differs")) and typed_difference(item.get("differs")))):
-                    label = "different"   # no concrete incompatible values: not shown as a dispute
-                if 0 <= n < len(chunk) and label in ("same", "contradict", "different"):
-                    labels[start + n] = label
-            except (KeyError, ValueError, TypeError):
-                continue
-    return labels
 
 
 def prune_orphans(store: Store, story_id: int) -> int:
@@ -327,89 +241,28 @@ def prune_orphans(store: Store, story_id: int) -> int:
 
 
 def match_story(store: Store, router: Router | None, story_id: int) -> None:
+    """A new report's statements, on arrival: each joins a statement whose words are plainly the same
+    (relate.py, code only), or becomes a new statement. Everything that needs judgement (same fact in
+    other words, a line covering another, disputes) is decided once, for the whole story, in the story
+    review (consolidate.py), by one structure each (owner, Oct 7 2026)."""
     prune_orphans(store, story_id)
     rows = store.rows(select(claims).where(claims.c.story_id == story_id).order_by(claims.c.id))
-    facts = [r for r in rows if r["kind"] in ("event", "claim")]
-    new = [r for r in facts if r["canonical_id"] is None]
-
+    new = [r for r in rows if r["kind"] in ("event", "claim") and r["canonical_id"] is None]
     if new:
-        canon = store.rows(select(canonical).where(canonical.c.story_id == story_id,
-                                                   canonical.c.kind != "relation"))
-        reps = [(c["id"], c["text"]) for c in canon]
-        vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True)
-        vec.fit([t for _, t in reps] + [r["text"] for r in new])
-        rep_ids = [cid for cid, _ in reps]
-        rep_mat = vec.transform([t for _, t in reps]) if reps else None
-        queued: list[tuple[int, int, str, str]] = []  # (new canonical, existing canonical, textA, textB)
-
-        from .frames import compare as frame_compare
-        frames_of = {c["id"]: frame_of(c) for c in canon}
-        frame_conflicts: list[tuple[int, int]] = []
+        from .relate import Profile
+        canon = store.rows(select(canonical).where(canonical.c.story_id == story_id, canonical.c.kind != "relation"))
+        known = [(c["id"], c["text"], Profile(c["text"]), frame_of(c)[1]) for c in canon]
         for r in new:
-            fr = ((r["rel"] or {}).get("frame")) if r["kind"] != "relation" else None
-            v = vec.transform([r["text"]])
-            best, best_sim = None, 0.0
-            sims = None
-            if rep_mat is not None and rep_mat.shape[0]:
-                sims = cosine_similarity(v, rep_mat).ravel()
-                j = int(sims.argmax())
-                best, best_sim = rep_ids[j], float(sims[j])
-            # the same fact is decided on the WORDS (relate.py, Oct 7 2026): identical or plainly the same
-            # wording joins the statement; the frames no longer veto that (two readings labelled one
-            # sentence differently and it stayed two statements). Frames still propose contradictions.
-            verdicts = {cid_: frame_compare(fr, f_, r["time"], t_) for cid_, (f_, t_) in frames_of.items()} if fr else {}
-            texts_ = dict(reps)
-            same = [cid_ for cid_ in texts_ if relate(r["text"], texts_[cid_], r["time"], (frames_of.get(cid_) or (None, None))[1]) == "same"]
-            if same:
-                cid = max(same, key=lambda x: float(sims[rep_ids.index(x)]) if sims is not None and x in rep_ids else 0.0)
-            else:
+            fr = ((r["rel"] or {}).get("frame"))
+            pr = Profile(r["text"])
+            cid = next((cid_ for cid_, t_, p_, time_ in known
+                        if relate(r["text"], t_, r["time"], time_, pr, p_) == "same"), None)
+            if cid is None:
                 cid = _create_canonical(store, story_id, r["kind"], r["text"], fr, r["time"])
-                frames_of[cid] = (fr, r["time"])
-                frame_conflicts += [(cid, x) for x, v_ in verdicts.items() if v_ == "conflict"]
-                if best is not None and relate(r["text"], texts_.get(best, "")) == "different" and verdicts.get(best) != "same":
-                    best = None          # plainly different words: no model question about this pair
-                # statements read with frames are compared by the story review (consolidate.py, one
-                # structure with code first and a model asked twice); the one-shot pair question is kept
-                # only for statements read before frames
-                if fr:
-                    best = None
-                if best is not None and best_sim >= SETTINGS.claim_candidate_cosine:
-                    best_text = reps[rep_ids.index(best)][1]
-                    queued.append((cid, best, r["text"], best_text))
-                rep_ids.append(cid)
-                reps.append((cid, r["text"]))
-                rep_mat = v if rep_mat is None or rep_mat.shape[0] == 0 else vstack([rep_mat, v])
+                known.append((cid, r["text"], pr, r["time"]))
             store.exec(update(claims).where(claims.c.id == r["id"]).values(canonical_id=cid))
-            if fr and not frames_of.get(cid, (None,))[0]:
-                # a statement read before frames gains the frame of a report that says the same
-                store.exec(update(canonical).where(canonical.c.id == cid).values(rel={"frame": fr, "time": r["time"]}))
-                frames_of[cid] = (fr, r["time"])
             if r["kind"] == "event":
                 store.exec(update(canonical).where(canonical.c.id == cid).values(kind="event"))
-
-        # before any merge below, which re-points conflicts of a merged statement
-        for a, b in frame_conflicts:
-            _add_conflict(store, a, b)
-        if queued:
-            labels = _llm_pairs(router, [(a, b) for _, _, a, b in queued])
-            alias: dict[int, int] = {}
-
-            def find(x):
-                while x in alias:
-                    x = alias[x]
-                return x
-
-            texts_by = {cid_: t for cid_, t in reps}
-            for (cnew, cold, _, _), label in zip(queued, labels):
-                a, b = find(cnew), find(cold)
-                if a == b:
-                    continue
-                if label == "same" and relate(texts_by.get(a, ""), texts_by.get(b, "")) != "different":
-                    _merge(store, a, b)
-                    alias[a] = b
-                elif label == "contradict" and not (frames_of.get(a, (None,))[0] and frames_of.get(b, (None,))[0]):
-                    _add_conflict(store, a, b)   # statements read before frames: the old way, re-judged later
-
     _match_relations(store, story_id)
 
 

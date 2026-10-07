@@ -1469,18 +1469,6 @@ def test_the_paragraph_hedge_keeps_names_and_lowercases_ordinary_words():
     assert _hedge("Bharadwaj was detained.", {"Bharadwaj"}) == "According to reports, Bharadwaj was detained."
 
 
-def test_a_contradiction_needs_two_values_that_cannot_both_be_true():
-    """'Three journalists filed complaints' and 'police received complaints from three journalists'
-    agree; they were shown as a dispute."""
-    from nishpaksh.match import real_difference, typed_difference
-    a = "Three female journalists filed complaints alleging sexual harassment by police officers."
-    b = "Delhi Police received complaints from three female journalists alleging sexual harassment."
-    assert not (real_difference(a, b, "filed vs received") and typed_difference("filed vs received"))
-    assert not real_difference(a, b, None)
-    x, y = "Police questioned 40 people", "Police questioned 50 people"
-    assert real_difference(x, y, "40 people vs 50 people") and typed_difference("40 people vs 50 people")
-
-
 def test_consolidation_takes_back_a_contradiction_it_does_not_confirm(store):
     from nishpaksh.consolidate import consolidate_story
     from nishpaksh.match import _add_conflict
@@ -1802,13 +1790,15 @@ def test_a_difference_is_a_contradiction_only_if_both_cannot_be_true(store):
     assert p1 in conf and p2 in conf and conf[p1] == [] and conf[p2] == []   # kept apart, not a dispute
     assert conf[e1] == [] and conf[e2] == []                           # unsure: not shown as a dispute
     an = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
-    assert sorted(an["doubtful_conflicts"]) == sorted([e1, e2])
+    # "in charge of the site" / "had left the job" are not the same question: the gate clears them
+    # before any model question (disputes.py), so they are neither a dispute nor doubtful
+    assert an["doubtful_conflicts"] == []
     base_verdicts(store, sid)
     v = {r["id"]: r["verdict"] for r in store.rows(select(canonical.c.id, canonical.c.verdict).where(canonical.c.story_id == sid))}
     assert v[e1] == v[e2] == "unverified"                   # never established while unsettled
     assert v[c1] != "disputed" and v[opened] != "disputed"
-    # the answers are kept: consolidating again (new statement set) asks only about new pairs
-    assert len(an["conflict_checks"]) == 4
+    # only the one pair that passed the gate was asked, twice (A/B swapped); the answers are kept
+    assert len(an["conflict_checks"]) == 2
 
 
 def test_frames_compare_statements_by_their_fields():
@@ -1847,38 +1837,62 @@ def test_frames_compare_statements_by_their_fields():
     assert compare(None, f(who="x", action="y")) is None
 
 
-def test_matching_uses_frames_before_wording(store):
-    """Reports worded differently but giving the same answer to the same question become one
-    statement; two steps of one thing stay two, with no dispute; the same question answered
-    differently is the one contradiction."""
+def test_arrival_joins_only_plainly_identical_wording_and_makes_no_disputes(store):
+    """On arrival a statement joins one whose words are plainly the same; disputes and the same fact in
+    other words are decided once, in the story review (owner, Oct 7 2026)."""
     from nishpaksh.db import claims as Cl
     from nishpaksh.match import match_story
     sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=True, qualifies=False))
     arts = [store.insert_returning_id(articles, dict(url=f"https://o{k}.in/x", outlet=f"O{k}", title="t", text="b",
-                                                     published_at=NOW, fetched_at=NOW, story_id=sid)) for k in range(6)]
-    rows = [
-        (0, "Approximately 125.27 million valid votes were cast", dict(who="voters", action="cast", what="valid votes", value="125.27 million")),
-        (1, "About 125 million Brazilians cast ballots in the election", dict(who="Brazilian voters", action="cast", what="votes", value="about 125 million")),
-        (2, "The trade agreement was signed in March 2024", dict(who="India and EFTA", action="sign", what="trade agreement", value="March 2024")),
-        (3, "The trade agreement entered into force last October", dict(who="trade agreement", action="enter into force", value="October 2025")),
-        (4, "Forty people died when the bridge fell", dict(who="people", action="die", what="bridge collapse", value="40")),
-        (5, "The collapse killed fifty, officials said", dict(who="people", action="died", what="the bridge collapse", value="50")),
-    ]
-    from nishpaksh.frames import normalize
-    for k, text, fr in rows:
+                                                     published_at=NOW, fetched_at=NOW, story_id=sid)) for k in range(4)]
+    rows = ["Forty people died when the bridge fell", "40 people died when the bridge fell",
+            "50 people died when the bridge fell", "The trade agreement was signed in March 2024"]
+    for k, text in enumerate(rows):
         store.exec(insert(Cl).values(story_id=sid, article_id=arts[k], local_id="c1", kind="claim", text=text,
                                      stance="asserts", attributed_to="article", evidence="none",
-                                     rel={"frame": normalize(fr)}))
+                                     rel={"frame": {"who": "people", "action": "die", "what": "bridge", "value": text[:2]}}))
     match_story(store, None, sid)
     cid = {r["text"]: r["canonical_id"] for r in store.rows(select(Cl.c.text, Cl.c.canonical_id))}
-    conf = {r["id"]: r["conflicts"] for r in store.rows(select(canonical.c.id, canonical.c.conflicts))}
-    # worded differently, the same fact is merged by the story review (relate.py + the twice-asked
-    # question), not on arrival from the frames' labels
-    assert cid[rows[2][1]] != cid[rows[3][1]]
-    assert conf[cid[rows[2][1]]] == [] and conf[cid[rows[3][1]]] == []   # two steps: no dispute
-    assert conf[cid[rows[4][1]]] == [cid[rows[5][1]]]                     # 40 vs 50 dead: the dispute
+    assert cid[rows[0]] == cid[rows[1]]                  # "forty" = 40, the same words: one statement
+    assert cid[rows[2]] != cid[rows[0]]
+    assert all(r["conflicts"] == [] for r in store.rows(select(canonical.c.conflicts)))   # no dispute on arrival
 
 
+def test_one_gate_for_disputes():
+    """A dispute is the same question with a different answer; code clears the known non-disputes;
+    a later figure is an update; two "cannot" answers make amber (owner, Oct 7 2026)."""
+    import datetime as dt_
+    from nishpaksh.disputes import candidate, is_update, judge
+    assert candidate("17 of the total 19 crew members are Indian nationals.",
+                     "11 of the 12 injured crew members are Indian nationals.") is None
+    assert candidate("At least 40 people died in the collapse.", "50 people died in the collapse.") is None
+    assert candidate("About 125 million valid votes were cast.", "125.27 million valid votes were cast.") is None
+    assert candidate("The trade agreement was signed in March 2024.", "The trade agreement entered into force in October 2025.") is None
+    assert candidate("Forty people died when the bridge collapsed.", "Fifty people died when the bridge collapsed.") == "number"
+    assert candidate("Police said 40 people died in the collapse.", "The family said 50 people died in the collapse.") == "number"
+    assert candidate("Police arrested the engineer.", "Police did not arrest the engineer.") == "negation"
+    assert candidate("The meeting was held on Friday.", "The meeting was held on Saturday.") == "date"
+    t0 = dt_.datetime(2026, 10, 7, 6)
+    assert is_update([t0], [t0 + dt_.timedelta(hours=3)]) == 1 and is_update([t0], [t0]) == 0
+    texts = {1: "40 people died in the collapse", 2: "50 people died in the collapse",
+             3: "Police arrested the engineer", 4: "Police did not arrest the engineer"}
+    answers = {(1, 2): "cannot_both_be_true", (2, 1): "cannot_both_be_true",
+               (3, 4): "cannot_both_be_true", (4, 3): "both_true"}
+
+    class R:
+        def call(self, tier, prompt, **kw):
+            import re as _re
+            from nishpaksh.router import LLMResult
+            inv = {v: k for k, v in texts.items()}
+            res = [{"n": int(n), "answer": answers[(inv[a], inv[b])]}
+                   for n, a, b in _re.findall(r'(\d+)\. A: "(.*?)" \| B: "(.*?)"', prompt)]
+            return LLMResult("", {"results": res}, "m", [], 1)
+    times = {1: [t0], 2: [t0], 3: [t0], 4: [t0]}
+    disputes, doubtful, updates = judge(R(), texts, times, set(), set(), {})
+    assert disputes == {(1, 2)} and doubtful == {3, 4} and updates == {}       # the two answers disagreed: doubtful
+    times = {1: [t0], 2: [t0 + dt_.timedelta(hours=4)], 3: [t0], 4: [t0]}
+    disputes, doubtful, updates = judge(R(), texts, times, set(), set(), {})
+    assert updates == {1: 2} and (1, 2) not in disputes                         # the later figure updates the earlier
 def _story_with_sources(store, title, n_outlets, hours_ago=2.0):
     sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=True, qualifies=False,
                                                   signature=title))

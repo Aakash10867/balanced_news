@@ -39,6 +39,21 @@ FILLER = {_stem(w) for w in """said say says stated told added according report 
 officials official sources source claimed claims noted informed confirmed will would shall can could may might
 must also new current currently""".split()}
 
+# the same meaning in other words, as Indian news writes it (owner, Oct 7 2026): each group is read as
+# ONE word. Kept short and hand-checked: words that differ in meaning are never grouped ("injured" and
+# "killed" stay apart; so do "arrested" and "questioned").
+SYNONYM_GROUPS = [
+    "injured hurt wounded", "killed dead died death deaths die dies lost", "arrested detained nabbed apprehended",
+    "attack attacked assault assaulted", "vessel ship boat", "blast explosion", "fire blaze",
+    "police cops", "rescued saved", "missing untraceable", "village hamlet", "residents locals",
+    "part section portion", "collapsed caved",
+]
+SYNONYM = {}
+for _g in SYNONYM_GROUPS:
+    _ws = [_stem(w) for w in _g.split()]
+    for _w in _ws:
+        SYNONYM[_w] = _ws[0]
+
 SAME_WORDS = 0.8        # share of root words for "same" (with the same numbers and names)
 COVER_WORDS = 0.85      # share of the short line's root words the detailed line must contain
 ASK_WORDS = 0.4         # below this, two lines with the same numbers and names are still different
@@ -66,7 +81,7 @@ class Profile:
         if len(toks) > 1 and toks[0][0].isupper() and toks[1][0].isupper() and toks[0].lower() not in _STOP:
             names.add(_stem(toks[0].lower()))
         self.names = frozenset(names)
-        self.roots = frozenset(r for r in _roots(t) if r not in FILLER and not r.isdigit())
+        self.roots = frozenset(SYNONYM.get(r, r) for r in _roots(t) if r not in FILLER and not r.isdigit())
         self.neg = bool(NEGATION.search(t))
         self.contrast = bool(CONTRAST.search(t))
 
