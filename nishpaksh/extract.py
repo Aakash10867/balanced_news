@@ -103,7 +103,8 @@ Rules:
    finding means; "reaction" = a person's or body's response not already recorded as a claim;
    "next" = what happens next (deadlines, hearings, required steps). Same rules for wording,
    stance and attribution. If the article is a roundup or live blog of UNRELATED news, ignore the
-   unrelated items entirely: context is only what the article connects to the core event.
+   unrelated items entirely: context is only what the article connects to the core event. Ignore
+   anything the page says about the publication itself (its history, readership, editions, awards).
 9. "frame": the same item broken into fields, so items from different articles can be compared:
    who = who acts, or what the item is about ("Police", "India and EFTA", "Prime Minister Narendra Modi");
    action = what is done, as a base verb or verb phrase in English ("arrest", "sign", "take effect",

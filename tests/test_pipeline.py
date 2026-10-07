@@ -2188,3 +2188,16 @@ def test_models_that_refused_last_desk_run_are_skipped_once(store):
     store.exec(insert(diagnostics).values(created_at=now, kind="desk", report={"dropped": [], "skipping": ["gemini-3.8-flash"]}))
     assert desk.refused_last_run(store, now + dt.timedelta(minutes=60)) == set()
     assert desk.refused_last_run(store, now + dt.timedelta(hours=3)) == set()
+
+
+def test_a_page_about_its_own_publisher_is_not_the_story():
+    """Oct 7 2026, story 12687: "Hindustan was established in 1936 ... second most widely read Hindi newspaper"."""
+    from nishpaksh.compose import drop_outlet_self_talk
+    own = {"id": 1, "text": "Hindustan was established in 1936 and is the second most widely read Hindi newspaper in India.",
+           "sources": [{"outlet": "Hindustan"}]}
+    news = {"id": 2, "text": "CAQM deployed flying squads in 34 districts.", "sources": [{"outlet": "Hindustan"}]}
+    quoted = {"id": 3, "text": "The Hindustan Times newspaper was sued by the minister.",
+              "sources": [{"outlet": "NDTV"}, {"outlet": "Aaj Tak"}]}
+    p = {"sources": [{"outlet": "Hindustan"}], "undated": [own, news], "established": [quoted], "contested": [],
+         "context": [], "timeline": []}
+    assert drop_outlet_self_talk(p) == 1 and p["undated"] == [news] and p["established"] == [quoted]

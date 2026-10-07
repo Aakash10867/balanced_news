@@ -167,6 +167,19 @@ ROLE_SECTION = {"background": "background", "related": "related", "explanation":
 NUMBER = re.compile(r"\d")
 
 
+def _is_figure(i: dict) -> bool:
+    """A statement whose answer is a figure (an amount, toll, count, share), not a date or a year:
+    Oct 7 2026, "deployed in gradual phases for the 2026 harvest season" sat alone under "By the numbers"."""
+    from .frames import date_of
+    val = str((i.get("frame") or {}).get("value") or "")
+    if val:
+        return bool(NUMBER.search(val)) and not date_of(val) and not re.fullmatch(r"\D*(19|20)\d\d\D*", val)
+    months = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
+    text = re.sub(rf"(?i)\b\d{{1,2}}(?:st|nd|rd|th)?\s+{months}|{months}\s+\d{{1,2}}(?:st|nd|rd|th)?\b|\b(19|20)\d\d\b",
+                  "", i["text"])
+    return bool(re.search(r"\d", text))
+
+
 def assign_sections(items: list[dict], background: list[dict] | None = None) -> dict[int, str]:
     """Every statement in exactly one section, by code, from what we know about it (owner, Oct 7 2026:
     sections like an explainer, so nothing is left out and the reader can find each part)."""
@@ -176,7 +189,7 @@ def assign_sections(items: list[dict], background: list[dict] | None = None) -> 
             out[i["id"]] = ROLE_SECTION.get(i.get("role"), "background")
         elif i.get("speaker") or i.get("responds_to") or i.get("responded_by"):
             out[i["id"]] = "say"
-        elif i["kind"] == "claim" and NUMBER.search(str(((i.get("frame") or {}).get("value")) or i["text"])):
+        elif i["kind"] == "claim" and _is_figure(i):
             out[i["id"]] = "numbers"
         else:
             out[i["id"]] = "happened"
@@ -902,7 +915,8 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         missing = [i for i in items if sec.get(i["id"]) in group and i["id"] not in covered
                    and not _said_in(i, essay_text)]
         bad = [f for f in failed if f.get("section") in group or (f.get("section") == "news" and "news" in group)]
-        if not missing and not bad:
+        no_lead = "news" in group and "news" not in keys
+        if not missing and not bad and not no_lead:
             continue
         mine = [i for i in items if sec.get(i["id"]) in group]
         prompt = FILL_PROMPT.format(
@@ -942,6 +956,12 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         else:
             _reasons().clear()
             _reasons().update(saved)
+    # an article always opens with the news (owner's rule): if the writer gave no "news" section, the
+    # first "What happened" paragraph is the lead (Oct 7 2026, story 12687 opened with background)
+    if paragraphs and "news" not in keys and "happened" in keys:
+        k = keys.index("happened")
+        paragraphs = [paragraphs[k]] + paragraphs[:k] + paragraphs[k + 1:]
+        keys = ["news"] + keys[:k] + keys[k + 1:]
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     if rejected:

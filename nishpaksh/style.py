@@ -21,6 +21,13 @@ Inspector Sub-Inspector Superintendent Constable Officer Director Chairman Chair
 Union Home Finance Defence External Affairs MLA MP CM DGP SP IG DIG ACP DCP SHO Advocate Senior Retired
 Professor Prof Senator Ambassador Mayor Councillor Sheikh Pope Saint Sardar Pandit Swami Maulana
 Lieutenant-General Major-General Wing Commander Squadron Group Flight Sergeant Havildar Naik Sepoy""".split())
+# titles that mark a PERSON (evidence); the wider TITLES above are only stripped from a name. "Air",
+# "Chief", "Union" or "Deputy" alone are no evidence: Oct 7 2026, "Commission for Air Quality
+# Management" became "Commission for Management" (the "Air" before "Quality Management" read as a title)
+PERSON_TITLES = set("""Mr Mrs Ms Dr Shri Smt Sri Justice Judge Captain Capt Colonel Col General Gen Lieutenant Lt
+Major Brigadier Admiral Marshal Minister President Governor Inspector Sub-Inspector Constable Professor Prof
+Senator Ambassador Mayor MLA MP CM DGP SP IG DIG ACP DCP SHO Advocate Sheikh Swami Maulana Pandit Sardar
+Sergeant Havildar Naik Sepoy""".split())
 ROLES_LOWER = set("""minister leader chief jawan officer judge actor actress activist journalist accused
 constable inspector spokesperson president secretary mla mp cricketer player coach captain businessman
 student doctor lawyer advocate teacher farmer driver engineer pilot co-pilot director founder ceo chairman
@@ -32,7 +39,11 @@ Nagar City District Road Street Bridge Lok Sabha Rajya State States Union Territ
 Assembly Corporation Authority Agency Bureau Office Times News Express Today Airlines Air Team Club
 Group Company Trust Foundation Institute School College Temple Mosque Church Market Railway Railways
 Highway Dam River Lake Sea Ocean Bay Island Hills Valley Village Town Pakistan China America Bihar Assam
-Delhi Mumbai Kerala Gujarat Punjab Haryana Rajasthan Tamil Nadu Bengal Karnataka Maharashtra Odisha""".split())
+Delhi Mumbai Kerala Gujarat Punjab Haryana Rajasthan Tamil Nadu Bengal Karnataka Maharashtra Odisha
+Management Quality Control Pollution Environment Health Development Welfare Services Security Intelligence
+Investigation Centre Center National Central Federal Regional International Supreme High Society Association
+Federation Mission Scheme Yojana Programme Program Act Bill Code Policy Fund Industries Energy Power Water
+Commission Council Agency Ministry Department Squad Squads Task Cell Unit Division Zone Circle Range""".split())
 SPEECH = r"(?:said|says|told|added|stated|alleged|claimed|denied|announced|noted|asked|urged|wrote)"
 NAME = r"[A-Z][a-z]+(?:-[A-Z]?[a-z]+)?|al-[A-Z][a-z]+"
 
@@ -56,7 +67,7 @@ def people(text: str, speakers: list[str] | tuple = ()) -> dict[str, str]:
     cands = _candidates(text)
     for name in cands:
         e = re.escape(name)
-        titled = re.search(rf"(?:\b(?:{'|'.join(map(re.escape, TITLES))})|\b(?:{'|'.join(ROLES_LOWER)}))\s+{e}\b", text)
+        titled = re.search(rf"(?:\b(?:{'|'.join(map(re.escape, PERSON_TITLES))})|\b(?:{'|'.join(ROLES_LOWER)}))\s+{e}\b", text)
         speaks = re.search(rf"\b{e}\s+(?:has\s+|had\s+)?{SPEECH}\b", text)
         if titled or speaks or name in spoken:
             found[name] = name.split()[-1]

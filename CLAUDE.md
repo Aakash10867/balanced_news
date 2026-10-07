@@ -259,6 +259,14 @@ Hindi. At most 2 per clock hour.
   before his arrest" on the arrest itself); prefer the absolute date in fallbacks.
 
 ## Fixed at the root (Oct 2026), keep the guards
+- Story 12687 (Oct 7 2026): (1) `style.py` shortened "Commission for Air Quality Management" to
+  "Commission for Management" ("Air" read as a title): only PERSON_TITLES count as evidence of a person,
+  and institutional words (Management, Commission, Quality...) are never a person's name; (2) a page's text
+  about its own publisher ("Hindustan was established in 1936 ...") is dropped by code
+  (`compose.drop_outlet_self_talk`) and extraction is told to ignore it; (3) every article opens with a
+  news lead: a missing "news" section triggers the news fill, and failing that the first "What happened"
+  paragraph becomes the lead; (4) "By the numbers" takes figures only, never years or dates
+  (`narrative._is_figure`).
 - One spelling per name in an article by code (`spelling.py`, Oct 7 2026: Machhar / Machar / Matchar /
   Machchhar on one page): capitalised words with the same key (tch/chh = ch, ee = i, oo = u, doubled letters
   single) take the spelling most reports use; applied to statements before writing and to the article and

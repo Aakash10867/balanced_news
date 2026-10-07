@@ -559,6 +559,39 @@ def _remap_draft(store: Store, draft: dict | None, payload: dict) -> dict | None
     return out
 
 
+MEDIA_WORDS = re.compile(r"(?i)\b(newspapers?|news ?papers?|channels?|editions?|circulat\w*|readership|widely read|"
+                         r"most read|publish\w*|publications?|news agency|broadcaster|daily|founded|established in)\b")
+
+
+def drop_outlet_self_talk(payload: dict) -> int:
+    """Statements a page says about its own publisher ("Hindustan was established in 1936 ... the second
+    most widely read Hindi newspaper", Oct 7 2026, story 12687) are not the story: dropped by code when a
+    statement names an outlet, speaks of it as a publication, and only that outlet reports it."""
+    from .narrative import _known_outlets
+    names = {s.get("outlet") for s in payload.get("sources") or [] if s.get("outlet")} | set(_known_outlets())
+    names = {n for n in names if n and len(n) >= 4}
+
+    def self_talk(i: dict) -> bool:
+        text = i.get("text") or ""
+        if not MEDIA_WORDS.search(text):
+            return False
+        hit = {n for n in names if re.search(rf"(?<!\w){re.escape(n)}(?!\w)", text)}
+        # "Live Hindustan" reports on "Hindustan": the reporting outlets' names share a word with it
+        by = {s.get("outlet") or "" for s in i.get("sources") or []}
+        return bool(hit) and all(any(set(h.lower().split()) & set(b.lower().split()) for h in hit) for b in by if b)
+
+    dropped = 0
+    for key in ("undated", "established", "contested", "context"):
+        keep = [i for i in payload.get(key) or [] if not self_talk(i)]
+        dropped += len(payload.get(key) or []) - len(keep)
+        payload[key] = keep
+    payload["timeline"] = [[i for i in tier if not self_talk(i)] for tier in payload.get("timeline") or []]
+    payload["timeline"] = [t for t in payload["timeline"] if t]
+    if dropped:
+        log.info("dropped %d statements a page made about its own publisher", dropped)
+    return dropped
+
+
 # why the last publish_story call ended: the desk counts a try only when the writer was asked
 # (Oct 7 2026: follow-up candidates refused before writing used up all five tries, two runs in a row)
 LAST_OUTCOME: dict[str, str] = {}
@@ -589,6 +622,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     # overloaded and four stories a run were skipped): the headline is written again from the article's
     # lead below, and if that fails too the finished article waits as a kept draft
     from .spelling import unify_article, unify_payload
+    drop_outlet_self_talk(payload)
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     parents = [x["story_id"] for x in payload.get("parents") or []]
     if parents and not follow_up_ok(store, router, story_id, payload, parents):
