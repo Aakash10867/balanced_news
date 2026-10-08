@@ -343,6 +343,14 @@ Hindi. At most 2 per clock hour.
 - Tests: `python -m pytest -q` (fake backend in `tests/fixtures.py`; add fakes for any new prompt).
 
 ## Open items
+- **Flaky tests (seen Oct 8 2026, before the split work too):** `test_a_later_development_links_to_its_story_and_gets_background`
+  and `test_published_article_is_closed_and_only_its_colours_mature` fail about 1 run in 3-8; they pass alone.
+  Find the nondeterminism (set order, wall clock) before trusting a red run.
+- **Paraphrased facts still repeat (Oct 8 2026, story 13970 after the split):** "rate cuts were off the table" /
+  "no option for interest rate cuts in the near term"; the rate decision as "by 0.25 percent" / "by 25 basis
+  points to 5.50 per cent" / "from 5.25% to 5.50%". Code calls them different (other words) and the review
+  model's merge list missed them. Next step of the approved structure: group single facts by subject and ask
+  "same fact?" within each group (asked twice), then write each group once.
 - **Check next session (owner, Oct 7 2026):** do resumed drafts' extra fill rounds use up Flash writer quota early (desk `diagnostics` kind 'desk', `tier_calls`)? If Flash runs out by afternoon, drop the third round for resumed drafts first.
 - Green rule may be too strict (own-voice reporting rarely counts as an origin); revisit with data.
 - Thread timeline page (later). Weak fallback headlines when the model fails twice.
