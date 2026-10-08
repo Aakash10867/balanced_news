@@ -2406,9 +2406,10 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
     _run_twice(store)
     row = store.rows(select(published))[0]
     out = tmp_path / "feed"
-    (out / "old").mkdir(parents=True)          # anything left from before is cleared
+    (out / "story").mkdir(parents=True)
+    (out / "story" / "999999.json").write_text("{}")   # an article no longer live is removed
     assert feed.export(store, out) == 1
-    assert not (out / "old").exists()
+    assert not (out / "story" / "999999.json").exists()
     for lang in ("en", "hi"):
         data = json.loads((out / f"{lang}.json").read_text(encoding="utf-8"))
         (c,) = data["stories"]
@@ -2419,5 +2420,45 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
     assert nar["paragraphs"] == row["payload_en"]["narrative"]["paragraphs"] and nar["sources"]
     assert set(page["payload_en"]["narrative"]) == {"paragraphs", "section_keys", "sources"}
     assert page["headline_hi"] == row["headline_hi"]
+    # the next export reads nothing it already has (egress): unchanged articles come from the manifest
+    reads = []
+    real_rows = store.rows
+    store.rows = lambda stmt: reads.append(str(stmt)) or real_rows(stmt)
+    try:
+        assert feed.export(store, out) == 1
+    finally:
+        store.rows = real_rows
+    assert len(reads) == 1 and "payload_en" in reads[0]   # only the cheap list (sqlite: payloads for md5)
+    assert json.loads((out / "en.json").read_text(encoding="utf-8"))["stories"][0]["id"] == row["story_id"]
     assert feed.bar_counts([[{"class": "single"}, {"class": "disputed", "parts": [
         {"class": "established"}, {"class": "disputed"}]}]]) == {"e": 1, "o": 1, "d": 1, "r": 0, "u": 0}
+
+
+def test_heavy_columns_come_from_the_local_cache_when_unchanged(store, tmp_path, monkeypatch):
+    """Egress (Oct 8 2026): text, embedding and minhash are fetched once and then served from a local
+    cache while their md5 matches; a changed value is fetched again. Results are the same as a direct read."""
+    import hashlib
+    from sqlalchemy import event
+    from nishpaksh import heavy
+    from nishpaksh.db import articles, insert, update
+    @event.listens_for(store.engine, "connect")
+    def _md5(conn, _):
+        conn.create_function("md5", 1, lambda v: hashlib.md5(v.encode()).hexdigest() if v is not None else None)
+    store.engine.dispose()
+    monkeypatch.setenv("NISHPAKSH_HEAVY_CACHE", str(tmp_path / "heavy.sqlite"))
+    monkeypatch.setattr(heavy, "active", lambda s: True)
+    monkeypatch.setattr(heavy, "_conn", None)
+    now = dt.datetime(2026, 10, 8, 12, 0)
+    for i in range(3):
+        store.exec(insert(articles).values(id=900 + i, outlet="X", url=f"https://x/{i}", title=f"t{i}",
+                                           text=f"text {i}", embedding=[0.1 * i, 0.2], published_at=now))
+    q = lambda: select(articles.c.id, *heavy.columns(store, "text", "embedding")).where(articles.c.id >= 900).order_by(articles.c.id)
+    direct = store.rows(select(articles.c.id, articles.c.text, articles.c.embedding).where(articles.c.id >= 900).order_by(articles.c.id))
+    heavy.stats.update(hit=0, fetched=0)
+    assert heavy.fill(store, store.rows(q()), "text", "embedding") == direct
+    assert heavy.stats == {"hit": 0, "fetched": 6}
+    assert heavy.fill(store, store.rows(q()), "text", "embedding") == direct
+    assert heavy.stats == {"hit": 6, "fetched": 6}
+    store.exec(update(articles).where(articles.c.id == 901).values(text="changed"))
+    rows = heavy.fill(store, store.rows(q()), "text", "embedding")
+    assert rows[1]["text"] == "changed" and heavy.stats == {"hit": 11, "fetched": 7}

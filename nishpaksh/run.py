@@ -200,6 +200,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
                  settled=len(settled), claims_checked=checked, colours_matured=matured,
                  live_pages=len(store.rows(select(_published.c.story_id))),
                  left_for_next_run=len(dirty) - len(analysed))
+    from . import heavy
+    stats["heavy_cache"] = dict(heavy.stats, active=heavy.active(store))   # egress: values served locally vs fetched
     from . import positions
     pos = step("positions", lambda: positions.daily(store, until=deadline))
     if pos is not None:

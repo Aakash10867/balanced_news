@@ -52,11 +52,12 @@ def jaccard(s1, s2) -> float:
 
 def assign_wire_groups(store: Store) -> int:
     since = utcnow() - dt.timedelta(hours=SETTINGS.wire_window_hours)
-    rows = store.rows(
-        select(articles.c.id, articles.c.minhash, articles.c.wire_group)
+    from . import heavy
+    rows = heavy.fill(store, store.rows(
+        select(articles.c.id, *heavy.columns(store, "minhash"), articles.c.wire_group)
         .where(articles.c.published_at >= since, articles.c.minhash.is_not(None))
         .order_by(articles.c.id)
-    )
+    ), "minhash")
     rows = [r for r in rows if r["minhash"]]  # cleared fingerprints can be JSON null, which passes IS NOT NULL
     done = [r for r in rows if r["wire_group"] is not None]
     new = [r for r in rows if r["wire_group"] is None]

@@ -37,6 +37,7 @@ from sqlalchemy import bindparam, func
 
 from .config import SETTINGS
 from .db import Store, articles, canonical, claims, delete, published, select, stories, update, utcnow
+from . import heavy
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -67,8 +68,10 @@ def _story_text(a: dict) -> str:
 def _heal_copied_vectors(store: Store, since: dt.datetime, limit: int = 1000) -> int:
     """Self-repair: different articles must not share an identical vector. If they do (an
     embedding batch was misread), detach them and re-embed them, at most `limit` per run."""
-    rows = store.rows(select(articles.c.id, articles.c.title, articles.c.embedding, articles.c.story_id)
-                      .where(articles.c.embedding.is_not(None), articles.c.published_at >= since))
+    rows = heavy.fill(store, store.rows(select(articles.c.id, articles.c.title, *heavy.columns(store, "embedding"),
+                                                articles.c.story_id)
+                                         .where(articles.c.embedding.is_not(None), articles.c.published_at >= since)),
+                      "embedding")
     by_vec: dict[tuple, list[dict]] = {}
     for r in rows:
         if not r["embedding"]:  # a cleared vector can be stored as JSON null, which passes IS NOT NULL
@@ -327,12 +330,12 @@ def _split_story(store: Store, sid: int, idx: list[int], arts: list[dict], X: np
 def group_stories(store: Store, router: Router | None, embed_seconds: float = 360) -> int:
     since = utcnow() - dt.timedelta(hours=SETTINGS.story_window_hours)
     healed = _heal_copied_vectors(store, since, limit=SETTINGS.heal_per_run)
-    arts = store.rows(
-        select(articles.c.id, articles.c.title, articles.c.text, articles.c.embedding, articles.c.embed_model,
+    arts = heavy.fill(store, store.rows(
+        select(articles.c.id, articles.c.title, *heavy.columns(store, "text", "embedding"), articles.c.embed_model,
                articles.c.story_id, articles.c.published_at, articles.c.extracted_at)
         .where(articles.c.text.is_not(None), articles.c.published_at >= since)
         .order_by(articles.c.published_at)
-    )
+    ), "text", "embedding")
     model = embed_model(router)
     # published stories are closed (editions.py): their articles are never moved out or regrouped
     pub = {r["story_id"] for r in store.rows(select(published.c.story_id))}

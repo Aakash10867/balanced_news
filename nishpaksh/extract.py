@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from .config import SETTINGS
 from .frames import normalize as normalize_frame
+from sqlalchemy import func
 from .db import Store, articles, claims, delete, insert, select, stories, update, utcnow
 from .router import CallFailed, QuotaExhausted, Router
 
@@ -260,12 +261,14 @@ def select_for_extraction(store: Store, focus: set[int] | None = None) -> list[d
     independent source appears. Within a story only one article per independent source is
     read (a wire copy repeats its original), up to `max_extract_per_story` sources."""
     from .wire import independence_groups
-    rows = store.rows(
-        select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
-               articles.c.story_id, articles.c.title, articles.c.text, articles.c.published_at,
-               articles.c.extract_failures, articles.c.extracted_at, articles.c.text_source)
-        .where(articles.c.story_id.is_not(None), articles.c.text.is_not(None))
-    )
+    # the text itself is fetched only for the articles chosen (egress, Oct 8 2026): choosing needs its length
+    q = (select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
+                articles.c.story_id, articles.c.title, func.length(articles.c.text).label("text_len"),
+                articles.c.published_at, articles.c.extract_failures, articles.c.extracted_at, articles.c.text_source)
+         .where(articles.c.story_id.is_not(None), articles.c.text.is_not(None)))
+    if focus is not None:
+        q = q.where(articles.c.story_id.in_(sorted(focus) or [-1]))
+    rows = store.rows(q)
     from .editions import frozen_ids
     closed = frozen_ids(store)       # a published story is never read again (editions.py)
     by_story: dict[int, list[dict]] = {}
@@ -294,7 +297,7 @@ def select_for_extraction(store: Store, focus: set[int] | None = None) -> list[d
         # option B: a page we could not read (headline and blurb only) is never read for facts
         todo = [a for a in arts if not a["extracted_at"] and (a["extract_failures"] or 0) < 3
                 and groups[a["id"]] not in seen_groups and a["text_source"] != "summary"]
-        todo.sort(key=lambda a: (-(a["published_at"].timestamp()), -len(a["text"] or "")))
+        todo.sort(key=lambda a: (-(a["published_at"].timestamp()), -(a["text_len"] or 0)))
         picked = []
         for a in todo:
             if len(picked) >= room:
@@ -308,7 +311,15 @@ def select_for_extraction(store: Store, focus: set[int] | None = None) -> list[d
             # finish stories already being read before starting new ones, then the most covered
             ranked.append((len(seen_groups - {groups[a["id"]] for a in picked}) > 0, len(readable), newest, picked))
     ranked.sort(key=lambda t: (t[0], t[1], t[2]), reverse=True)
-    return [a for *_, picked in ranked for a in picked]
+    chosen = [a for *_, picked in ranked for a in picked]
+    texts = {}
+    ids = [a["id"] for a in chosen]
+    for start in range(0, len(ids), 400):
+        texts.update({r["id"]: r["text"] for r in store.rows(
+            select(articles.c.id, articles.c.text).where(articles.c.id.in_(ids[start:start + 400])))})
+    for a in chosen:
+        a["text"] = texts.get(a["id"])
+    return chosen
 
 
 def retract_unreadable(store: Store) -> int:

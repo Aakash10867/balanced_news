@@ -56,6 +56,13 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: Restore the cache of article text and vectors
+        # heavy columns are read from Supabase only when new or changed (nishpaksh/heavy.py: egress)
+        uses: actions/cache@v4
+        with:
+          path: .heavycache
+          key: heavy-${{ github.run_id }}
+          restore-keys: heavy-
       - name: Run pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -64,6 +71,7 @@ jobs:
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           RUN_TRIGGER: ${{ github.event.inputs.reason || github.event_name }}
+          NISHPAKSH_HEAVY_CACHE: .heavycache/heavy.sqlite
         run: python -m nishpaksh.run --time-budget 45
       - name: Move articles older than 3 days to the archive branch
         # a story leaves the database only after its page is pushed (nishpaksh/pagearchive.py)

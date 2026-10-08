@@ -18,12 +18,14 @@ archive branch for articles older than three days, so a failed push only costs s
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import pathlib
-import shutil
 
 from .config import database_url
+from sqlalchemy import Text, cast, func
+
 from .db import Store, published, select, utcnow
 
 log = logging.getLogger(__name__)
@@ -115,36 +117,76 @@ def card(row: dict, lang: str) -> dict | None:
             "n": (pe.get("counts") or {}).get("independent_sources") or 0}
 
 
+MANIFEST = "manifest.json"
+
+
+def _page(r: dict) -> dict:
+    return {"story_id": r["story_id"], "updated_at": r["updated_at"].isoformat(timespec="seconds"),
+            "headline_en": r["headline_en"], "headline_hi": r["headline_hi"],
+            "payload_en": slim_payload(r["payload_en"]), "payload_hi": slim_payload(r["payload_hi"])}
+
+
 def export(store: Store, root: str | pathlib.Path) -> int:
-    """Write the home-page files and one file per live article into `root` (emptied first)."""
+    """Write the home-page files and one file per live article into `root`, a checkout of the feed
+    branch. Only articles whose content changed since the last export are read from the database
+    (egress, Oct 8 2026): the branch keeps a manifest of each article's md5 and its two cards."""
     root = pathlib.Path(root)
-    if root.exists():
-        for child in root.iterdir():
-            if child.name != ".git":
-                shutil.rmtree(child) if child.is_dir() else child.unlink()
     root.mkdir(parents=True, exist_ok=True)
-    rows = store.rows(select(published).order_by(published.c.updated_at.desc()))
+    try:
+        old = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = {}
+    pg = store.engine.dialect.name == "postgresql"
+    meta = [published.c.story_id, published.c.updated_at, published.c.headline_en, published.c.headline_hi]
+    if pg:
+        meta += [func.md5(cast(published.c.payload_en, Text)).label("m_en"),
+                 func.md5(cast(published.c.payload_hi, Text)).label("m_hi")]
+    else:
+        meta += [published.c.payload_en, published.c.payload_hi]
+    rows = store.rows(select(*meta).order_by(published.c.updated_at.desc()))
+    if not pg:
+        for r in rows:
+            r["m_en"] = hashlib.md5(json.dumps(r["payload_en"], sort_keys=True, default=str).encode()).hexdigest()
+            r["m_hi"] = hashlib.md5(json.dumps(r["payload_hi"], sort_keys=True, default=str).encode()).hexdigest()
+    (root / "story").mkdir(exist_ok=True)
+    stamp = lambda r: [r["m_en"], r["m_hi"], r["updated_at"].isoformat(timespec="seconds"), r["headline_en"], r["headline_hi"]]
+    keep = {str(r["story_id"]) for r in rows
+            if (old.get(str(r["story_id"])) or {}).get("m") == stamp(r) and (root / "story" / f"{r['story_id']}.json").exists()}
+    todo = [r["story_id"] for r in rows if str(r["story_id"]) not in keep]
+    full: dict[int, dict] = {}
+    for start in range(0, len(todo), 50):
+        for r in store.rows(select(published).where(published.c.story_id.in_(todo[start:start + 50]))):
+            full[r["story_id"]] = r
+    manifest: dict[str, dict] = {}
+    for r in rows:
+        sid = str(r["story_id"])
+        if sid in keep:
+            manifest[sid] = old[sid]
+            continue
+        f = full.get(r["story_id"])
+        if not f:
+            continue
+        entry = {"m": stamp(r), "en": card(f, "en"), "hi": card(f, "hi")}
+        if not entry["en"]:
+            continue                      # a page still waiting for its first essay is not shown
+        (root / "story" / f"{sid}.json").write_text(json.dumps(_page(f), ensure_ascii=False, separators=(",", ":"), default=str),
+                                                   encoding="utf-8")
+        manifest[sid] = entry
+    for p in (root / "story").glob("*.json"):
+        if p.stem not in manifest:
+            p.unlink()
     now = utcnow().isoformat(timespec="seconds")
+    order = [str(r["story_id"]) for r in rows if str(r["story_id"]) in manifest]
     for lang in ("en", "hi"):
-        cards = [c for c in (card(r, lang) for r in rows) if c]
+        cards = [manifest[sid][lang] for sid in order if manifest[sid].get(lang)]
         (root / f"{lang}.json").write_text(json.dumps({"generated_at": now, "stories": cards},
                                                       ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    (root / "story").mkdir(exist_ok=True)
-    n = 0
-    for r in rows:
-        if not ((r.get("payload_en") or {}).get("narrative") or {}).get("paragraphs"):
-            continue
-        page = {"story_id": r["story_id"], "updated_at": r["updated_at"].isoformat(timespec="seconds"),
-                "headline_en": r["headline_en"], "headline_hi": r["headline_hi"],
-                "payload_en": slim_payload(r["payload_en"]), "payload_hi": slim_payload(r["payload_hi"])}
-        (root / "story" / f"{r['story_id']}.json").write_text(
-            json.dumps(page, ensure_ascii=False, separators=(",", ":"), default=str), encoding="utf-8")
-        n += 1
+    (root / MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (root / "README.md").write_text(
         "# Nishpaksh feed\n\nThe live articles as ready-made files for the reading site, rewritten every hour "
         "(one commit, force-pushed). See nishpaksh/feed.py on main.\n", encoding="utf-8")
-    log.info("feed: %d articles written to %s", n, root)
-    return n
+    log.info("feed: %d articles (%d read from the database) written to %s", len(manifest), len(full), root)
+    return len(manifest)
 
 
 def main() -> None:

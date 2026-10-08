@@ -252,6 +252,12 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   page reads its feed/archive from that repo; `pagearchive` uses `GITHUB_REPOSITORY`; both Supabase dispatch
   functions call `public.dispatch_workflow` (migration `20261008000100_repo_moved.sql`) with the Vault token
   `github_dispatch_token`, a fine-grained token for this repo (Actions: read and write).
+- **Egress (Oct 8 2026):** Supabase free = 5 GB/month; the first week used 12.5 GB, ~85% of it the pipeline re-reading
+  article text, embeddings and minhashes every run. `heavy.py`: those columns are selected as md5 and served from a
+  local SQLite cache (kept by actions/cache in hourly.yml, `NISHPAKSH_HEAVY_CACHE`), fetched only when new or changed;
+  run stats `heavy_cache` (hit / fetched). Article choice reads text lengths, then the text of the chosen articles only;
+  priority reads only stories with a fresh report; the feed re-reads only articles whose payload md5 changed
+  (`manifest.json` on the feed branch). Keep new heavy reads behind `heavy.columns`/`heavy.fill`.
 - **Scheduling:** Supabase `pg_cron` calls GitHub's workflow_dispatch at :05 every hour
   (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); the pipeline has no GitHub
   schedule (removed Oct 8 2026). The writer (`writer.yml`) keeps its :55 GitHub schedule as backup.

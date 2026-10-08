@@ -17,6 +17,7 @@ import datetime as dt
 import logging
 
 from .config import SETTINGS
+from sqlalchemy import and_, or_
 from .db import Store, articles, select, stories, update, utcnow
 from .router import QuotaExhausted, Router
 
@@ -50,10 +51,15 @@ def _candidates(store: Store, now: dt.datetime) -> dict[int, dict]:
     from .editions import frozen_ids
     from .wire import independence_groups
     since = now - dt.timedelta(hours=SETTINGS.stale_after_hours)
+    # only stories with a report inside the window (as `newest < since` below), so old stories are not
+    # read every run (egress, Oct 8 2026)
+    fresh = (select(articles.c.story_id).where(articles.c.story_id.is_not(None), or_(
+        articles.c.fetched_at >= since,
+        and_(articles.c.fetched_at.is_(None), or_(articles.c.published_at >= since, articles.c.published_at.is_(None))))))
     rows = store.rows(select(articles.c.id, articles.c.story_id, articles.c.outlet, articles.c.url, articles.c.agency,
                              articles.c.wire_group, articles.c.title, articles.c.lang, articles.c.published_at,
                              articles.c.fetched_at)
-                      .where(articles.c.story_id.is_not(None)))
+                      .where(articles.c.story_id.in_(fresh)))
     closed = frozen_ids(store)
     by: dict[int, list[dict]] = {}
     for r in rows:
