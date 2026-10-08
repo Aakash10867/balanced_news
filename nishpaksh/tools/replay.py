@@ -6,6 +6,7 @@ Results go to the `diagnostics` table (kind 'replay'). Nothing in the real table
 the shared quota counters.
 
     python -m nishpaksh.tools.replay --stories 10192,10254,10360
+    python -m nishpaksh.tools.replay --stories 12099,14259 --mode context   # only the context checks (cheap)
 """
 from __future__ import annotations
 
@@ -38,6 +39,8 @@ def _copy(src: Store, dst: Store, table, where) -> int:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--stories", required=True)
+    p.add_argument("--mode", default="write", choices=["write", "context"],
+                   help="context: only build each story and run the context checks (a few Flash-Lite calls)")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     ids = [int(x) for x in a.stories.split(",") if x.strip()]
@@ -60,6 +63,27 @@ def main() -> None:
     report = []
     for sid in ids:
         entry = {"story": sid, "old_headline": old.get(sid)}
+        if a.mode == "context":
+            try:
+                payload = compose.build_payload(local, router, sid)
+                if payload is None:
+                    entry["error"] = "no payload"
+                else:
+                    before = [(i.get("role"), i["text"]) for i in payload.get("context") or []]
+                    compose.drop_outlet_self_talk(payload)
+                    compose.drop_unrelated_context(payload)
+                    after_words = {i["text"] for i in payload.get("context") or []}
+                    compose.check_context(local, router, sid, payload)
+                    kept = {i["text"] for i in payload.get("context") or []}
+                    entry["context"] = [{"role": r, "text": t[:200],
+                                         "result": "kept" if t in kept else "other news" if t in after_words else "no shared word"}
+                                        for r, t in before]
+            except Exception as e:  # noqa: BLE001
+                log.exception("story %s failed", sid)
+                entry["error"] = repr(e)[:500]
+            report.append(entry)
+            log.info("%s", json.dumps(entry)[:800])
+            continue
         try:
             entry["consolidate"] = consolidate_story(local, router, sid)
             # a published article is never rewritten; on this scratch copy it is written afresh

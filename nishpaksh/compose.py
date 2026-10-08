@@ -475,6 +475,106 @@ def drop_unrelated_context(payload: dict) -> int:
     return dropped
 
 
+CONTEXT_PROMPT = """A news story, and some lines from the pages that reported it. A news page often carries OTHER
+news too (a sidebar, a list of other videos, "also read" links, a live blog). For each numbered line decide:
+
+"connected"  - the line belongs to THIS story: its background (how it came about, earlier events of the
+               same people, place or matter), an explanation of something in it, or a separate event that
+               is linked to it (the same people, the same dispute, an earlier case of the same kind that the
+               report itself compares it with).
+"other news" - the line is about something else that only happened to be on the same page.
+
+Examples, for a story "India's cheetah population reached 60 after a cheetah gave birth to five cubs in
+Kuno National Park":
+  "Cheetahs were brought to Kuno from Namibia in 2022." -> connected (background)
+  "Kerala's minister defended a vigilance probe into a road project." -> other news (a different matter)
+For a story "Four students died in Vrindavan; the District Magistrate ordered an inquiry":
+  "Bhuvneshwar Kumar has returned to the Indian T20 team." -> other news (sport, nothing to do with it)
+For a story "A drone struck an oil tanker in the Black Sea":
+  "Two days earlier, the cargo ship MV Royad Mammadov was attacked in the Black Sea." -> connected
+If you are not sure, answer "other news".
+
+THE STORY:
+{story}
+
+LINES:
+{lines}
+
+Reply with JSON only: {{"results": [{{"n": 1, "answer": "connected"}}, {{"n": 2, "answer": "other news"}}]}}"""
+
+CONTEXT_CHECKED = ("related", "background", "explanation")   # owner, Oct 8 2026: reactions and "next" not asked
+CONTEXT_BATCH = 8
+
+
+def _ctx_key(text: str) -> str:
+    return hashlib.sha1((text or "").strip().lower().encode("utf-8")).hexdigest()[:16]
+
+
+def check_context(store: Store, router: Router | None, story_id: int, payload: dict) -> int:
+    """Context lines that are other news from the same page (Oct 8 2026: a Kerala vigilance probe in the
+    cheetah story, from a video page's list of other videos; a cricket comeback in a story of students'
+    deaths). Shared words cannot tell (measured on the 60 latest articles: a word rule dropped "the project
+    is expected to generate employment" in the project's own story, a name rule dropped 38 of 154 related
+    lines and kept the cricket one), so a model is asked one plain question: connected / other news. Asked
+    twice, the second time with the lines in reverse order; kept only if both say connected. Unsure, or not
+    asked (quota), is "other news": unrelated news shown as context is a false link. Answers are kept per
+    line in stories.analysis.context_checks, so a retried story is not asked again."""
+    from .narrative import ordered_items
+    from .news import pick_news
+    lines = [i for i in payload.get("context") or [] if i.get("role") in CONTEXT_CHECKED and i.get("text")]
+    if not lines:
+        return 0
+    row = store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}
+    an = dict(row.get("analysis") or {})
+    cache = dict(an.get("context_checks") or {})
+    todo = [i for i in lines if _ctx_key(i["text"]) not in cache]
+    if todo and router is not None:
+        items = ordered_items(payload)
+        news = [x for x in pick_news(items)[:2]]
+        by_id = {i["id"]: i for i in items}
+        story = " ".join(by_id[x]["text"] for x in news if x in by_id) or " ".join(i["text"] for i in items[:2])
+
+        def ask(texts: list[str]) -> dict[str, bool]:
+            got: dict[str, bool] = {}
+            for start in range(0, len(texts), CONTEXT_BATCH):
+                chunk = texts[start:start + CONTEXT_BATCH]
+                body = "\n".join(f'{k + 1}. "{t}"' for k, t in enumerate(chunk))
+                try:
+                    res = router.call("page", CONTEXT_PROMPT.format(story=story[:600], lines=body),
+                                      json_out=True, max_output_tokens=400)
+                except QuotaExhausted:
+                    break
+                except Exception as e:  # noqa: BLE001
+                    log.warning("context check failed: %s", str(e)[:200])
+                    continue
+                for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
+                    try:
+                        n = int(item["n"]) - 1
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if 0 <= n < len(chunk):
+                        got[chunk[n]] = str(item.get("answer") or "").strip().lower() == "connected"
+            return got
+        texts = list(dict.fromkeys(i["text"] for i in todo))
+        first = ask(texts)
+        second = ask(list(reversed([t for t in texts if first.get(t)])))
+        for t in texts:
+            if t in first and (not first[t] or t in second):     # an answer we can keep (both asked, or a no)
+                cache[_ctx_key(t)] = "connected" if first[t] and second.get(t) else "other"
+        if cache != (an.get("context_checks") or {}):
+            an["context_checks"] = cache
+            store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
+    keep, dropped = [], 0
+    for i in payload.get("context") or []:
+        if i in lines and cache.get(_ctx_key(i["text"])) != "connected":
+            dropped += 1
+            log.info("context line dropped as other news (story %s): %s", story_id, i["text"][:100])
+            continue
+        keep.append(i)
+    payload["context"] = keep
+    return dropped
+
+
 def link_updates(payload: dict, updates: dict) -> int:
     """An older figure and the newer one that replaced it (disputes.py: every report of the newer one
     came clearly later): both are written, together, the newest first ("the toll rose to 50; earlier
@@ -561,6 +661,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     from .spelling import unify_article, unify_payload
     drop_outlet_self_talk(payload)
     drop_unrelated_context(payload)
+    check_context(store, router, story_id, payload)     # other news from the same page (a model, asked twice)
     an_ = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     fold_covered(payload, an_.get("covered") or {})
     link_updates(payload, an_.get("updates") or {})

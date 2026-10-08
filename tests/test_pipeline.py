@@ -2550,3 +2550,54 @@ def test_who_speaks_is_code_s_job_story_13107():
     polish({"narrative": {"paragraphs": P2}, "contested": [one]})
     t2 = [s["text"] for s in P2[0]]
     assert "he " not in " ".join(t2[1:]).lower().replace("the ", "")
+
+
+def test_context_that_is_other_news_on_the_same_page_is_dropped(store):
+    """Owner, Oct 8 2026: a Kerala vigilance probe sat under "Related events" in the cheetah story (a video
+    page listed other videos); a cricket comeback in a story of students' deaths. Words cannot tell, so one
+    question is asked twice (lines reversed the second time); only "connected" both times is kept, and the
+    answers are cached so a retried story is not asked again."""
+    from nishpaksh import compose
+    from nishpaksh.router import LLMResult
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=False, qualifies=True,
+                                                  signature="cheetah cubs", analysis={}))
+    core = {"id": 1, "text": "A cheetah gave birth to five cubs in Kuno National Park", "verdict": "corroborated",
+            "kind": "event", "sources": [], "n_sources": 3}
+    ctx = [{"id": 2, "role": "related", "text": "Kerala Home Minister Ramesh Chennithala defended a vigilance probe "
+                                                  "into a road upgrade project"},
+           {"id": 3, "role": "background", "text": "Cheetahs were brought to Kuno National Park from Namibia in 2022"},
+           {"id": 4, "role": "reaction", "text": "The minister congratulated the field staff"}]   # not asked
+
+    class Asker:
+        def __init__(self, flip=False):
+            self.prompts, self.flip = [], flip
+
+        def call(self, tier, prompt, **kw):
+            self.prompts.append(prompt)
+            lines = prompt.split("LINES:")[1]
+            res = []
+            for n, t in re.findall(r'^(\d+)\. "(.*)"$', lines, re.M):
+                yes = "Kuno" in t and not (self.flip and len(self.prompts) > 1)
+                res.append({"n": int(n), "answer": "connected" if yes else "other news"})
+            return LLMResult("", {"results": res}, "m", [], 1)
+
+    def payload():
+        return {"established": [dict(core)], "contested": [], "undated": [], "timeline": [],
+                "context": [dict(c, kind="event", verdict="unverified", sources=[]) for c in ctx]}
+    a = Asker()
+    p = payload()
+    assert compose.check_context(store, a, sid, p) == 1
+    assert [c["id"] for c in p["context"]] == [3, 4]
+    assert len(a.prompts) == 2 and "Kerala" not in a.prompts[1].split("LINES:")[1]        # only a "connected" is asked again
+    # cached: nothing asked the second time
+    b = Asker()
+    p = payload()
+    assert compose.check_context(store, b, sid, p) == 1 and b.prompts == []
+    # the second asking says no: dropped (only "connected" twice is kept)
+    store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
+    p = payload()
+    assert compose.check_context(store, Asker(flip=True), sid, p) == 2 and [c["id"] for c in p["context"]] == [4]
+    # nothing could be asked (no model): other news, never shown as context unchecked
+    store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
+    p = payload()
+    assert compose.check_context(store, None, sid, p) == 2

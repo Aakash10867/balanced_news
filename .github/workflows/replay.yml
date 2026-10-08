@@ -7,6 +7,10 @@ on:
       stories:
         description: "comma-separated story ids"
         required: true
+      mode:
+        description: "write (the whole article) or context (only the context checks)"
+        required: false
+        default: "write"
 jobs:
   replay:
     runs-on: ubuntu-latest
@@ -24,4 +28,5 @@ jobs:
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           STORIES: ${{ github.event.inputs.stories }}
-        run: python -m nishpaksh.tools.replay --stories "$STORIES"
+          MODE: ${{ github.event.inputs.mode || 'write' }}
+        run: python -m nishpaksh.tools.replay --stories "$STORIES" --mode "$MODE"
