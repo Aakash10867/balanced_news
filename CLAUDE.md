@@ -391,8 +391,11 @@ Hindi. At most 2 per clock hour.
   expected to generate employment" in the project's own story; a name rule dropped 38 of 154 related lines and
   kept the cricket one). So `compose.check_context` asks one question per story for its related, background and
   explanation lines (owner: reactions and "what next" not asked): connected / other news, worked examples with
-  the traps, batches of 8, asked twice (lines reversed), kept only if "connected" both times; unsure or not
-  asked = dropped. Answers cached per line text in `stories.analysis.context_checks`. Page tier, ~2-4
+  the traps and the story's news plus up to 10 of its own statements, batches of 8, asked twice (lines
+  reversed) where it matters: a RELATED line is kept only if "connected" both times (not asked = dropped); a
+  BACKGROUND or EXPLANATION line is dropped only if "other news" both times (not asked = kept): asked strictly,
+  the first replay dropped "Cheetahs live in Kuno and Gandhi Sagar" and the floods in a story about flood
+  victims. Answers cached per line text in `stories.analysis.context_checks`. Page tier, ~2-4
   Flash-Lite calls per article. `replay --mode context` runs only this on stored stories (cheap).
 - One spelling per name in an article by code (`spelling.py`, Oct 7 2026: Machhar / Machar / Matchar /
   Machchhar on one page): capitalised words with the same key (tch/chh = ch, ee = i, oo = u, doubled letters

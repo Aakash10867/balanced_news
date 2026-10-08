@@ -479,21 +479,24 @@ CONTEXT_PROMPT = """A news story, and some lines from the pages that reported it
 news too (a sidebar, a list of other videos, "also read" links, a live blog). For each numbered line decide:
 
 "connected"  - the line belongs to THIS story: its background (how it came about, earlier events of the
-               same people, place or matter), an explanation of something in it, or a separate event that
-               is linked to it (the same people, the same dispute, an earlier case of the same kind that the
-               report itself compares it with).
+               same people, place or matter), the wider situation it happens in (the floods in a story about
+               flood victims, the war in a story about a ship attacked in it), a fact about a person, place
+               or body in the story, an explanation of something in it, or a separate event linked to it
+               (the same people, the same dispute, an earlier case of the same kind).
 "other news" - the line is about something else that only happened to be on the same page.
 
 Examples, for a story "India's cheetah population reached 60 after a cheetah gave birth to five cubs in
 Kuno National Park":
   "Cheetahs were brought to Kuno from Namibia in 2022." -> connected (background)
+  "Cheetahs now live in Kuno National Park and Gandhi Sagar Sanctuary." -> connected (a fact about them)
   "Kerala's minister defended a vigilance probe into a road project." -> other news (a different matter)
 For a story "Four students died in Vrindavan; the District Magistrate ordered an inquiry":
+  "The gurukul is run by Ashish Sharma and has 200 students." -> connected (a fact about the place)
   "Bhuvneshwar Kumar has returned to the Indian T20 team." -> other news (sport, nothing to do with it)
+For a story "A police officer pointed a gun at flood victims in Saran and was suspended":
+  "Floods have affected 9.87 lakh people in six Bihar districts." -> connected (the situation it happens in)
 For a story "A drone struck an oil tanker in the Black Sea":
   "Two days earlier, the cargo ship MV Royad Mammadov was attacked in the Black Sea." -> connected
-If you are not sure, answer "other news".
-
 THE STORY:
 {story}
 
@@ -503,6 +506,10 @@ LINES:
 Reply with JSON only: {{"results": [{{"n": 1, "answer": "connected"}}, {{"n": 2, "answer": "other news"}}]}}"""
 
 CONTEXT_CHECKED = ("related", "background", "explanation")   # owner, Oct 8 2026: reactions and "next" not asked
+# a related event is kept only if "connected" twice: that is where the other news on a page lands (60 latest
+# articles); background and explanation are dropped only if "other news" twice (asked strictly, the first
+# replay dropped "Cheetahs live in Kuno and Gandhi Sagar" and the floods in a story about flood victims)
+STRICT_ROLES = ("related",)
 CONTEXT_BATCH = 8
 
 
@@ -515,10 +522,12 @@ def check_context(store: Store, router: Router | None, story_id: int, payload: d
     cheetah story, from a video page's list of other videos; a cricket comeback in a story of students'
     deaths). Shared words cannot tell (measured on the 60 latest articles: a word rule dropped "the project
     is expected to generate employment" in the project's own story, a name rule dropped 38 of 154 related
-    lines and kept the cricket one), so a model is asked one plain question: connected / other news. Asked
-    twice, the second time with the lines in reverse order; kept only if both say connected. Unsure, or not
-    asked (quota), is "other news": unrelated news shown as context is a false link. Answers are kept per
-    line in stories.analysis.context_checks, so a retried story is not asked again."""
+    lines and kept the cricket one), so a model is asked one plain question: connected / other news, with the
+    story's news and own statements in front of it. Asked twice where it matters, the second time with the
+    lines in reverse order: a RELATED event is kept only if both say connected (not asked = dropped: other
+    news shown as context is a false link); BACKGROUND and EXPLANATION are dropped only if both say other
+    news (not asked = kept, as before). Answers are kept per line in stories.analysis.context_checks, so a
+    retried story is not asked again."""
     from .narrative import ordered_items
     from .news import pick_news
     lines = [i for i in payload.get("context") or [] if i.get("role") in CONTEXT_CHECKED and i.get("text")]
@@ -532,7 +541,15 @@ def check_context(store: Store, router: Router | None, story_id: int, payload: d
         items = ordered_items(payload)
         news = [x for x in pick_news(items)[:2]]
         by_id = {i["id"]: i for i in items}
-        story = " ".join(by_id[x]["text"] for x in news if x in by_id) or " ".join(i["text"] for i in items[:2])
+        # the news first, then more of the story's own statements: with the news alone the model did not
+        # see that floods were the setting of a story about flood victims
+        own = [by_id[x]["text"] for x in news if x in by_id] + [i["text"] for i in items if i["id"] not in news]
+        story, n = "", 0
+        for t in own:
+            if n >= 10 or len(story) + len(t) > 1400:
+                break
+            story += f"- {t}\n"
+            n += 1
 
         def ask(texts: list[str]) -> dict[str, bool]:
             got: dict[str, bool] = {}
@@ -540,7 +557,7 @@ def check_context(store: Store, router: Router | None, story_id: int, payload: d
                 chunk = texts[start:start + CONTEXT_BATCH]
                 body = "\n".join(f'{k + 1}. "{t}"' for k, t in enumerate(chunk))
                 try:
-                    res = router.call("page", CONTEXT_PROMPT.format(story=story[:600], lines=body),
+                    res = router.call("page", CONTEXT_PROMPT.format(story=story.strip(), lines=body),
                                       json_out=True, max_output_tokens=400)
                 except QuotaExhausted:
                     break
@@ -556,17 +573,27 @@ def check_context(store: Store, router: Router | None, story_id: int, payload: d
                         got[chunk[n]] = str(item.get("answer") or "").strip().lower() == "connected"
             return got
         texts = list(dict.fromkeys(i["text"] for i in todo))
+        strict = {i["text"] for i in todo if i.get("role") in STRICT_ROLES}
         first = ask(texts)
-        second = ask(list(reversed([t for t in texts if first.get(t)])))
+        # asked again (lines reversed) only where a second answer could change the outcome: a related line
+        # that said connected, a background or explanation line that said other news
+        again = [t for t in texts if t in first and (first[t] if t in strict else not first[t])]
+        second = ask(list(reversed(again)))
         for t in texts:
-            if t in first and (not first[t] or t in second):     # an answer we can keep (both asked, or a no)
-                cache[_ctx_key(t)] = "connected" if first[t] and second.get(t) else "other"
+            if t not in first or (t in again and t not in second):
+                continue                                   # not answered: asked again next time
+            if t in strict:
+                ok = first[t] and second.get(t, False)
+            else:
+                ok = first[t] or second.get(t, False)
+            cache[_ctx_key(t)] = "connected" if ok else "other"
         if cache != (an.get("context_checks") or {}):
             an["context_checks"] = cache
             store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
     keep, dropped = [], 0
     for i in payload.get("context") or []:
-        if i in lines and cache.get(_ctx_key(i["text"])) != "connected":
+        got = cache.get(_ctx_key(i.get("text") or ""))
+        if i in lines and (got == "other" or (got is None and i.get("role") in STRICT_ROLES)):
             dropped += 1
             log.info("context line dropped as other news (story %s): %s", story_id, i["text"][:100])
             continue

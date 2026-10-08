@@ -2588,16 +2588,34 @@ def test_context_that_is_other_news_on_the_same_page_is_dropped(store):
     p = payload()
     assert compose.check_context(store, a, sid, p) == 1
     assert [c["id"] for c in p["context"]] == [3, 4]
-    assert len(a.prompts) == 2 and "Kerala" not in a.prompts[1].split("LINES:")[1]        # only a "connected" is asked again
+    # one asking was enough: the related line said other news (dropped), the background said connected
+    assert len(a.prompts) == 1
     # cached: nothing asked the second time
     b = Asker()
     p = payload()
     assert compose.check_context(store, b, sid, p) == 1 and b.prompts == []
-    # the second asking says no: dropped (only "connected" twice is kept)
+
+    class Says:                      # a fixed pair of answers for every line: first asking, second asking
+        def __init__(self, first, second):
+            self.answers, self.prompts = [first, second], []
+
+        def call(self, tier, prompt, **kw):
+            self.prompts.append(prompt)
+            ans = self.answers[min(len(self.prompts), 2) - 1]
+            res = [{"n": int(n), "answer": ans} for n, _ in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("LINES:")[1], re.M)]
+            return LLMResult("", {"results": res}, "m", [], 1)
+
+    def run(first, second):
+        store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
+        p = payload()
+        compose.check_context(store, Says(first, second), sid, p)
+        return [c["id"] for c in p["context"]]
+    # a related event needs "connected" twice; background is dropped only on "other news" twice
+    assert run("connected", "connected") == [2, 3, 4]
+    assert run("connected", "other news") == [3, 4]          # related: one no is enough to drop it
+    assert run("other news", "connected") == [3, 4]          # background: one yes is enough to keep it
+    assert run("other news", "other news") == [4]
+    # nothing could be asked (no model): the related line goes, background stays
     store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
     p = payload()
-    assert compose.check_context(store, Asker(flip=True), sid, p) == 2 and [c["id"] for c in p["context"]] == [4]
-    # nothing could be asked (no model): other news, never shown as context unchecked
-    store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
-    p = payload()
-    assert compose.check_context(store, None, sid, p) == 2
+    assert compose.check_context(store, None, sid, p) == 1 and [c["id"] for c in p["context"]] == [3, 4]
