@@ -4,7 +4,7 @@ The writer publishes one or two articles an hour, so about 24-48 a day; the pipe
 analyse every story with three sources (Oct 6: 458 articles in 95 stories in eight hours, ~160
 Flash-Lite calls per published article). Now each story is ranked from its HEADLINES as soon as it
 has three independent sources: one cheap call rates about 20 stories at once (the same 1-5 rubric and
-filler test as importance.py). Only the top of that ranking, the preparation queue, is read,
+filler test). Only the top of that ranking, the preparation queue, is read,
 analysed and searched for more outlets; the rest wait as headlines (embeddings only) and enter the
 queue the moment they rank higher: a big late story jumps the queue, coverage growth earns a re-rank.
 

@@ -218,10 +218,11 @@ class FakeBackend:
         if "loaded or emotive word or phrase from a Hindi news report" in prompt:
             items = re.findall(r"^(\d+)\. (.*)$", prompt, flags=re.M)
             return json.dumps({"items": [{"n": int(n), "en": f"concept-{n}"} for n, _ in items]}), [], 50
-        if "Write the headline for this news story" in prompt:
-            if "ESTABLISHED:" not in prompt:   # nothing settled yet: a good editor hedges
-                return json.dumps({"headline": "Section of Kesarganj flyover reportedly collapses, engineer arrested"}), [], 50
-            return json.dumps({"headline": "Section of Kesarganj flyover collapses; two dead, engineer arrested"}), [], 50
+        if "Write THREE different headlines" in prompt:
+            news = re.search(r"^THE NEWS: (.*)$", prompt, flags=re.M).group(1)
+            return json.dumps({"headlines": ["Section of Kesarganj flyover reportedly collapses",
+                                             " ".join(news.rstrip(".").split()[:12]),
+                                             "Section of Kesarganj flyover collapses; two dead, engineer arrested"]}), [], 50
         if "Translate each value" in prompt:
             payload = json.loads(prompt[prompt.index("{"):])
             return json.dumps({k: f"[हिं] {v}" for k, v in payload.items()}, ensure_ascii=False), [], 300

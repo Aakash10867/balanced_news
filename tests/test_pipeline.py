@@ -233,12 +233,12 @@ def test_headline_with_loaded_word_is_rejected(store):
 
     class Loaded(FakeBackend):
         def generate(self, model, prompt, json_mode, grounded):
-            if "Write the headline for this news story" in prompt:
-                return '{"headline": "Shoddy flyover collapses in Kesarganj"}', [], 10
+            if "Write THREE different headlines" in prompt:
+                return '{"headlines": ["Shoddy flyover collapses in Kesarganj"]}', [], 10
             return super().generate(model, prompt, json_mode, grounded)
     _seed(store)
     run(store=store, backend=Loaded(), time_budget_min=30, ingest_news=False, verify_budget=VB)
-    # the loaded headline is rejected; with only the code fallback left, the new story waits
+    # the loaded headline is rejected (twice); with no headline the new story waits
     assert store.rows(select(published)) == []
     # it stays qualified and is offered to the writer again in a later run, without re-analysis
     assert store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))
@@ -940,13 +940,54 @@ def test_writer_never_invents_a_speaker_or_a_cause():
     assert v("The Hindu reported he was found dead in his hostel room.", [3]) is None          # outlet named
 
 
-def test_headline_checks_catch_bare_names_and_tacked_on_hedges():
-    from nishpaksh.compose import _headline_problem
+def test_headline_checks_catch_bare_names_and_hedges():
+    from nishpaksh.news import headline_problem
     src = "kumar was produced before the court in kotdwar"
-    assert "bare name" in _headline_problem("Kumar was produced before the court in Kotdwar", ["x"], src, set())
-    assert "tack" in _headline_problem("Gym trainer produced before Kotdwar court, reportedly", ["x"], src, set())
-    assert "12 words" in _headline_problem(" ".join(["word"] * 15), ["x"], src, set())
-    assert _headline_problem("Gym trainer who defended shopkeeper produced before Kotdwar court", ["x"], src, set()) is None
+    assert "bare name" in headline_problem("Kumar was produced before the court in Kotdwar", src, set())
+    assert "reportedly" in headline_problem("Gym trainer reportedly produced before Kotdwar court", src, set())
+    assert "12 words" in headline_problem(" ".join(["word"] * 13), src, set())
+    assert headline_problem("Gym trainer who defended shopkeeper produced before Kotdwar court", src, set()) is None
+    assert "names 'dehradun'" in headline_problem("Gym trainer produced before Dehradun court", src, set())
+
+
+def test_disputed_news_headline_takes_no_side():
+    """Owner, Oct 8 2026: a disputed statement can be the news; its headline says whose version it is,
+    or leaves the disputed figure out."""
+    from nishpaksh.news import _disputed_answers, headline_problem
+    items = {1: {"id": 1, "text": "Police said 40 people died in the Seemapuri building collapse.", "conflicts_with": [2]},
+             2: {"id": 2, "text": "Families said 50 people died in the Seemapuri building collapse.", "conflicts_with": [1]}}
+    disputed, versions = _disputed_answers(items[1], items)
+    assert disputed == {"40", "50"} and "Families" in versions
+    src = (items[1]["text"] + " " + items[2]["text"]).lower()
+    assert "disputed" in headline_problem("Building collapse in Seemapuri kills 40", src, set(), disputed)
+    assert headline_problem("Police say 40 dead in Seemapuri collapse, families say 50", src, set(), disputed) is None
+    assert headline_problem("Building collapse in Seemapuri leaves many dead", src, set(), disputed) is None
+
+
+def test_news_is_the_decisive_act_not_the_setting():
+    from nishpaksh.news import pick_news
+    items = [
+        {"id": 1, "kind": "event", "text": "India Block leaders held a protest near Jantar Mantar.", "n_sources": 5,
+         "n_articles": 7, "time": {"start": "2026-10-07T10:00"}},
+        {"id": 2, "kind": "event", "text": "Delhi Police detained Rahul Gandhi and Priyanka Gandhi.", "n_sources": 4,
+         "n_articles": 5, "time": {"start": "2026-10-07T11:00"}},
+        {"id": 3, "kind": "event", "text": "Police arrested 12 protesters in 2019.", "n_sources": 4,
+         "n_articles": 4, "time": {"start": "2019-03-01"}},                      # old: not today's news
+        {"id": 4, "kind": "claim", "text": "The ruling party condemned the protest.", "n_sources": 1, "n_articles": 1},
+        {"id": 5, "kind": "event", "text": "The protest began in 2024.", "n_sources": 6, "n_articles": 6,
+         "role": "background"},
+    ]
+    assert pick_news(items)[0] == 2
+
+
+def test_best_correct_headline_wins():
+    from nishpaksh.news import headline_score
+    news = "Delhi Police detained Rahul Gandhi and Priyanka Gandhi at a protest near Jantar Mantar."
+    good = "Police detain Rahul, Priyanka Gandhi at Jantar Mantar protest"
+    setting = "India Block leaders hold protest near Jantar Mantar"
+    jargon = "INDIA bloc MPs detained in DPDP protest"
+    assert headline_score(good, news) > headline_score(setting, news)
+    assert headline_score(good, news) > headline_score(jargon, news)
 
 
 def test_filler_is_never_published(store):
@@ -957,16 +998,10 @@ def test_filler_is_never_published(store):
     store.exec(delete(published))       # judged before it is written
     store.exec(update(stories).where(stories.c.id == sid).values(signature="Aaj ka Rashifal"))
     an = dict(store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"])
-    an.pop("importance", None)
+    an["priority"] = {"score": 1, "filler": True}        # rated as filler from its headlines (priority.py)
     store.exec(update(stories).where(stories.c.id == sid).values(analysis=an))
-
-    class Horoscope(FakeBackend):
-        def generate(self, model, prompt, json_mode, grounded):
-            if "Rate how important" in prompt:
-                return '{"score": 1, "filler": true, "reason": "horoscope"}', [], 10
-            return super().generate(model, prompt, json_mode, grounded)
     from nishpaksh.config import load_yaml
-    r = Router(load_yaml("models.yaml")["tiers"], Horoscope(), store)
+    r = Router(load_yaml("models.yaml")["tiers"], FakeBackend(), store)
     r.resolve()
     assert compose.publish_story(store, r, sid) is False
     assert store.rows(select(published).where(published.c.story_id == sid)) == []
@@ -1351,7 +1386,7 @@ def test_reanalysis_keeps_work_of_other_stages(store):
 # ---------------------------------------------------------------- the Everest page (Oct 5 2026)
 
 def test_headline_must_keep_who_did_what():
-    from nishpaksh.compose import _actor_problem
+    from nishpaksh.news import _actor_problem
     src = "fssai ordered the recall of everest food products' cumin powder. fssai suspended the licence"
     assert "who did what" in _actor_problem("FSSAI recalls Everest cumin powder", src)
     assert _actor_problem("FSSAI suspends licence, orders Everest recall", src) is None

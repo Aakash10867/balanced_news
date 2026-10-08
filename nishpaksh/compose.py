@@ -6,13 +6,12 @@ Structure is decided by code, not by a model:
   contested       everything else, each with its verdict (false ones included, tagged)
   framing         the loaded words each perspective used for the same fact
   sources         every article read, with its perspective
-The only generated prose is the headline (built from established facts and
-rejected if it contains any loaded word) and the Hindi translation.
+The news (news.pick_news, code) is chosen here; the article (narrative.py) leads with it and the
+headline (news.write_headline) is written from it after the article, then the Hindi translation.
 """
 from __future__ import annotations
 
 import copy
-import datetime as dt
 import hashlib
 import json
 import logging
@@ -26,30 +25,6 @@ from .verify import _story_context, relation_text, support_summary
 
 log = logging.getLogger(__name__)
 ESTABLISHED = {"corroborated", "confirmed"}
-
-HEADLINE_PROMPT = """Write the headline for this news story: at most 12 words, plain English, crisp.
-- Hit the single most consequential fact, with an active verb and one concrete detail (a number, a
-  place, a role). The reader should want to read on: lead with the tension or the unusual element that
-  the statements themselves contain. No question headlines, no clickbait, no judging adjectives.
-- Introduce any person who is not nationally famous by who they are ("gym trainer who defended a
-  shopkeeper", "IIT Bombay student"), never by a bare name the reader cannot know.
-- Use ONLY the statements given. ESTABLISHED ones may be stated as fact. For the others, attribute
-  ("family alleges ...") or put "alleged"/"reportedly" next to the uncertain part, never at the end.
-- Lead with the NEWEST development. Background from earlier weeks or months is not the hook; leave it
-  out rather than tie it on.
-- Do not link two events by cause ("due to", "because", "over", "amid") unless a statement does.
-  "After" may join only two steps of the same incident (a death, then the probe into it); never use it
-  to tie the newest event to an older, separate one.
-- Describe what people did with the statements' own verbs ("called himself", not "posed as").
-- Never start with "Reports", never write "reports say/emerge/detail".
-{thread}
-Statements, NEWEST FIRST, each with the date it happened (headline the newest development that matters):
-{facts}
-
-Reply with JSON only: {{"headline": "..."}}"""
-
-LAZY_HEDGES = re.compile(r"(?i)\breports? (say|says|emerge|emerges|detail|details|indicate|indicates|follow|on)\b|^reports\b")
-LINKS = ("due to", "amid", "because", "as a result", "triggered", "led to")
 
 TRANSLATE_PROMPT = """Translate each value of this JSON object into Hindi (Devanagari script).
 Translate literally and neutrally: do not add, soften or strengthen anything. Keep names of people,
@@ -69,137 +44,6 @@ def _interval(rows: list[dict]) -> dict:
     whens = Counter(r["time"]["when_text"] for r in rows if r.get("time") and r["time"].get("when_text"))
     return {"start": min(starts) if starts else None, "end": max(ends) if ends else None,
             "when_text": whens.most_common(1)[0][0] if whens else ""}
-
-
-def _headline(router: Router | None, facts: list[str], banned: set[str], fallback: str,
-              unsettled: list[str] | None = None, thread: str = "", lead: str = "") -> str:
-    """A specific headline. `facts` are established statements, `unsettled` the best-supported
-    others. Checked: no loaded word, no lazy 'reports say', no cause/sequence link the statements
-    do not make, no number the statements do not have."""
-    lines = [f"- ESTABLISHED: {f}" for f in facts[:6]] + [f"- REPORTED: {f}" for f in (unsettled or [])[:8]]
-    if router is None or not lines:
-        return fallback
-    source = " ".join(facts + (unsettled or [])).lower()
-    ctx = f"\nThis is a new development in an ongoing story: {thread}. Headline the NEW development.\n" if thread else ""
-    if lead:
-        # written after the article, from its opening: the writer has decided what the news is
-        ctx += f"\nThe article opens with the news; headline THIS: {lead}\n"
-    prompt = HEADLINE_PROMPT.format(facts="\n".join(lines), thread=ctx)
-    for _ in range(3):   # two retries, each told what was wrong
-        try:
-            res = router.call("page", prompt, json_out=True, max_output_tokens=200)
-            h = str((res.data or {}).get("headline") or "").strip().strip('"').rstrip(".")
-        except (QuotaExhausted, Exception) as e:  # noqa: BLE001
-            log.info("headline fallback: %s", e)
-            return fallback
-        problem = _headline_problem(h, facts, source, banned)
-        if not problem:
-            return h
-        prompt = HEADLINE_PROMPT.format(facts="\n".join(lines), thread=ctx) + (
-            f"\n\nYour previous headline \"{h}\" was rejected: {problem}. Write a new one.")
-    return fallback
-
-
-def _newest_first(items: list[dict]) -> list[str]:
-    """'(3 October) text' lines, newest first; undated ones after, best-supported first."""
-    seen, dated, undated = set(), [], []
-    for i in items:
-        if i["id"] in seen:
-            continue
-        seen.add(i["id"])
-        start = (i.get("time") or {}).get("start")
-        try:
-            d = dt.datetime.fromisoformat(start) if start else None
-        except (TypeError, ValueError):
-            d = None
-        (dated if d else undated).append((d, i))
-    dated.sort(key=lambda x: (x[0].replace(tzinfo=None), x[1]["n_sources"]), reverse=True)
-    undated.sort(key=lambda x: (-x[1]["n_sources"], -x[1]["n_articles"]))
-    return ([f"({d.strftime('%-d %B')}) {i['text']}" for d, i in dated]
-            + [f"(undated) {i['text']}" for _, i in undated])
-
-
-def _headline_problem(h: str, facts: list[str], source: str, banned: set[str]) -> str | None:
-    low = h.lower()
-    if not h or len(h.split()) > 13:
-        return "it must be at most 12 words"
-    if re.search(r"(?i),?\s*(reportedly|allegedly|reports say|reports said)\s*$", h):
-        return ("do not tack 'reportedly' on at the end; put it before the verb, e.g. 'Delhi Police reportedly "
-                "deny permission for Jantar Mantar protest', or attribute it to whoever says it")
-    m = re.match(r"([A-Z][a-z]+)\s+(was|is|has|had|gets|got|were)\b", h)
-    if m and m.group(1).lower() not in ("police", "court", "government", "centre", "parliament", "army"):
-        return f"it starts with a bare name ('{m.group(1)}'); introduce the person by who they are"
-    if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned):
-        return "it uses a loaded word"
-    if LAZY_HEDGES.search(h):
-        return "do not write 'reports say/emerge/detail'; attribute to a person or use 'reportedly'"
-    bad = [l for l in LINKS if re.search(rf"\b{l}\b", low) and l not in source]
-    if bad:
-        return f"it links events with '{bad[0]}', which no statement does"
-    if not set(re.findall(r"\d+", h)) <= set(re.findall(r"\d+", source)):
-        return "it has a number that is not in the statements"
-    if not facts and not any(m in low for m in ("alleg", "reported", "claim", "accus", "say", "said", "denies",
-                                                "deny", "question", "probe", "differ", "seek", "demand")):
-        return "nothing is established, so it must attribute or hedge (e.g. 'reportedly', 'alleges')"
-    return _actor_problem(h, source)
-
-
-HEADLINE_STOP = {"the", "and", "for", "with", "from", "over", "into", "after", "amid", "its", "his", "her", "their"}
-
-
-def _actor_problem(h: str, source: str) -> str | None:
-    """Who did it must match the statements (Oct 2026: "FSSAI recalls Everest cumin powder" when the
-    statements say FSSAI ORDERED the recall; Everest recalls). Checked for the headline's first verb in
-    the present tense ("recalls", "arrests"): where the statements use that verb, someone named before
-    it in the headline must be its actor there, not "the recall" ordered by them. A verb the
-    statements never use (a paraphrase) is not judged here."""
-    words = re.findall(r"[A-Za-z'&.-]+", h)
-    for k, w in enumerate(words):
-        if k == 0 or not re.fullmatch(r"[a-z]{3,}s", w) or w in ("was", "has", "is", "its", "his", "says"):
-            continue
-        stem = w[:-2] if w.endswith(("ches", "shes", "sses", "xes")) else w[:-1]
-        subject = {x.lower().strip("'s.") for x in words[:k] if len(x) >= 3} - HEADLINE_STOP
-        forms = list(re.finditer(rf"\b{re.escape(stem.lower())}(?:s|es|ed|d|ing)?\b", source))
-        if not forms or not subject:
-            return None
-        for m in forms:
-            before = re.findall(r"[a-z'&.-]+", source[max(0, m.start() - 60):m.start()])[-4:]
-            if before and before[-1] in ("the", "a", "an", "its", "his", "her", "their"):
-                continue   # "ordered the recall": a noun, someone else's action on it
-            if subject & {b.strip("'s.") for b in before}:
-                return None
-        m = forms[0]
-        snippet = source[max(0, m.start() - 50):m.end() + 30].strip()
-        return f"it says '{' '.join(words[:k + 1])}', but the statements say \"...{snippet}...\": keep who did what"
-    return None
-
-
-VERB_START = re.compile(r"\b(was|were|is|are|has|have|had|does|did|do|will|gave|made|held|took|paid|met|got|"
-                        r"\w+ed)\b")
-
-
-def _hedged(t: str) -> str:
-    """'Delhi Police denied permission' -> 'Delhi Police reportedly denied permission': the hedge goes
-    before the first verb, never tacked on at the end."""
-    m = VERB_START.search(t, 1)
-    return t[:m.start()] + "reportedly " + t[m.start():] if m else t
-
-
-def _fallback_headline(facts: list[str], unsettled: list[str], signature: str) -> str:
-    """No usable model headline: a short best-supported statement itself (never cut mid-sentence),
-    hedged before its verb if it is not established. Never a raw non-English title."""
-    def fits(t):
-        return len(t.rstrip(".").split()) <= 13
-    for t in facts[:8]:
-        if fits(t):
-            return t.rstrip(".")
-    for t in unsettled[:8]:
-        if fits(t):
-            return _hedged(t.rstrip("."))
-    if facts or unsettled:
-        t = (facts or unsettled)[0].rstrip(".")
-        return " ".join(t.split()[:12]) + "…"
-    return signature if signature and not re.search(r"[\u0900-\u097f]", signature) else "Developing story"
 
 
 def build_payload(store: Store, router: Router | None, story_id: int) -> dict | None:
@@ -324,27 +168,16 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                if len([p for p, w in i["framing"].items() if w]) >= 2]
 
     banned = {w.lower() for i in items.values() for ws in i["framing"].values() for w in ws if len(w) >= 4}
-    # headline material: the best-supported facts first, not the first in time (that one is
-    # often a vague scene-setter)
-    est_all = [items[n] for tier in tl["tiers"] for n in tier] + [items[n] for n in tl["undated"]] + established
-    facts = [i["text"] for i in sorted(est_all, key=lambda i: (-i["n_sources"], -i["n_articles"]))]
-    unsettled = [i["text"] for i in contested if not i["minor"]][:8] or [i["text"] for i in contested][:8]
-    fallback = _fallback_headline(facts, unsettled, story["signature"] or "")
-    # threads first: a development of an earlier story is headlined as the new development
-    from . import importance as imp, threads
-    main_facts = (facts + unsettled)[:8]
+    # the news, chosen once by code (news.py): the lead and the headline are written from it
+    from . import importance as imp, news as news_, threads
+    news_ids = news_.pick_news(list(items.values()))
+    by_support = sorted(items.values(), key=lambda i: (-i["n_sources"], -i["n_articles"], i["id"]))
+    summary = [items[n]["text"] for n in news_ids[:1]] + [i["text"] for i in by_support if i["id"] not in news_ids[:1]]
     from .editions import link_candidate, parent_pages
     link_candidate(store, story_id)      # later reports of a published story develop it
-    parent_ids = threads.find_parents(store, router, story_id, story["signature"] or "", " ".join(main_facts[:4]))
+    parent_ids = threads.find_parents(store, router, story_id, story["signature"] or "", " ".join(summary[:4]))
     live = parent_pages(store, parent_ids)   # live, or already on the archive branch
     thread_ctx = "; ".join(live[p]["headline_en"] for p in parent_ids if p in live)
-    # The headline model sees each statement's date, newest first. Sorted by support alone, old
-    # background that every report retells (a January protest) outranked this week's arrest, and the
-    # model tied the two together with "after".
-    contested_top = [i for i in contested if not i["minor"]][:8] or contested[:8]
-    headline_input = dict(facts=_newest_first(est_all), banned=sorted(banned), fallback=fallback,
-                          unsettled=_newest_first(contested_top), thread=thread_ctx)
-    headline = _headline(router, headline_input["facts"], banned, fallback, headline_input["unsettled"], thread_ctx)
 
     analysis = story["analysis"] or {}
     persp = defaultdict(set)
@@ -363,14 +196,10 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                        "published_at": a["published_at"].isoformat(timespec="minutes") if a["published_at"] else None}
                       for a in full_arts.values()], key=lambda s: (s["perspective"], s["outlet"]))
 
-    # importance: filler is never published; the rest is ranked for the front page
-    rated = imp.assess(router, headline, main_facts, analysis.get("importance"))
-    if rated != analysis.get("importance"):
-        an = dict(story["analysis"] or {})
-        an["importance"] = rated
-        store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
-    if rated.get("filler"):
-        log.info("story %s is filler (%s): not published", story_id, rated.get("reason"))
+    # importance comes from the story's rating (priority.py, from its headlines); filler is never published
+    prio = analysis.get("priority") or {}
+    if prio.get("filler"):
+        log.info("story %s is filler: not published", story_id)
         return None
     n_indep = len(analysis.get("groups") or {})
     langs = len({a["lang"] for a in full_arts.values() if a["extracted_at"]})
@@ -392,16 +221,16 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                 background.append(dict(i, id=-int(i["id"]), kind="background", parent=p))
     return {
         "story_id": story_id,
-        "importance": {"score": rated["score"], "reason": rated.get("reason")},
-        "rank": imp.rank(rated["score"], n_indep, langs),
+        "importance": {"score": prio.get("score")},
+        "rank": imp.rank(prio.get("score") or 3, n_indep, langs),
         "thread": threads.root_of(store, story_id) if parents else story_id,
         "parents": parents,
         "children": children,
         "background": background,
-        "headline": headline,
-        "headline_is_fallback": headline == fallback,
-        "_headline_input": headline_input,    # used once more after the article is written; not stored
-        "has_established": bool(facts),
+        "headline": None,                     # written after the article, from the news (news.py)
+        "news": news_ids[:3],                 # the first is THE news: the lead cites it
+        "_thread_ctx": thread_ctx,            # for the headline; not stored
+        "has_established": bool(est_events or established),
         "perspective_mode": analysis.get("mode"),
         "qualified_by": analysis.get("qualified_by"),
         "perspectives": {k: sorted(v) for k, v in sorted(persp.items())},
@@ -697,7 +526,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     it again (its colours mature by code, editions.mature). A development of an earlier article is
     published only if it earns a follow-up (editions.follow_up_ok). Returns True when written."""
     from .editions import follow_up_ok
-    from .narrative import essay_ok, input_hash, sections_from_payload, write_narrative
+    from .narrative import essay_ok, input_hash, ordered_items, sections_from_payload, write_narrative
     if store.one(select(published.c.story_id).where(published.c.story_id == story_id)):
         return _outcome(story_id, "already published")
     payload = build_payload(store, router, story_id)
@@ -715,6 +544,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     fold_covered(payload, an_.get("covered") or {})
     link_updates(payload, an_.get("updates") or {})
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
+    from .news import pick_news
+    payload["news"] = pick_news(ordered_items(payload))[:3]   # again: folding can remove a statement
     parents = [x["story_id"] for x in payload.get("parents") or []]
     if parents and not follow_up_ok(store, router, story_id, payload, parents):
         return _outcome(story_id, "not a follow-up yet")
@@ -730,14 +561,12 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     drafted = nar.pop("drafted", None)
     essay_good = essay_ok(nar, payload) and _keepable(nar)
     if essay_good:
-        hl = payload.pop("_headline_input", None)
+        from .news import write_headline
         lead = " ".join(x["text"] for x in (nar.get("paragraphs") or [[]])[0])
-        if hl and lead and router is not None:
-            hd = _headline(router, hl["facts"], set(hl["banned"]), hl["fallback"], hl["unsettled"], hl["thread"], lead=lead)
-            if hd != hl["fallback"]:
-                payload["headline"] = hd
-                payload["headline_is_fallback"] = False
-    headline_missing = essay_good and payload.get("headline_is_fallback")
+        items_ = {i["id"]: i for i in ordered_items(payload)}
+        news = items_.get((payload.get("news") or [None])[0])
+        payload["headline"] = write_headline(router, news, items_, lead, banned, payload.get("_thread_ctx") or "")
+    headline_missing = essay_good and not payload.get("headline")
     if not essay_good or headline_missing:
         if not essay_good:
             _note_writer_failure(store, story_id, h, nar)
@@ -759,7 +588,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         an.pop("writer_draft", None)
         store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
     payload["narrative"] = nar
-    payload.pop("_headline_input", None)    # the headline was written from the article's lead above
+    payload.pop("_thread_ctx", None)
     unify_article(payload)                  # and in what the writer and the headline model wrote
     from .style import polish
     polish(payload)                         # surnames after the first mention; varied "he said" (by code)

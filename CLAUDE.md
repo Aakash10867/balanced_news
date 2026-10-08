@@ -166,9 +166,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   than the detailed line is not folded away: the detailed line gets `adds_to` and the writer is told to
   write the two as one sentence in two parts. Parts mature like sentences (`editions.mature`); the
   Hindi page has no parts (one colour per sentence); the said-chain rewrite skips sentences in parts.
-- **News first (Oct 6 2026):** the writer opens with what makes it news today (the newest or most
-  consequential act or statement), never the setting; the headline is written AFTER the article from
-  its opening paragraph (`compose._headline(lead=...)`), with the same checks.
+- **News first (Oct 6 2026):** the article opens with what makes it news today, never the setting;
+  since Oct 8 code chooses it (see "The news, the lead and the headline").
 - **Three relations:** same / contradiction (both cannot be true as facts: amber) / RESPONSE (a party
   answers a claim or finding: both true as reports, written together, never amber). "No denial" in
   the green rule means nobody denies the EVENT happened, not that a party objects to it.
@@ -202,8 +201,23 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   are, never "other reports differ".
 - **Red verdicts on hold** (`SETTINGS.model_verdicts = False`): no second model family on the free
   tier now Gemma fails most calls. Code verdicts still run. Tests keep the machinery on (conftest).
-- **Headlines:** ≤12 words, one hammer-blow fact, people introduced by role, hook from the facts, no
-  "reports say", no tacked-on "reportedly".
+- **The news, the lead and the headline: one structure (owner, Oct 8 2026; `news.py`).** The news is
+  chosen ONCE by code (`news.pick_news`, no call): the story's own statements (not context, not FALSE),
+  ranked: not old (an older year, "previously", "had announced" = the past) > a decisive act (deaths
+  first; verbs only: arrested, ordered, signed... over held, met, heard; "not" = -1) > dated on the
+  story's newest day or the day before > carried by 2+ outlets counting statements telling the same act in
+  other words > central (shares the story's subject) > names and numbers. Checked on the 30 latest
+  articles. The writer gets it as SECTION news; the lead must cite it (`narrative.lead_ok`, else the news
+  fill rewrites the lead). The headline is written after the article (`news.write_headline`): one call
+  gives three candidates; code rejects (>12 words, any "reportedly"/"reports say", bare name, loaded word,
+  cause word, number or name not in the statements, who-did-what, a DISPUTED figure stated as fact:
+  disputes may be the news, owner Oct 8, but the headline says whose version or leaves the figure out)
+  and scores the rest on the six principles (the outcome not the process, one concrete detail, a known
+  name or role, 7-12 words, no jargon, about the news); a second call only if all three fail; no
+  headline = the article waits as a kept draft. House style by code: PM, CJI, CM. Removed: the draft
+  headline before writing, the ESTABLISHED/REPORTED labels and "must hedge" rule, the "reportedly"
+  fallback, and the per-story importance call (front-page rank = `priority` score + coverage; filler is
+  filtered by `priority`). Headline calls per try: 2-7 before, 1-2 now.
 - **Threads:** a later development links to its earlier story (parent → daughter, many-to-many).
   Daughter opens with the new development + ≤2 background sentences + "Earlier in this story"; the
   parent gains no link (it is closed). Archived parents are found through the branch index.
@@ -230,7 +244,7 @@ colours of published articles mature → retention → health checks in `runs.st
 step) articles older than 3 days to the archive branch. Rating (`priority.py`) comes after grouping;
 search, Tavily reads, reading and analysis cover the preparation queue only.
 Writing desk (`desk.py`, :45 UTC): settled stories, most important first → follow-up? → page, written once
-(`compose.py`: importance, threads, headline; `narrative.py`: the essay; headline from its lead) →
+(`compose.py`: threads, the news; `narrative.py`: the essay led by the news; `news.py`: headline) →
 Hindi. At most 2 per clock hour.
 
 ## Known quotas and facts learned from real data
@@ -338,5 +352,5 @@ Hindi. At most 2 per clock hour.
   `diagnostics` (kind 'desk': ready, tried, published, tier_calls). Health flags a writer with 0
   successes in the desk's last 2 runs and two clock hours without an article while stories are ready
   (`run.writer_silent`). `published.updated_at` is the publication time.
-- The headline model gets statements dated and newest first (`compose._newest_first`); sorted by support,
-  old background outranked the new development and got tied to it with "after".
+- The news pick puts the newest day first and the past last (`news.pick_news`); sorted by support, old
+  background outranked the new development and got tied to it with "after".

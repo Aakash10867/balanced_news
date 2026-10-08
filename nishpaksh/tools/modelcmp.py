@@ -116,11 +116,11 @@ def analyse(st: Store, router, sid: int) -> dict[int, dict]:
 
 
 def page_tasks(prod: Store, router, sid: int, facts: list[str]) -> dict:
-    from .. import compose, importance
+    from .. import compose, news
     st = Store(f"sqlite:///{tempfile.mkdtemp()}/tr.db")
     st.init()
-    out: dict = {"headline": compose._headline(router, facts[:6], set(), fallback="(fallback)")}
-    out["importance"] = importance.assess(router, out["headline"], facts, None).get("score")
+    items = {k: {"id": k, "text": t, "n_sources": 3, "role": "core"} for k, t in enumerate(facts[:6])}
+    out: dict = {"headline": news.write_headline(router, items.get(0), items, facts[0] if facts else "", set())}
     row = prod.one(select(published.c.payload_en).where(published.c.story_id == sid))
     if row and row["payload_en"]:
         pe = row["payload_en"]

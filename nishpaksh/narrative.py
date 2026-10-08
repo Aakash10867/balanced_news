@@ -30,7 +30,7 @@ import threading
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
-WRITER_VERSION = 10   # part of the cache key: pages written by an older writer are rewritten once
+WRITER_VERSION = 11   # part of the cache key: pages written by an older writer are rewritten once
 
 RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "single": 3,
         "disputed": 4, "false": 5}
@@ -60,10 +60,10 @@ an explanation, a reaction, or what happens next.
 Structure: the article is written in SECTIONS, in this order, so that a reader who knows nothing about
 the story first learns why it matters today, then how it came about, and then follows it as one
 coherent story. The statements below are already sorted into sections; write each from its own:
-  news        1-2 sentences: THE NEWS, the thing that makes this a story today: the newest or most
-              consequential thing someone did, decided or said, with who, where and when. Never the setting
-              or background ("Donald Trump said 125 million people voted in India's election, mixing up
-              India with Brazil", not "Brazil held an election on Sunday"). Use the "happened" statements.
+  news        1-2 sentences: THE NEWS, the thing that makes this a story today, with who, where and
+              when, written from the statement in SECTION news (chosen for you: it must be cited in the
+              lead). Never the setting or background ("Donald Trump said 125 million people voted in
+              India's election, mixing up India with Brazil", not "Brazil held an election on Sunday").
   background  how this came about: earlier events, each clearly with its own time
   explained   what a rule, term, post, finding or number means
   happened    what happened, in time order (the statements of the news are not repeated here)
@@ -218,10 +218,10 @@ def _section_block(items: list[dict], sec: dict[int, str]) -> str:
     """The statements, grouped by section, for the writer."""
     lines = []
     for key in SECTION_KEYS:
-        mine = [i for i in items if sec.get(i["id"]) == ("happened" if key == "news" else key)]
-        if key == "news" or not mine:
+        mine = [i for i in items if sec.get(i["id"]) == key]
+        if not mine:
             continue
-        lines.append(f"SECTION {key}:" if key != "happened" else "SECTION happened (and news):")
+        lines.append(f"SECTION {key}:" if key != "news" else "SECTION news (THE NEWS: the lead is written from it):")
         lines += [_statement_line(i) for i in mine]
     return "\n".join(lines)
 
@@ -1109,6 +1109,15 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     article then carries at least as much."""
     items, background, by_id, outlets, banned = _context(payload, banned)
     sec = assign_sections(items, background)
+    # the news is chosen by code (news.pick_news): the lead is written from it and must cite it
+    news_id = next((x for x in payload.get("news") or [] if x in sec), None)
+    if news_id is not None:
+        sec[news_id] = "news"
+
+    def lead_ok(paragraphs_, keys_) -> bool:
+        if "news" not in keys_:
+            return False
+        return news_id is None or any(news_id in s_["ids"] for s_ in paragraphs_[keys_.index("news")])
     drafted: list[tuple[str, list]] = []
     model, failure = None, None
     _reasons().clear()
@@ -1147,7 +1156,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         missing = [i for i in items if sec.get(i["id"]) in group and i["id"] not in covered
                    and not _said_in(i, essay_text)]
         bad = [f for f in failed if f.get("section") in group or (f.get("section") == "news" and "news" in group)]
-        no_lead = "news" in group and "news" not in keys
+        no_lead = "news" in group and not lead_ok(paragraphs, keys)
         if not missing and not bad and not no_lead:
             continue
         mine = [i for i in items if sec.get(i["id"]) in group]
