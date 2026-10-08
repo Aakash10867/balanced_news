@@ -531,10 +531,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     from .spelling import unify_article, unify_payload
     drop_outlet_self_talk(payload)
     from .belong import check as context_belongs
-    # other news from the same page, each role against its own bar (belong.py); a check the model could not
-    # finish (quota) makes the story wait: an article is written once, never without its context decided
-    if router is not None and context_belongs(store, router, story_id, payload)["pending"]:
-        return _outcome(story_id, "context not checked")
+    context_belongs(store, router, story_id, payload)   # other news from the same page: dropped on two "other news"
     an_ = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     fold_covered(payload, an_.get("covered") or {})
     link_updates(payload, an_.get("updates") or {})

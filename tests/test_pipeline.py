@@ -2305,23 +2305,6 @@ def test_a_page_about_its_own_publisher_is_not_the_story():
     assert drop_outlet_self_talk(p) == 1 and p["undated"] == [news] and p["established"] == [quoted]
 
 
-def test_a_context_line_must_share_something_with_the_story():
-    """Owner, Oct 7 2026: "Hindustan was established in 1936 ..." sat in a story on stubble burning. Code drops
-    a related, explanation, reaction or next line that shares no specific word with the story's event; a
-    background line goes to the model instead (Oct 8 2026: a story's setting often shares no word with it,
-    "Heavy rainfall in Nepal's catchment raised the Gandak" in a Bihar flood story)."""
-    from nishpaksh.belong import code_stage
-    core = {"id": 1, "role": "core", "text": "The Commission for Air Quality Management deployed flying squads in "
-                                              "34 districts of Punjab and Haryana to curb stubble burning."}
-    bg1 = {"id": 2, "role": "background", "text": "Stubble burning is a practice where farmers set fire to crop residue."}
-    ex = {"id": 3, "role": "explanation", "text": "Air pollution in Delhi-NCR in winter is attributed to stubble burning."}
-    junk = {"id": 4, "role": "related", "text": "Hindustan was established in 1936 by Madan Mohan Malaviya and is the "
-                                              "second most widely read Hindi newspaper in India."}
-    setting = {"id": 5, "role": "background", "text": "Heavy rainfall in Nepal raised the Gandak."}
-    p = {"timeline": [[core]], "undated": [], "established": [], "contested": [], "context": [bg1, ex, junk, setting]}
-    assert code_stage(p) == 1 and p["context"] == [bg1, ex, setting]
-
-
 def test_one_structure_decides_the_same_fact_on_the_words():
     """Owner, Oct 7 2026 (story 13652): identical lines stayed two because two readings labelled them
     differently; the words now decide, labels never veto; a detailed line covers a short one."""
@@ -2554,72 +2537,56 @@ def test_who_speaks_is_code_s_job_story_13107():
     assert "he " not in " ".join(t2[1:]).lower().replace("the ", "")
 
 
-def test_each_context_role_has_its_own_bar(store):
-    """Owner, Oct 8 2026: other news from the same page (a Kerala vigilance probe in the cheetah story, a cricket
-    comeback in a story of students' deaths). Each role's bar follows the harm of a wrong one: background is
-    kept unless "other news" twice; a related event needs "connected" twice; an explanation needs "connected"
-    twice AND the term it explains, found by code in the story and in the line. Answers are kept raw per line."""
+def test_context_is_dropped_only_when_the_model_says_other_news_twice(store):
+    """Owner, Oct 8 2026: "It's better to have something unrelated in the story and think, why is this here,
+    than not to have something important" (background, related and explanation alike). A line goes only on
+    two "other news" answers; one "connected", no answer (quota) or a model that never answers keeps it.
+    No code rule drops a line by its words (one dropped Air Force ration drops in a story on flood victims)."""
     from nishpaksh import belong
     from nishpaksh.router import LLMResult
     sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=False, qualifies=True,
                                                   signature="cheetah cubs", analysis={}))
-    core = {"id": 1, "role": "core", "text": "A cheetah gave birth to five cubs in Kuno National Park under Project Cheetah",
+    core = {"id": 1, "role": "core", "text": "A cheetah gave birth to five cubs in Kuno National Park",
             "verdict": "corroborated", "kind": "event", "sources": [], "n_sources": 3}
     ctx = [{"id": 2, "role": "related", "text": "Kerala Home Minister defended a vigilance probe into a road project"},
-           {"id": 3, "role": "background", "text": "Cheetahs were brought to Kuno National Park from Namibia in 2022"},
-           {"id": 4, "role": "explanation", "text": "Project Cheetah is the programme to bring the cheetah back to India"},
-           {"id": 5, "role": "reaction", "text": "The minister congratulated the Kuno field staff"}]   # never asked
+           {"id": 3, "role": "background", "text": "Heavy rain fell in Nepal"},                # shares no word
+           {"id": 4, "role": "explanation", "text": "Project Cheetah brings the cheetah back to India"},
+           {"id": 5, "role": "reaction", "text": "The minister congratulated the field staff"}]   # never asked
 
     def payload():
         return {"established": [dict(core)], "contested": [], "undated": [], "timeline": [],
                 "context": [dict(c, kind="event", verdict="unverified", sources=[]) for c in ctx]}
 
     class Says:
-        """answers[k] is the k-th asking's answer for every line; terms per line id."""
-        def __init__(self, *answers, term="Project Cheetah"):
-            self.answers, self.term, self.prompts = list(answers), term, []
+        """answers[k]: the k-th asking's answer per line text (a default for the rest)."""
+        def __init__(self, *answers):
+            self.answers, self.prompts = list(answers), []
 
         def call(self, tier, prompt, **kw):
             self.prompts.append(prompt)
             ans = self.answers[min(len(self.prompts), len(self.answers)) - 1]
-            res = [{"n": int(n), "answer": ans, "term": self.term}
-                   for n, _, _ in re.findall(r'^(\d+)\. \((\w+)\) "(.*)"$', prompt.split("LINES:")[1], re.M)]
+            res = [{"n": int(n), "answer": ans.get(t[:6], ans.get("*")) if isinstance(ans, dict) else ans}
+                   for n, t in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("LINES:")[1], re.M)]
             return LLMResult("", {"results": res}, "m", [], 1)
 
-    def run(*answers, term="Project Cheetah"):
+    def run(*answers):
         store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
         p = payload()
-        m = Says(*answers, term=term)
-        assert belong.model_stage(store, m, sid, p)[1] == 0
+        m = Says(*answers)
+        belong.check(store, m, sid, p)
         return [c["id"] for c in p["context"]], m
-    kept, m = run("connected", "connected")
-    assert kept == [2, 3, 4, 5]
-    # background said connected once: not asked again; related and explanation asked twice
-    assert "Namibia" not in m.prompts[1].split("LINES:")[1] and "Kerala" in m.prompts[1].split("LINES:")[1]
-    assert run("connected", "other news")[0] == [3, 5]       # one no drops related and explanation
-    assert run("other news", "connected")[0] == [3, 5]       # background: one yes keeps it
-    assert run("other news", "other news")[0] == [5]         # background goes only on two noes
-    # an explanation whose term is not in the story (or not in the line) is no explanation of it
-    assert run("connected", "connected", term="repo rate")[0] == [2, 3, 5]
+    kept, m = run("connected")
+    assert kept == [2, 3, 4, 5] and len(m.prompts) == 1          # one "connected" settles it: asked once
+    assert run("other news", "connected")[0] == [2, 3, 4, 5]       # one "other news" is not enough
+    kept, m = run({"Kerala": "other news", "*": "connected"}, "other news")
+    assert kept == [3, 4, 5] and "Nepal" not in m.prompts[1].split("LINES:")[1]   # only the doubted line again
+    assert run("other news", "other news")[0] == [5]               # every role on the same bar
     # answers are kept: nothing asked again
     p = payload()
-    again = Says("other news")
-    belong.model_stage(store, again, sid, p)
-    assert again.prompts == [] and [c["id"] for c in p["context"]] == [2, 3, 5]
-    # an acronym is a term too ("DGP": no root under four letters)
-    assert belong._term_found("DGP", "The officer appointed as DGP must have six months left",
-                              "Jharkhand appointed Anurag Gupta as DGP")
-    assert not belong._term_found("DGP", "The repo rate is set by the RBI", "Jharkhand appointed a DGP")
-    # nothing could be asked (quota): undecided, the story waits; nothing is dropped for it
+    again = Says("connected")
+    belong.check(store, again, sid, p)
+    assert again.prompts == [] and [c["id"] for c in p["context"]] == [5]
+    # nothing could be asked (no model): everything stays
     store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
     p = payload()
-    assert belong.model_stage(store, None, sid, p) == (0, 3) and len(p["context"]) == 4
-
-    class Silent:                     # answers nothing usable, run after run
-        def call(self, tier, prompt, **kw):
-            return LLMResult("", {"results": []}, "m", [], 1)
-    for _ in range(belong.MAX_MISSES - 1):
-        assert belong.model_stage(store, Silent(), sid, payload())[1] == 3
-    p = payload()
-    assert belong.model_stage(store, Silent(), sid, p) == (2, 0)      # then each bar's safe side
-    assert [c["id"] for c in p["context"]] == [3, 5]
+    assert belong.check(store, None, sid, p) == 0 and len(p["context"]) == 4

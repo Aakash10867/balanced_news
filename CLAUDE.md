@@ -381,27 +381,26 @@ Hindi. At most 2 per clock hour.
   (`compose.drop_outlet_self_talk`) and extraction is told to ignore it; (3) every article opens with a
   news lead: a missing "news" section triggers the news fill, and failing that the first "What happened"
   paragraph becomes the lead; (4) "By the numbers" takes figures only, never years or dates
-  (`narrative._is_figure`); (5) a context line must share a specific word or name, by root, with the
-  story's own event, or code drops it (now `belong.code_stage`, background excepted: see "Context belongs by
-  role"; common words like India, government, said do not count).
-- **Context belongs by role (owner, Oct 8 2026; `belong.py`; story 12099: a Kerala vigilance probe under
-  Related events in the cheetah story, from a video page's list of other videos; on the 60 latest articles
-  many context lines were other news from the page).** Each role's bar follows the harm of a wrong one:
-  BACKGROUND (the setting; mild) kept unless the model says "other news" twice; RELATED (a link; a false link)
-  needs "connected" twice; EXPLANATION (what something means; a false explanation) needs "connected" twice AND
-  the term it explains, named by the model and found by code in the story and the line. Three stages, one
-  path: reading is told to ignore other stories the page lists (`extract.py`); code drops only what it can be
-  sure of, a related / explanation / reaction / next line sharing no specific word with the story
-  (`belong.code_stage`; background never, its setting often shares none); the model answers connected / other
-  news per line (worked examples with the traps; the second asking reverses the lines and is asked only where
-  the bar needs it), answers kept RAW per line text in `stories.analysis.context_checks`, so a line whose role
-  changes is judged against its new bar without asking again. NOT ASKED IS NOT AN ANSWER: a check the model
-  could not finish (quota) makes the story WAIT (`publish_story` outcome "context not checked", no writer try
-  used); a paced night replay had answered none of a story's lines and every explanation was dropped. A line
-  asked 3 times with no usable answer (`context_misses`) falls to its bar's safe side (background kept, related
-  and explanation dropped). An explanation's term is found by root, or as written for acronyms (DGP, HAPS). Word and name rules were measured first and failed (a word rule dropped "the project is
-  expected to generate employment" in the project's own story; a name rule dropped 38 of 154 related lines
-  and kept the cricket one). `replay --mode context` runs only this, on stored stories.
+  (`narrative._is_figure`); (5) a context line that shared no word with the story was dropped by code;
+  replaced Oct 8 2026 by the model check (see "Context: better a line that makes a reader wonder"): words
+  dropped real context. A page's text about its own publisher is still dropped (`drop_outlet_self_talk`).
+- **Context: better a line that makes a reader wonder than a missing one (owner, Oct 8 2026; `belong.py`).**
+  Story 12099: a Kerala vigilance probe under Related events in the cheetah story (a video page's list of
+  other videos); on the 60 latest articles many context lines were other news from the page (a cricket
+  comeback in a story of students' deaths). Owner's rule, for background, related and explanation alike:
+  "It's better to have something unrelated in the story and think, why is this here, than not to have
+  something important." So a line is dropped ONLY when the model says "other news" twice (one plain
+  question, connected / other news, the story's news and own statements in front of it, worked examples;
+  a line is asked again, lines reversed, only after one "other news"); one "connected", no answer (quota)
+  or a model that never answers keeps it; the story never waits for this. Answers kept per line text in
+  `stories.analysis.context_checks`. Reactions and "what next" are not asked. NO code rule drops a context
+  line by its words (the no-shared-word rule dropped "Indian Air Force helicopters dropped rations in Saran"
+  in a story on Saran's flood victims; a word rule dropped "the project is expected to generate employment"
+  in the project's own story). Tried and rejected on 16 real stories the same night: per-role bars
+  ("connected" twice for related and explanation, a named term for explanations): they lost the Prakash
+  Singh rules in a DGP story when the model wavered once, and "Section 22" in a story on voter deletion.
+  Reading is told to ignore other stories a page lists (`extract.py`). `replay --mode context` runs only
+  this check on stored stories (unpaced: run it after the 12:30 IST reset, it spends the writer's quota).
 - One spelling per name in an article by code (`spelling.py`, Oct 7 2026: Machhar / Machar / Matchar /
   Machchhar on one page): capitalised words with the same key (tch/chh = ch, ee = i, oo = u, doubled letters
   single) take the spelling most reports use; applied to statements before writing and to the article and

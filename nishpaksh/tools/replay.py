@@ -74,14 +74,12 @@ def main() -> None:
                     before = [(i.get("role"), i["text"]) for i in payload.get("context") or []]
                     from .. import belong
                     compose.drop_outlet_self_talk(payload)
-                    belong.code_stage(payload)
-                    after_words = {i["text"] for i in payload.get("context") or []}
-                    _, entry["pending"] = belong.model_stage(local, router, sid, payload)
+                    belong.check(local, router, sid, payload)
                     kept = {i["text"] for i in payload.get("context") or []}
                     checks = ((local.one(select(stories.c.analysis).where(stories.c.id == sid)) or {})
                               .get("analysis") or {}).get("context_checks") or {}
                     entry["context"] = [{"role": r, "text": t[:200],
-                                         "result": "kept" if t in kept else "other news" if t in after_words else "no shared word",
+                                         "result": "kept" if t in kept else "other news",
                                          "answers": checks.get(belong._key(t))}
                                         for r, t in before]
             except Exception as e:  # noqa: BLE001
