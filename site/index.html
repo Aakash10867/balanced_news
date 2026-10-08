@@ -28,9 +28,9 @@
 <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1242x2208.png">
 <link rel="apple-touch-startup-image" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="splash/640x1136.png">
 <script>
-  // opened from the home screen: start on the splash's indigo and fade into the page (no jump)
-  if ((matchMedia("(display-mode: standalone)").matches || navigator.standalone) && !/^#\/story\//.test(location.hash))
-    document.documentElement.classList.add("launch");
+  // every opening of the home page (app or website, owner Oct 9 2026) starts on the indigo with the
+  // wordmark and fades into the page; a link to a story opens the story straight away
+  if (!/^#\/story\//.test(location.hash)) document.documentElement.classList.add("launch");
 </script>
 <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -757,8 +757,8 @@ document.addEventListener("visibilitychange", () => {
   });
 });
 
-/* opening (owner, Oct 8 2026): "Hello." for a second, then the greeting for the time of day; when opened
-   from the home screen the splash's indigo fades away first */
+/* opening (owner, Oct 8-9 2026): the indigo with the wordmark fades away, then "Hello." for a second, then
+   the greeting for the time of day */
 let greeted = false;
 function greetSoon() {
   setTimeout(() => {
