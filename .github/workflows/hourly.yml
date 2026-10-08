@@ -76,3 +76,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/archive_pages.sh
+      - name: Publish the feed for the reading site
+        # colours matured and old articles archived: refresh the site's ready-made files (nishpaksh/feed.py)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish_feed.sh

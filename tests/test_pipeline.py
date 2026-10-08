@@ -2394,3 +2394,30 @@ def test_a_paragraph_naming_one_speaker_every_line_is_rewritten_only_if_nothing_
     assert n == 1 and "he said" in out[0][1]["text"] and keys == ["say"]
     out, keys, n = _cohere(Lossy(), [para], ["say"], by, set(), [])
     assert out == [para]                                   # it lost two statements: kept as written
+
+
+def test_feed_writes_the_reading_site_files(store, tmp_path):
+    """nishpaksh_version_1.0 (owner, Oct 8 2026): the live articles become ready-made files for the
+    site: a card per article in each language (headline, opening sentences with their colours, the
+    colour bar's counts) and one slim page per article."""
+    import json
+    from nishpaksh import feed
+    _seed(store)
+    _run_twice(store)
+    row = store.rows(select(published))[0]
+    out = tmp_path / "feed"
+    (out / "old").mkdir(parents=True)          # anything left from before is cleared
+    assert feed.export(store, out) == 1
+    assert not (out / "old").exists()
+    for lang in ("en", "hi"):
+        data = json.loads((out / f"{lang}.json").read_text(encoding="utf-8"))
+        (c,) = data["stories"]
+        assert c["id"] == row["story_id"] and c["h"] and c["paras"] and c["paras"][0][0]["t"]
+        assert sum(c["bar"].values()) == len(feed._sentence_classes(row["payload_en"]["narrative"]["paragraphs"]))
+    page = json.loads((out / "story" / f"{row['story_id']}.json").read_text(encoding="utf-8"))
+    nar = page["payload_en"]["narrative"]
+    assert nar["paragraphs"] == row["payload_en"]["narrative"]["paragraphs"] and nar["sources"]
+    assert set(page["payload_en"]["narrative"]) == {"paragraphs", "section_keys", "sources"}
+    assert page["headline_hi"] == row["headline_hi"]
+    assert feed.bar_counts([[{"class": "single"}, {"class": "disputed", "parts": [
+        {"class": "established"}, {"class": "disputed"}]}]]) == {"e": 1, "o": 1, "d": 1, "r": 0, "u": 0}

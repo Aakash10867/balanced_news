@@ -231,6 +231,20 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   CORE article (IST date, headline, opening words; worked examples incl. the sarpanch trap), asked
   twice A/B swapped, two "same" join, unsure = different; a borderline article published 12 h+ before
   the story's first report (`story_before_hours`) is never asked in (an earlier event).
+- **Reading site nishpaksh_version_1.0 (owner, Oct 8 2026; `site/v1/`, served at `/v1/`).** Designed on a canvas
+  (trial versions 0.1-0.6) and approved: one card at a time (swipe up/down, snap, loops newest <-> oldest),
+  the card shows the headline then the article itself fading out, a colour bar (green / purple / amber / red /
+  grey shares of the article's coloured pieces) with the time beside it; header = brand gradient (muted
+  purple -> plum -> rose -> terracotta -> ochre -> sage), wordmark Alfa Slab One / Rozha One (Hindi), greeting
+  Instrument Serif / Tiro Devanagari italic by IST time, EN/हिं switch. Tapping a card grows it into the
+  article (clip-path from the card, headline glides into the gradient box); back gesture closes it. The
+  article keeps everything the old page had (sections, colour key, source numbers, sources, threads, notes,
+  framing, perspectives) and "Who reported what" (folded; outlets link to their articles). Mobile first;
+  laptops get the same deck centred (a laptop design is for later). **The old site at `/` stays live until
+  the owner switches.** Data: `nishpaksh/feed.py` writes `en.json`, `hi.json` (cards) and `story/<id>.json`
+  (slim pages) to the `feed` branch after every desk and pipeline run (`.github/scripts/publish_feed.sh`,
+  one commit force-pushed, `continue-on-error`); the site reads them from raw.githubusercontent.com and falls
+  back to Supabase, then the archive branch. Service worker keeps the page and last news offline.
 - **Scheduling:** Supabase `pg_cron` calls GitHub's workflow_dispatch at :05 every hour
   (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); GitHub's own schedule is backup.
 
