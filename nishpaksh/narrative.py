@@ -27,6 +27,7 @@ import logging
 import re
 import threading
 
+from . import voice
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -86,12 +87,19 @@ sentence by how well it is supported, so the words never need to: NEVER write "a
 Attribution, the way a good newspaper does it (important):
 - NEVER name a newspaper, channel or website. Do not write "X reported", "according to X" for an outlet.
 - ESTABLISHED and REPORTED (no "said by"): state plainly, with no attribution and no hedge.
-- A statement with "said by": name the speaker ONCE, at the start of the run of their statements
-  ("Ukraine's foreign minister Andrii Sybiha said India's proposal was the most comprehensive."),
-  then continue in the same paragraph with "he said", "he added", "the minister said" while it is
-  still that speaker. No empty set-up sentences ("X set out their position."). Name
-  the next speaker when the speaker changes. Do not end every sentence with "according to <name>".
-  An accusation must always name who makes it.
+- A statement with "said by" is what that person said; its text is the content. Write a speaker's
+  statements together, one paragraph per subject, as the speaker's own argument: the main point first,
+  then what supports it. Name the speaker ONCE with full name and role at first mention; after that the
+  surname or the role ("Kabir", "the MLA"). One attribution may carry two points: "Kabir accused the
+  police of interfering with voting in several booths and said 64 people had been detained in two
+  months." NEVER "X stated ... X also stated ... X further stated ..." and never begin sentence after
+  sentence with the speaker's name: move the attribution to the end ("..., Kabir said.") or let one
+  "said" carry two points. No empty set-up sentences ("X set out their position."). Name the next
+  speaker when the speaker changes. An accusation must always name who makes it.
+- The verb: "said" unless the statement itself uses a stronger one ("accused", "denied", "threatened",
+  "warned", "claimed"); then that one. Never a stronger verb than the statement uses.
+- "he" / "she": ONLY for the people marked (he) or (she) in the list of people below, and only when
+  nobody else could be meant. Everyone else: the surname or the role, never a pronoun.
 - An accusation of a crime stays "allegedly" / "alleged" wherever the statement says so.
 - RESPONSE: write the claim or finding and the party's response together, each pinned on its source:
   "A food analyst declared the sample unsafe; Nestle India said its product is safe." A response is
@@ -115,7 +123,7 @@ Every sentence must make sense on its own: never write "denied this" unless the 
 says what was denied. Introduce every person and body at first mention with the fullest name and role
 the statements give ("AAP Delhi chief Saurabh Bharadwaj", "Supreme Court judge Ujjal Bhuyan"); after
 that, the surname ("Bharadwaj") or a short form. Never use a surname alone for someone not yet
-introduced. Vary how you attribute: not "He said ... He added ... He stated ..." sentence after sentence.
+introduced.
 No headings, no bullet points.
 Never name the same person, place or body twice in one sentence: the second time write "the river",
 "he", "it" or the short name. Never use any of these words: {banned}
@@ -144,10 +152,12 @@ do not introduce again a person it already introduced.
 Rules as before: only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
 disputes give both versions and whose they are; a sentence joining statements of different statuses is
-written in two "parts", each with only its own ids (as before); write as one author: never "according to reports",
+written in two "parts", each with only its own ids (as before); a speaker is named once, then the surname or role
+(he/she only for people marked so), never "X also stated ... X further stated", the verb the statements use or "said";
+write as one author: never "according to reports",
 "reportedly" or "one report said" (the page colours each sentence); no cause words unless a statement has them; nothing loaded: {banned}.
 
-The article so far:
+{people}The article so far:
 {article}
 
 Sections to rewrite: {keys}
@@ -331,7 +341,10 @@ def sections_from_payload(p: dict) -> dict[str, list[dict]]:  # kept for the cac
 
 
 def _statement_line(i: dict) -> str:
-    line = f'#{i["id"]} {STATUS_LABEL.get(shade(i), "REPORTED")} | "{i["text"]}"'
+    # code owns who speaks (owner, Oct 8 2026, story 13107): "X stated that Y" is given as Y, said by X,
+    # so the writer has the content to write and not "X stated that" to copy sentence after sentence
+    body, _ = voice.split(i["text"], i.get("speaker"))
+    line = f'#{i["id"]} {STATUS_LABEL.get(shade(i), "REPORTED")} | "{body}"'
     if not is_core(i):
         line += f" | CONTEXT: {i['role']}" + (f" ({i['related_event']})" if i.get("related_event") else "")
     if i.get("speaker"):
@@ -461,6 +474,10 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
             continue   # the paragraph hedge ("reports said"), not a speaker
         if not speakers:
             return _no("invented speaker")
+    # the verb that names the act is the outlets' (owner, Oct 8 2026): never "accused", "denied",
+    # "threatened" for what the statements only say someone said
+    if style and voice.unsupported_acts(text, source_text):
+        return _no("verb the statements do not use")
     # never link events by cause unless a statement does
     for c in CAUSAL:
         if re.search(rf"\b{c}\b", low) and c not in source_text.lower():
@@ -680,7 +697,22 @@ def _one_hedge_inner(text: str) -> str:
     return t.strip()
 
 
-def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool = True) -> tuple[list[list[dict]], list[dict], int]:
+def _pronoun_ok(text: str, ids: list[int], by_id: dict, near: str) -> bool:
+    """"he" / "she" only for a person the outlets call so (voice.pronouns, two outlets) who is named in
+    this sentence, the one before it or is the speaker in scope; or where the statements behind the
+    sentence use that very pronoun themselves. Owner, Oct 8 2026: a wrong pronoun harms a real person."""
+    src = " ".join(by_id[i]["text"] for i in ids)
+    pron = getattr(_TL, "pronouns", None) or {}
+    for g, rx in (("he", voice.MALE), ("she", voice.FEMALE)):
+        if not rx.search(text) or rx.search(src):
+            continue
+        if not any(x == g and re.search(rf"(?i)\b{re.escape(n.split()[-1])}\b", near + " " + text) for n, x in pron.items()):
+            return False
+    return True
+
+
+def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool = True,
+                      keys: list[str] | None = None) -> tuple[list[list[dict]], list[dict], int]:
     """Validated sentences only. Sentences that depend on each other stand or fall together
     (Oct 2026: "Nestle India denied this" survived while the claim it denied was dropped):
       - a sentence that leans on the one before it ("He added", "The company denied this") is tied to it;
@@ -698,13 +730,19 @@ def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool =
     ok_ids: list[list[int] | None] = [None] * n
     failed: list[dict] = []
     scope: set[str] = set()
+    near = ""                           # the speaker in scope and the sentence before (for pronouns)
     for idx, (p, k, sent) in enumerate(flat):
-        if k == 0:
-            scope = set()
-        if k > 0 and isinstance(sent, dict) and LEANS_BACK.search(str(sent.get("text") or "")):
+        # a speaker named in one paragraph carries into the next paragraph of the same section (owner, Oct
+        # 8 2026: four "What they say" paragraphs by one speaker each opened with his full name)
+        same_section = k > 0 or (keys is not None and p > 0 and p < len(keys) and keys[p] == keys[p - 1])
+        if not same_section:
+            scope, near = set(), ""
+        if same_section and idx > 0 and isinstance(sent, dict) and LEANS_BACK.search(str(sent.get("text") or "")):
             leans_on[idx] = idx - 1
         _TL.last = None
         ids = _validate(sent, by_id, banned, outlets, scope, style) if isinstance(sent, dict) else None
+        if ids is not None and style and not _pronoun_ok(sent["text"], ids, by_id, near):
+            ids = _no("pronoun without evidence")
         if ids is None:
             failed.append({"p": p, "k": k, "sentence": sent if isinstance(sent, dict) else {},
                            "reason": getattr(_TL, "last", None) or "not a sentence"})
@@ -713,6 +751,7 @@ def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool =
         named = _named_speaker(sent["text"], ids, by_id)
         if named:
             scope = named
+        near = " ".join(sorted(scope)) + " " + sent["text"]
     # a sentence that leans on a dropped sentence goes with it ("He added..." without its "he");
     # then a statement whose partner (contradiction or response) is in the story but nowhere in the
     # essay takes its sentence out too, and so on until nothing changes
@@ -930,11 +969,15 @@ def _target_length(items: list[dict]) -> str:
 COHERE_PROMPT = """Below is one paragraph of a news article, written from numbered statements. It reads badly:
 {problem}
 Rewrite it the way a good newspaper would:
-- name each speaker in full ONCE; after that continue with "he said", "she said", "they said" (only when
-  the statements make the person's gender clear; otherwise use the surname) or with no attribution in
-  a sentence that plainly continues the same speaker's words
-- put sentences about the same subject together, and split the text into 2 or 3 paragraphs by subject
-  when it is long; join two statements in one sentence only when they are about the same thing
+- a speaker's points as one argument: the main point first, then what supports it; one attribution may
+  carry two points ("Kabir accused the police of interfering with voting and said 64 people had been
+  detained"); the attribution may come at the end ("..., Kabir said.")
+- name each speaker in full ONCE; after that the surname or the role ("Kabir", "the MLA"); "he" or "she"
+  ONLY for the people marked (he) or (she) here: {marked}
+- never "X also stated ... X further stated ..."; never open two sentences in a row the same way
+- the verb: "said", or the stronger one the statements themselves use ("accused", "denied"), never another
+- put sentences about the same subject together; split into 2 or 3 paragraphs by subject when it is long;
+  join two statements in one sentence only when they are about the same thing
 - keep EVERY fact; add nothing; never change a number; never turn a claim into a plain fact
 - every sentence lists in "ids" the statements it uses; every id below must be used at least once
 - never write "according to reports", "reportedly" or "one report said"; never name a news outlet
@@ -948,40 +991,31 @@ Its statements:
 Reply with JSON only: {{"paragraphs": [[{{"text": "...", "ids": [3]}}], [ ... ]]}}"""
 
 COHERE_MAX = 2          # rewrites per article (each is a writer call)
-LONG_PARAGRAPH = 7      # sentences
 
 
-def _speaker_runs(para: list[dict], by_id: dict) -> tuple[str, int] | None:
-    """The speaker named in the most sentences of a paragraph, and how many."""
-    count: dict[str, int] = {}
-    for sent in para:
-        low = sent["text"].lower()
-        for sp in {by_id[i].get("speaker") for i in sent["ids"] if by_id.get(i) and by_id[i].get("speaker")}:
-            last = sp.split()[-1].lower()
-            if len(last) >= 3 and re.search(rf"\b{re.escape(last)}\b", low):
-                count[sp] = count.get(sp, 0) + 1
-    return max(count.items(), key=lambda kv: kv[1]) if count else None
+def _speakers_of(paras: list[list[dict]], by_id: dict) -> list[str]:
+    return sorted({by_id[i]["speaker"] for p in paras for s_ in p for i in s_["ids"]
+                   if by_id.get(i) and by_id[i].get("speaker")})
 
 
 def _cohere(router: Router, paragraphs: list, keys: list, by_id: dict, banned: set, outlets: list):
-    """Code finds paragraphs that name one speaker in 3+ sentences or run past LONG_PARAGRAPH sentences;
-    one writer call rewrites each (named once, then "he said", grouped by subject); the rewrite is kept
-    only if it passes every check and carries every statement the paragraph carried."""
+    """Code measures each paragraph (voice.problems: one speaker named in 3+ sentences, "also stated / further stated", the same opening twice, very long sentences or
+    paragraphs); one writer call rewrites a paragraph that has problems, and the rewrite is kept only if
+    it passes every check, carries every statement the paragraph carried, AND has fewer problems
+    (Oct 8 2026, story 13107: a rewrite that split one block into four paragraphs, each opening with the
+    full name again, was kept because nothing checked the problem it was called for)."""
     done = 0
     out_p, out_k = [], []
-    for para, key in zip(paragraphs, keys):
-        run = _speaker_runs(para, by_id)
-        problem = []
-        if run and run[1] >= 3:
-            problem.append(f"it names {run[0]} in {run[1]} sentences (\"{run[0]} said\", \"according to {run[0]}\")")
-        if len(para) >= LONG_PARAGRAPH:
-            problem.append(f"it is one block of {len(para)} sentences on several subjects")
+    pron = getattr(_TL, "pronouns", None) or {}
+    for n, (para, key) in enumerate(zip(paragraphs, keys)):
+        problem = voice.problems(para, _speakers_of([para], by_id))
         if not problem or done >= COHERE_MAX or any(by_id[i]["verdict"] == "disputed" for s_ in para for i in s_["ids"]):
             out_p.append(para)
             out_k.append(key)
             continue
         ids = list(dict.fromkeys(i for s_ in para for i in s_["ids"]))
-        prompt = COHERE_PROMPT.format(problem="; ".join(problem),
+        marked = ", ".join(f"{p_} ({g})" for p_, g in sorted(pron.items())) or "(nobody)"
+        prompt = COHERE_PROMPT.format(problem="; ".join(problem), marked=marked,
                                       paragraph=" ".join(s_["text"] for s_ in para),
                                       statements="\n".join(_statement_line(by_id[i]) for i in ids))
         try:
@@ -994,15 +1028,18 @@ def _cohere(router: Router, paragraphs: list, keys: list, by_id: dict, banned: s
         done += 1
         if new:
             saved = dict(_reasons())
-            checked, failed, _ = _check_paragraphs(new, by_id, banned, outlets)
+            checked, failed, _ = _check_paragraphs(new, by_id, banned, outlets, keys=[key] * len(new))
             _reasons().clear()
             _reasons().update(saved)
             got = {i for p in checked for s_ in p for i in s_["ids"]}
-            if checked and got >= set(ids) and not failed:
+            spk = _speakers_of(checked, by_id)
+            # the paragraphs together: one speaker named in sentence after sentence across the split counts
+            after = len(voice.problems([s_ for p in checked for s_ in p], spk))
+            if checked and got >= set(ids) and not failed and after < len(problem):
                 out_p += checked
                 out_k += [key] * len(checked)
                 continue
-        out_p.append(para)                 # the rewrite lost something: the paragraph stays as written
+        out_p.append(para)                 # the rewrite lost something or fixed nothing: as written
         out_k.append(key)
     return out_p, out_k, done
 
@@ -1067,8 +1104,16 @@ def _people(items: list[dict]) -> str:
                 best[key] = phrase
     if not best:
         return ""
-    return ("People and bodies, in the fullest form the statements name them (use it at first mention):\n"
-            + "; ".join(sorted(best.values())[:40]) + "\n\n")
+    # he / she only where two outlets' statements use it for this person and no one else could be meant
+    # (owner, Oct 8 2026: a wrong pronoun harms a real person; voice.pronouns)
+    pron = voice.pronouns(items)
+
+    def mark(phrase: str) -> str:
+        g = next((g for n, g in pron.items() if n.split()[-1] == phrase.split()[-1]), None)
+        return f"{phrase} ({g})" if g else phrase
+    return ("People and bodies, in the fullest form the statements name them (use it at first mention); "
+            "(he) / (she) marks the only people you may call he or she:\n"
+            + "; ".join(mark(x) for x in sorted(best.values())[:40]) + "\n\n")
 
 
 def _article_with_sections(drafted: list[tuple[str, list]]) -> str:
@@ -1092,7 +1137,8 @@ def _in_order(drafted: list[tuple[str, list]]) -> list[tuple[str, list]]:
 
 def _check_sections(drafted, by_id, banned, outlets):
     drafted = _in_order(drafted)
-    paragraphs, failed, rejected = _check_paragraphs([p for _, p in drafted], by_id, banned, outlets)
+    paragraphs, failed, rejected = _check_paragraphs([p for _, p in drafted], by_id, banned, outlets,
+                                                     keys=[k for k, _ in drafted])
     keys = [drafted[k][0] for k in getattr(_TL, "kept", [])]
     for f in failed:
         f["section"] = drafted[f["p"]][0] if f["p"] < len(drafted) else "happened"
@@ -1108,6 +1154,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     Flash-Lite carries everything. Each sentence is checked; a section rewrite is kept only if the
     article then carries at least as much."""
     items, background, by_id, outlets, banned = _context(payload, banned)
+    _TL.pronouns = voice.pronouns(items + background)
     sec = assign_sections(items, background)
     # the news is chosen by code (news.pick_news): the lead is written from it and must cite it
     news_id = next((x for x in payload.get("news") or [] if x in sec), None)
@@ -1161,7 +1208,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
             continue
         mine = [i for i in items if sec.get(i["id"]) in group]
         prompt = FILL_PROMPT.format(
-            banned=", ".join(sorted(banned)) or "(none)", article=_article_with_sections(drafted),
+            banned=", ".join(sorted(banned)) or "(none)", article=_article_with_sections(drafted), people=_people(items),
             keys=", ".join(k for k in group if k == "news" or any(sec.get(i["id"]) == k for i in mine)),
             statements="\n".join(f"[{sec[i['id']]}] " + _statement_line(i) for i in mine),
             failed="\n".join(f'- "{str(f["sentence"].get("text") or "")}" | problem: {f["reason"]}' for f in bad) or "(none)")

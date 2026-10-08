@@ -1163,11 +1163,21 @@ def test_speaker_named_once_carries_through_the_paragraph():
           2: _item(2, "Ukraine is ready for an energy truce", speaker="Andrii Sybiha"),
           3: _item(3, "Russia is not interested in peace talks", speaker="Friedrich Merz")}
     para = [{"text": "Ukraine's foreign minister Andrii Sybiha said India's proposal is the most comprehensive of four.", "ids": [1]},
-            {"text": "He added that Ukraine is ready for an energy truce.", "ids": [2]},
-            {"text": "He said Russia is not interested in peace talks.", "ids": [3]}]   # Merz's claim, not Sybiha's
+            {"text": "The minister added that Ukraine is ready for an energy truce.", "ids": [2]},
+            {"text": "The minister said Russia is not interested in peace talks.", "ids": [3]}]   # Merz's claim, not Sybiha's
     paras, failed, rejected = _check_paragraphs([para], by, set(), [])
     assert [s["ids"] for s in paras[0]] == [[1], [2]] and rejected == 1
     assert failed[0]["sentence"]["ids"] == [3] and failed[0]["reason"] == "claim without its speaker"
+    # the speaker carries into the next paragraph of the same section, not into another section
+    two = [[para[0]], [{"text": "The minister added that Ukraine is ready for an energy truce.", "ids": [2]}]]
+    paras, failed, rejected = _check_paragraphs(two, by, set(), [], keys=["say", "say"])
+    assert rejected == 0
+    paras, failed, rejected = _check_paragraphs(two, by, set(), [], keys=["say", "next"])
+    assert rejected == 1 and failed[0]["reason"] == "claim without its speaker"
+    # "he" for someone no outlet calls "he" is refused (owner, Oct 8 2026: code never guesses a gender)
+    he = [[para[0], {"text": "He added that Ukraine is ready for an energy truce.", "ids": [2]}]]
+    paras, failed, rejected = _check_paragraphs(he, by, set(), [])
+    assert rejected == 1 and failed[0]["reason"] == "pronoun without evidence"
 
 
 def test_dispute_must_say_what_the_other_side_is():
@@ -1420,7 +1430,7 @@ def test_a_response_never_stands_without_what_it_answers():
     from nishpaksh.narrative import _also, _check_paragraphs
     by = _resp_items()
     para = [{"text": "A food analyst declared a sample of Nestle dairy whitener unsafe, said 5 officials.", "ids": [1]},
-            {"text": "Nestle India denied this, saying its dairy whitener is safe.", "ids": [2]}]
+            {"text": "Nestle India responded to this, saying its dairy whitener is safe.", "ids": [2]}]
     paras, failed, rejected = _check_paragraphs([para], by, set(), [])
     assert paras == [] and rejected == 2 and len(failed) == 1      # the denial fell with its claim
     also = _also(list(by.values()), set(), by, [])
@@ -2233,18 +2243,22 @@ def test_no_hedge_words_in_the_article_but_disputes_keep_whose():
 def test_house_style_surnames_and_said_chains():
     """Owner, Oct 7 2026: read like one author: full name once, then the surname; no "He said ... He
     added ..." chains. Places, bodies and shared surnames are left alone."""
-    from nishpaksh.style import shorten_names, vary_attribution
+    from nishpaksh.style import Refs, people, shorten_names, vary_attribution
+    from nishpaksh.voice import roles
     P = [[{"text": "Assam Chief Minister Himanta Biswa Sarma said two men were arrested in East Champaran."},
           {"text": "He said that the two were passing information to Pakistan."},
           {"text": "He added that central agencies will take over the probe."}],
          [{"text": "Assam Chief Minister Himanta Biswa Sarma held a press conference in Tel Aviv."},
           {"text": "Police said Abhishek Kumar Singh and retired jawan Ritesh Kumar Singh were held in Tel Aviv."},
           {"text": "Ritesh Kumar Singh is accused of assisting Abhishek Kumar Singh."}]]
+    text = " ".join(s["text"] for p in P for s in p)
+    names = people(text)
+    refs = Refs(names, {}, roles(text, names))      # no outlet calls Sarma "he": no pronoun from code
     shorten_names(P)
-    vary_attribution(P)
+    vary_attribution(P, refs)
     t = [s["text"] for p in P for s in p]
-    assert t[1] == "The two were passing information to Pakistan, he said."
-    assert t[2] == "Central agencies will take over the probe, he added."
+    assert t[1] == "The two were passing information to Pakistan, the chief minister said."
+    assert t[2] == "Central agencies will take over the probe, Sarma added."
     assert t[3] == "Sarma held a press conference in Tel Aviv."
     assert t[5] == "Ritesh Kumar Singh is accused of assisting Abhishek Kumar Singh."
 
@@ -2397,15 +2411,21 @@ def test_a_paragraph_naming_one_speaker_every_line_is_rewritten_only_if_nothing_
         def call(self, tier, prompt, **kw):
             return LLMResult("", {"paragraphs": [[
                 {"text": "Prime Minister Narendra Modi said deepfakes have become a big challenge.", "ids": [1]},
-                {"text": "Digital threats have crossed national boundaries, he said.", "ids": [2]},
-                {"text": "Technology can achieve scale only when it gains people's trust, he added.", "ids": [3]}]]}, "m", [], 1)
+                {"text": "Digital threats have crossed national boundaries, the prime minister said.", "ids": [2]},
+                {"text": "Technology can achieve scale only when it gains people's trust, Modi added.", "ids": [3]}]]}, "m", [], 1)
+
+    class Same:          # passes every check and loses nothing, but fixes nothing (story 13107)
+        def call(self, tier, prompt, **kw):
+            return LLMResult("", {"paragraphs": [[s_] for s_ in para]}, "m", [], 1)
 
     class Lossy:
         def call(self, tier, prompt, **kw):
             return LLMResult("", {"paragraphs": [[
                 {"text": "Prime Minister Narendra Modi said deepfakes have become a big challenge.", "ids": [1]}]]}, "m", [], 1)
     out, keys, n = _cohere(Good(), [para], ["say"], by, set(), [])
-    assert n == 1 and "he said" in out[0][1]["text"] and keys == ["say"]
+    assert n == 1 and "the prime minister said" in out[0][1]["text"] and keys == ["say"]
+    out, keys, n = _cohere(Same(), [para], ["say"], by, set(), [])
+    assert n == 1 and out == [para]                        # split into three, still Modi x3: as written
     out, keys, n = _cohere(Lossy(), [para], ["say"], by, set(), [])
     assert out == [para]                                   # it lost two statements: kept as written
 
@@ -2476,3 +2496,57 @@ def test_heavy_columns_come_from_the_local_cache_when_unchanged(store, tmp_path,
     store.exec(update(articles).where(articles.c.id == 901).values(text="changed"))
     rows = heavy.fill(store, store.rows(q()), "text", "embedding")
     assert rows[1]["text"] == "changed" and heavy.stats == {"hit": 11, "fetched": 7}
+
+
+def test_who_speaks_is_code_s_job_story_13107():
+    """Owner, Oct 8 2026 (story 13107): "Humayun Kabir added that ... Humayun Kabir also stated that ...
+    Humayun Kabir further stated that ...". Code owns who speaks: the attribution is taken off the
+    statement, the verb is the outlets', "he"/"she" only with two outlets' evidence, and the code floor
+    turns a run of one speaker into "..., he said." / "..., the MLA said."."""
+    from nishpaksh import voice
+    from nishpaksh.style import polish
+    assert voice.split("Humayun Kabir stated that he has no concerns regarding other candidates.", "Humayun Kabir") \
+        == ("He has no concerns regarding other candidates.", "stated")
+    # a clause after the verb is no clean split; nor is a statement about someone else
+    assert voice.split("Bengal MLA Humayun Kabir stated while being taken away that he knew nothing.", "Humayun Kabir")[1] is None
+    assert voice.split("Police asked Kabir to go home.", "Humayun Kabir")[1] is None
+    # an act verb stays with its content: "accused X of" is not "said"
+    assert voice.split("TMC candidate Rabiul Alam Chowdhury accused Humayun Kabir of communal politics.",
+                       "Rabiul Alam Chowdhury")[1] is None
+    # never a stronger verb than the outlets used; "the accused" is a person, a noun is no act
+    assert voice.unsupported_acts("Kabir accused the police of interfering.", "Police are interfering") == {"accused"}
+    assert voice.unsupported_acts("Kabir accused the police of interfering.", "Kabir's accusation") == set()
+    assert voice.unsupported_acts("The accused were arrested.", "Two men were arrested") == set()
+    assert voice.unsupported_acts("Nestle denied the claim.", "Nestle India denied the allegation") == set()
+
+    def it(n, text, outlet):
+        return {"id": n, "text": text, "speaker": "Humayun Kabir", "sources": [{"outlet": outlet}]}
+    one = it(1, "Police asked Bengal MLA Humayun Kabir to return home, but he refused.", "India Today")
+    two = it(2, "Humayun Kabir said he would confront police with sticks.", "Zee News")
+    assert voice.pronouns([one, two]) == {"Humayun Kabir": "he"}
+    assert voice.pronouns([one, dict(two, sources=[{"outlet": "India Today"}])]) == {}       # one outlet
+    other = it(3, "Kabir grabbed the collar of a sub-inspector, and he fell.", "NDTV")         # who fell?
+    assert voice.pronouns([one, other]) == {}
+    named = it(4, "Humayun Kabir met Suvendu Adhikari and he left.", "NDTV")                  # two people
+    assert voice.pronouns([one, named]) == {}
+    she = it(5, "Humayun Kabir said she would stay.", "NDTV")                                  # contrary
+    assert voice.pronouns([one, two, she]) == {}
+
+    P = [[{"text": "Security forces detained Aam Janata Unnayan Party chief and MLA Humayun Kabir in Rejinagar."}],
+         [{"text": "While Humayun Kabir had been criticising the police, police arrived at the party office."}],
+         [{"text": "Humayun Kabir added that sixty-four people have been detained over the past two months."},
+          {"text": "Humayun Kabir also stated that police are interfering with the voting process in several booths."},
+          {"text": "Humayun Kabir further stated that the April 23 assembly election was peaceful."}]]
+    pay = {"narrative": {"paragraphs": P}, "contested": [one, two]}
+    polish(pay)
+    t = [s["text"] for p in P for s in p]
+    assert t[1].startswith("While Kabir had")               # "While" is not part of a name
+    assert t[2] == "Kabir said that sixty-four people have been detained over the past two months."
+    assert t[3] == "Police are interfering with the voting process in several booths, he said."
+    assert t[4] == "The April 23 assembly election was peaceful, the MLA said."
+    # without the outlets' evidence there is no "he": the surname instead
+    P2 = [[{"text": "MLA Humayun Kabir said police were present."}, {"text": "He said the vote was fair, he added."},
+           {"text": "Humayun Kabir also stated that the count is on Friday."}]]
+    polish({"narrative": {"paragraphs": P2}, "contested": [one]})
+    t2 = [s["text"] for s in P2[0]]
+    assert "he " not in " ".join(t2[1:]).lower().replace("the ", "")

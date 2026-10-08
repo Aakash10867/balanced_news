@@ -44,6 +44,14 @@ Management Quality Control Pollution Environment Health Development Welfare Serv
 Investigation Centre Center National Central Federal Regional International Supreme High Society Association
 Federation Mission Scheme Yojana Programme Program Act Bill Code Policy Fund Industries Energy Power Water
 Commission Council Agency Ministry Department Squad Squads Task Cell Unit Division Zone Circle Range""".split())
+# words that open a sentence and are never part of a name (Oct 8 2026, story 13107: "While Humayun Kabir
+# had been criticising ..." read as the name "While Humayun Kabir"; two names ending in Kabir then meant
+# the surname was never used)
+LEAD = set("""While Meanwhile When Whereas After Before On In At By For From According Earlier Later However But
+And Also During Since As If Though Although Then Yesterday Today Tomorrow Besides Following Speaking
+Addressing Reacting Under With Without Among Amid Despite Unlike Like Both Several Some Other Reports
+Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February March April May June July
+August September October November December Once Now Here There This That These Those It Its""".split())
 SPEECH = r"(?:said|says|told|added|stated|alleged|claimed|denied|announced|noted|asked|urged|wrote)"
 NAME = r"[A-Z][a-z]+(?:-[A-Z]?[a-z]+)?|al-[A-Z][a-z]+"
 
@@ -53,7 +61,7 @@ def _candidates(text: str) -> set[str]:
     for m in re.finditer(rf"(?<![\w-])((?:{NAME})(?:\s+(?:{NAME})){{1,7}})(?![\w-])", text):
         words = m.group(1).split()
         # "Assam Chief Minister Himanta Biswa Sarma" -> "Himanta Biswa Sarma"
-        while words and (words[0] in TITLES or words[0] in NOT_PERSON or words[0] in ("The", "A", "An")):
+        while words and (words[0] in TITLES or words[0] in NOT_PERSON or words[0] in LEAD or words[0] in ("The", "A", "An")):
             words = words[1:]
         if 2 <= len(words) <= 4 and not any(w in NOT_PERSON or w in TITLES for w in words):
             out.add(" ".join(words))
@@ -110,38 +118,102 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
             sent["text"] = t[:1].upper() + t[1:]
 
 
-CHAIN = re.compile(rf"^(He|She|They|[A-Z][a-z]+)\s+(said|added|stated|noted|claimed|alleged|maintained)"
-                   r"(\s+on\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))?(?:\s+that)?,?\s+"
-                   r"(?P<body>[^\"“”]{20,}?)([.!?])$")
+CHAIN = re.compile(r"^(?P<who>He|She|They|The [a-z]+(?: [a-z]+)?|(?:[A-Z][\w.-]+\s+){0,3}[A-Z][\w.-]+)\s+"
+                   r"(?:(?P<adv>also|further|then|later|additionally)\s+)?"
+                   r"(?P<verb>said|added|stated|noted|claimed|alleged|maintained|mentioned|remarked|asserted)"
+                   r"(?P<day>\s+on\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))?(?:\s+that)?,?\s+"
+                   r"(?P<body>[^\"“”]{20,}?)(?P<end>[.!?])$")
 ATTRIB = re.compile(rf"\b{SPEECH}\b")
+PRON_ATTRIB = re.compile(r"(?:^|(?<=, ))(He|She|he|she)(?=\s+(?:also\s+|further\s+)?(?:said|added|stated|noted|claimed|alleged|told|maintained)\b)")
+NEUTRAL = {"stated": "said", "mentioned": "said", "remarked": "said", "asserted": "said", "noted": "said"}
 
 
-def vary_attribution(paragraphs: list[list[dict]]) -> None:
-    """In a run of sentences by one speaker, the second and later carry the attribution at the end."""
+class Refs:
+    """How the article refers to each person after the first mention (owner, Oct 8 2026): the surname,
+    the role ("the MLA") when only one person has it, and "he" / "she" only with the outlets' evidence
+    (voice.pronouns). Rotated, so a speaker's run does not read "Kabir said ... Kabir said ...". """
+
+    def __init__(self, names: dict[str, str], pronouns: dict[str, str], roles: dict[str, str]):
+        self.by_surname = {short: full for full, short in names.items()}
+        self.pron, self.roles = pronouns, roles
+        self.used: dict[str, int] = {}
+
+    def person(self, text: str) -> str | None:
+        """The last person a text names (full name or surname)."""
+        best, at = None, -1
+        for short, full in self.by_surname.items():
+            for m in re.finditer(rf"\b{re.escape(short)}\b", text):
+                if m.start() > at:
+                    best, at = full, m.start()
+        return best
+
+    def next(self, full: str) -> str:
+        options = ([self.pron[full]] if full in self.pron else []) + ([self.roles[full]] if full in self.roles else [])
+        options.append(full.split()[-1])
+        n = self.used.get(full, 0)
+        self.used[full] = n + 1
+        return options[n % len(options)]
+
+    def allowed(self, full: str | None, pronoun: str) -> bool:
+        return bool(full) and self.pron.get(full) == pronoun.lower()
+
+
+def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None) -> None:
+    """In a run of sentences by one speaker, the second and later carry the attribution at the end
+    ("..., he said." / "..., the MLA said." / "..., Kabir said."); "also stated" and "further stated" go.
+    A "he" / "she" for someone the outlets do not call so becomes the surname (code never guesses a
+    gender)."""
+    refs = refs or Refs({}, {}, {})
+    current = None
     for para in paragraphs:
-        for k in range(1, len(para)):
+        for k in range(len(para)):
             if para[k].get("parts"):
                 continue                  # moving words across parts would break their colours
-            prev, cur = para[k - 1]["text"], para[k]["text"]
-            m = CHAIN.match(cur.strip())
-            if not m or not ATTRIB.search(prev) or ATTRIB.search(m.group("body")):
-                continue
-            who = m.group(1)
-            who = who.lower() if who in ("He", "She", "They") else who
-            verb = "said" if m.group(2) == "stated" else m.group(2)
-            body = m.group("body").rstrip(",;: ")
-            para[k]["text"] = f"{body[:1].upper()}{body[1:]}, {who} {verb}{m.group(3) or ''}{m.group(5)}"
+            cur = para[k]["text"].strip()
+            named = refs.person(cur)
+            m = CHAIN.match(cur)
+            if m and k > 0 and ATTRIB.search(para[k - 1]["text"]) and not ATTRIB.search(m.group("body")):
+                who = m.group("who")
+                full = current if who in ("He", "She", "They") or who.startswith("The ") else refs.person(who)
+                if full and (who in ("He", "She", "They") or who.startswith("The ") or full in (current, refs.person(para[k - 1]["text"]))):
+                    ref = refs.next(full)
+                    verb = NEUTRAL.get(m.group("verb"), m.group("verb"))
+                    body = m.group("body").rstrip(",;: ")
+                    para[k]["text"] = f"{body[:1].upper()}{body[1:]}, {ref} {verb}{m.group('day') or ''}{m.group('end')}"
+                    current = full
+                    continue
+            opens = m and (k == 0 or not ATTRIB.search(para[k - 1]["text"]))
+            if opens and (m.group("adv") or m.group("verb") == "added" or m.group("verb") in NEUTRAL):
+                # "Kabir also stated / further stated / added that" with nothing before it to add to: "Kabir said"
+                verb = "said" if m.group("verb") == "added" else NEUTRAL.get(m.group("verb"), m.group("verb"))
+                adv = rf"{m.group('adv')}\s+" if m.group("adv") else ""
+                para[k]["text"] = re.sub(rf"^({re.escape(m.group('who'))})\s+{adv}{m.group('verb')}\b",
+                                         rf"\1 {verb}", cur, count=1)
+            # "he said" / "She added" for someone without the outlets' evidence: the surname
+            t = para[k]["text"]
+            for pm in reversed(list(PRON_ATTRIB.finditer(t))):
+                full = refs.person(t[:pm.start()]) or current
+                if full and not refs.allowed(full, pm.group(1)):
+                    short = full.split()[-1]
+                    t = t[:pm.start()] + short + t[pm.end():]
+            para[k]["text"] = t[:1].upper() + t[1:]
+            current = refs.person(para[k]["text"]) or named or current
 
 
 def polish(payload: dict) -> None:
+    from .voice import pronouns, roles
     nar = payload.get("narrative") or {}
     paras = nar.get("paragraphs") or []
     if not paras:
         return
-    speakers = []
+    items = []
     for k in ("undated", "established", "contested", "context"):
-        speakers += [i.get("speaker") or "" for i in payload.get(k) or []]
+        items += payload.get(k) or []
     for tier in payload.get("timeline") or []:
-        speakers += [i.get("speaker") or "" for i in tier]
+        items += tier
+    speakers = [i.get("speaker") or "" for i in items]
+    text = " ".join(s["text"] for p in paras for s in p)
+    names = people(text, speakers)
+    refs = Refs(names, pronouns(items), roles(text, names))
     shorten_names(paras, speakers)
-    vary_attribution(paras)
+    vary_attribution(paras, refs)

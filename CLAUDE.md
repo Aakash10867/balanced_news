@@ -194,11 +194,30 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   way). `narrative.section_keys` (one per paragraph) drives the headings on the site, English and
   Hindi. Leftovers stay in `narrative.not_in_essay`. **A short article is finished, not thrown away (owner, Oct 7 2026):** each try runs up to two fill rounds; a draft still under 85% is kept in `stories.analysis.writer_draft` (sections + model) and the next try resumes it with fills only (no new draft call, up to three fill rounds); new statements count as missing and are filled in; statements merged since the draft are followed through one report behind each (`writer_draft.anchors`, `compose._remap_draft`), so their sentences are kept; the draft is removed when the article publishes. (`recolour`/`needs_rewrite` unused: articles are
   closed.)
+- **Who speaks is code's job (owner, Oct 8 2026, story 13107; `voice.py`).** "Humayun Kabir added that ... Humayun
+  Kabir also stated that ... Humayun Kabir further stated that ..." came from four layers each patching one
+  sentence. Now: (1) a statement "X stated/said that Y" is given to the writer as Y, said by X (`voice.split`,
+  neutral verbs only; "accused X of", "denied" keep their verb); (2) the VERB is the outlets': "said" unless the
+  statement itself uses a stronger one; the validator rejects "accused", "denied", "threatened", "claimed"... the
+  statements do not use ("verb the statements do not use"); (3) PRONOUNS only with evidence (owner: a wrong one
+  harms a real person): two outlets' statements use he/she for the person, no other person named in them (bodies
+  like "police" are fine, "a sub-inspector", "his son" are not), none use the other; otherwise the surname or the
+  role ("the MLA", only when one person has it). The validator rejects an unsupported pronoun ("pronoun without
+  evidence") unless the statements behind the sentence use that very pronoun; code never writes one without
+  evidence; (4) a speaker named in one paragraph carries into the next paragraph of the same section; (5) a
+  paragraph's coherence is measured by code (`voice.problems`: one speaker named in 3+ sentences, "also stated /
+  further stated", the same opening twice, sentences over 45 words, 7+ sentences); it decides the coherence
+  rewrite AND whether the rewrite is kept (it must have fewer problems: a rewrite that split one block into four
+  paragraphs, each opening with the full name, had been kept); (6) the code floor (`style.vary_attribution`,
+  `style.Refs`): a run of one speaker becomes "..., he said." / "..., the MLA said." / "..., Kabir said." (rotated;
+  "he" only with evidence), and "also stated"/"added" opening a paragraph becomes "said". Sentence-opening words
+  ("While", "Meanwhile", days, months) are never part of a name (`style.LEAD`: "While Humayun Kabir" had stopped
+  the surname from being used).
 - **Introductions:** every person and body at first mention with the fullest name and role the
   statements give (`narrative._people` lists them for the writer); extraction names people in full.
-- **Attribution like a newspaper:** name a speaker once, continue with "he said" in the same
-  paragraph (validator honours the paragraph's speaker scope); a dispute states both versions and whose they
-  are, never "other reports differ".
+- **Attribution like a newspaper:** name a speaker once, then the surname, the role, or "he"/"she" only
+  with evidence (see "Who speaks"); a dispute states both versions and whose they are, never "other reports
+  differ".
 - **Red verdicts on hold** (`SETTINGS.model_verdicts = False`): no second model family on the free
   tier now Gemma fails most calls. Code verdicts still run. Tests keep the machinery on (conftest).
 - **The news, the lead and the headline: one structure (owner, Oct 8 2026; `news.py`).** The news is
