@@ -140,6 +140,10 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     stats["concepts_mapped"] = step("concepts", _concepts)
 
     def analyse(sid):
+        # one fact per statement (split.py): compound rows split before matching, so a fact two outlets
+        # share becomes one statement with both behind it (story 13970: one definition written three times)
+        from . import split
+        split.split_story(store, router, sid)
         match.match_story(store, router, sid)
         # merge duplicate statements, mark contradictions, one spelling per name: only for stories
         # that can be published (it costs a model call)

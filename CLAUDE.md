@@ -157,8 +157,21 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   weaker; a later sentence in the same paragraph that says all of an earlier one and more replaces it).
   Both `match.py` (arrival: code "same" only) and `consolidate.py` use it. Disputes are a separate,
   later step (frames still propose contradictions).
+- **One fact per statement (owner, Oct 8 2026; `split.py`, story 13970).** "The repo rate is the rate at which
+  the RBI lends to banks" was written three times, the rate decision four: outlets write compound sentences
+  (A = shared fact + x, B = shared fact + y), neither covers the other, so the shared fact stayed in two
+  statements. Before matching, in preparation, a fact row that looks compound (14+ words and a joining
+  "and", ", which", ";", " but "...) is split into its single facts by one Flash-Lite question per batch of 10
+  (reading tier): at most 3, 4 allowed, more = kept whole; one fact = unchanged. Code checks every piece: its
+  numbers and names from the original, nearly all its words too, the pieces together carry every number and
+  name, a said thing keeps its speaker in every piece, a "not" is never lost or added; any failure keeps the
+  row whole. Pieces replace the row (same article, stance, speaker, evidence, time, context role; loaded words
+  on the first piece; no frame; a relation naming the row names its first piece), marked `rel.split`
+  ("piece"; checked rows "whole") so a row is asked once, and go through matching like any fact. Numbers:
+  "25 basis points" reads as 0.25 per cent (`frames.numbers`). Writing: a sentence may now have up to THREE
+  coloured parts (`narrative.MAX_PARTS`). `replay --mode split` shows a stored story's statements after.
 - **A sentence in coloured parts (owner, Oct 7 2026).** A sentence joining statements of different
-  statuses is written in at most two "parts" (main fact first, split at a comma or "and"), each citing
+  statuses is written in at most two "parts" (three since Oct 8 2026, see "One fact per statement"; main fact first, split at a comma or "and"), each citing
   only its own statements; the site colours each part, the source numbers follow the sentence. Code
   checks every part on its own (`narrative._part_ok`: its numbers, names and most of its words from its
   own statements; the parts together are the sentence and all its ids); any failure removes the parts

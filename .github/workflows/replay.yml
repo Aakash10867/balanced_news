@@ -8,7 +8,7 @@ on:
         description: "comma-separated story ids"
         required: true
       mode:
-        description: "write (the whole article) or context (only the context checks)"
+        description: "write (the whole article), context (only the context checks) or split (compound statements split)"
         required: false
         default: "write"
 jobs:

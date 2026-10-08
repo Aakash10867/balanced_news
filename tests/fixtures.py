@@ -118,6 +118,10 @@ class FakeBackend:
                 shared = [w for w in re.findall(r"[a-z]{5,}", t.lower()) if w in story and w not in ("which", "there", "their")]
                 res.append({"n": int(n), "answer": "connected" if shared else "other news"})
             return json.dumps({"results": res}), [], 100
+        if "Split each sentence into its SEPARATE facts" in prompt:
+            # one fact each: the sentence unchanged (the split itself is tested on its own)
+            res = [{"n": int(n), "facts": [t]} for n, t in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("SENTENCES:")[1], re.M)]
+            return json.dumps({"results": res}), [], 100
         if "careful annotator" in prompt:
             title = re.search(r"Title: (.*)", prompt).group(1).strip()
             return json.dumps(EXTRACTIONS[title], ensure_ascii=False), [], 900

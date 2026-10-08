@@ -128,8 +128,8 @@ No headings, no bullet points.
 Never name the same person, place or body twice in one sentence: the second time write "the river",
 "he", "it" or the short name. Never use any of these words: {banned}
 PARTS: when one sentence joins statements with DIFFERENT statuses (an ESTABLISHED fact and a detail
-only ONE OUTLET reports, say), write it in two parts, the main fact first, each part with only its own
-ids, split at a comma or "and": {{"parts": [{{"text": "Twelve crew members were injured in the
+only ONE OUTLET reports, say), write it in two or three parts, the main fact first, each part with only
+its own ids, split at a comma or "and": {{"parts": [{{"text": "Twelve crew members were injured in the
 attack,", "ids": [4]}}, {{"text": "11 of them Indian nationals.", "ids": [9]}}]}}. Every number and name
 in a part must come from that part's own statements. Otherwise write a sentence as one piece.
 Every sentence lists in "ids" every statement it uses. Use EVERY statement at least once, including
@@ -152,7 +152,7 @@ do not introduce again a person it already introduced.
 Rules as before: only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
 disputes give both versions and whose they are; a sentence joining statements of different statuses is
-written in two "parts", each with only its own ids (as before); a speaker is named once, then the surname or role
+written in two or three "parts", each with only its own ids (as before); a speaker is named once, then the surname or role
 (he/she only for people marked so), never "X also stated ... X further stated", the verb the statements use or "said";
 write as one author: never "according to reports",
 "reportedly" or "one report said" (the page colours each sentence); no cause words unless a statement has them; nothing loaded: {banned}.
@@ -616,12 +616,12 @@ def _partners(i: dict) -> set[int]:
 
 
 # ------------------------------------------------------------------ parts of a sentence (owner, Oct 7 2026)
-# A sentence that joins a well-supported fact and a detail fewer outlets report is written in two
-# PARTS, each citing its own statements, so the site can colour the main fact green and the detail
+# A sentence that joins a well-supported fact and details fewer outlets report is written in two or three
+# PARTS (three since Oct 8 2026, owner: facts are now single facts, split.py, so a sentence joins more of them), each citing its own statements, so the site can colour the main fact green and the detail
 # its own colour. Code checks every part on its own: its numbers, names and words must come from its
 # own statements. A part that fails takes the parts away, and the sentence has one colour, the
 # weakest, as before: the worst case is the old page, never a wrong green.
-MAX_PARTS = 2
+MAX_PARTS = 3
 
 
 def _join_parts(parts: list[dict]) -> str:

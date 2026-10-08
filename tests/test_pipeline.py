@@ -2590,3 +2590,84 @@ def test_context_is_dropped_only_when_the_model_says_other_news_twice(store):
     store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
     p = payload()
     assert belong.check(store, None, sid, p) == 0 and len(p["context"]) == 4
+
+
+def test_compound_statements_split_into_single_facts_story_13970(store):
+    """Owner, Oct 8 2026 (story 13970): "the repo rate is the rate at which the RBI lends to banks" written three
+    times. Two outlets' sentences shared one fact and each added another, so neither covered the other. Rows
+    are split into single facts (up to 4) before matching, checked by code; the shared fact becomes ONE
+    statement with both outlets behind it."""
+    from nishpaksh import match, split
+    from nishpaksh.db import canonical, claims
+    from nishpaksh.router import LLMResult
+    sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=True, qualifies=False,
+                                                  signature="repo rate", analysis={}))
+    A = "Repo rate is the rate at which the RBI lends money to banks, and an increase raises borrowing costs for customers."
+    B = "Repo rate is the rate at which the RBI lends money to banks, which banks then use as a basis for lending to customers."
+    S = "Governor Sanjay Malhotra said rate cuts were off the table and future actions may be limited to rate increases."
+    aids = []
+    for n, outlet in enumerate(("Mint", "Jagran")):
+        aids.append(store.insert_returning_id(articles, dict(url=f"u{n}", outlet=outlet, lang="en", title="t", text="t",
+                                                             story_id=sid, published_at=NOW, fetched_at=NOW, extract_failures=0)))
+    store.exec(insert(claims).values(story_id=sid, article_id=aids[0], local_id="c1", kind="claim", text=A, stance="asserts",
+                                     attributed_to="article", evidence="none", loaded_words=["महंगा"], time=None, rel=None))
+    store.exec(insert(claims).values(story_id=sid, article_id=aids[0], local_id="e1", kind="event", text="The RBI raised the repo rate.",
+                                     stance="asserts", attributed_to="article", evidence="none", loaded_words=[], time=None, rel=None))
+    store.exec(insert(claims).values(story_id=sid, article_id=aids[0], local_id="r1", kind="relation", text="", stance="asserts",
+                                     attributed_to="article", evidence="none", loaded_words=[], time=None,
+                                     rel={"from": "e1", "to": "c1", "type": "before"}))
+    store.exec(insert(claims).values(story_id=sid, article_id=aids[1], local_id="c1", kind="claim", text=B, stance="asserts",
+                                     attributed_to="article", evidence="none", loaded_words=[], time=None, rel=None))
+    store.exec(insert(claims).values(story_id=sid, article_id=aids[1], local_id="c2", kind="claim", text=S, stance="attributes",
+                                     attributed_to="Sanjay Malhotra", evidence="none", loaded_words=[], time=None, rel=None))
+    facts = {A: ["Repo rate is the rate at which the RBI lends money to banks.",
+                 "An increase in the repo rate raises borrowing costs for customers."],
+             B: ["Repo rate is the rate at which the RBI lends money to banks.",
+                 "Banks then use the repo rate as a basis for lending to customers."],
+             # drops the speaker from the second fact: code keeps the row whole
+             S: ["Governor Sanjay Malhotra said rate cuts were off the table.", "Future actions may be limited to rate increases."]}
+
+    class Splitter:
+        def __init__(self):
+            self.calls = 0
+
+        def call(self, tier, prompt, **kw):
+            self.calls += 1
+            res = [{"n": int(n), "facts": facts.get(t, [t])}
+                   for n, t in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("SENTENCES:")[1], re.M)]
+            return LLMResult("", {"results": res}, "m", [], 1)
+    r = Splitter()
+    st = split.split_story(store, r, sid)
+    assert st == {"asked": 3, "split": 2, "pieces": 4} and r.calls == 1
+    rows = store.rows(select(claims).where(claims.c.story_id == sid, claims.c.kind != "relation"))
+    texts = sorted(x["text"] for x in rows)
+    assert S in texts and A not in texts and B not in texts
+    first = next(x for x in rows if x["article_id"] == aids[0] and x["local_id"] == "c1.1")
+    assert first["loaded_words"] == ["महंगा"]                       # counted once, on the first piece
+    rel = store.one(select(claims).where(claims.c.local_id == "r1"))["rel"]
+    assert rel["to"] == "c1.1"                                       # the relation follows the main fact
+    # asked once: nothing asked again
+    assert split.split_story(store, r, sid) == {"asked": 0, "split": 0, "pieces": 0} and r.calls == 1
+    # matching: the shared fact is ONE statement, both outlets behind it
+    match.match_story(store, None, sid)
+    shared = [c for c in store.rows(select(canonical).where(canonical.c.story_id == sid))
+              if c["text"] == "Repo rate is the rate at which the RBI lends money to banks."]
+    assert len(shared) == 1
+    members = store.rows(select(claims.c.article_id).where(claims.c.canonical_id == shared[0]["id"]))
+    assert sorted(m["article_id"] for m in members) == sorted(aids)
+
+
+def test_split_check_and_quantities():
+    from nishpaksh.frames import numbers
+    from nishpaksh.narrative import MAX_PARTS
+    from nishpaksh.split import _pieces_ok
+    assert numbers("raised by 25 basis points to 5.50 per cent") == [0.25, 5.5]
+    assert numbers("by 0.25 percent") == [0.25]
+    o = "Police said two men were arrested in Patna and 5 kg of ganja was seized from them."
+    assert _pieces_ok(o, ["Police said two men were arrested in Patna.", "Police said 5 kg of ganja was seized from them."])
+    assert not _pieces_ok(o, ["Police said two men were arrested in Patna.", "Police said 6 kg of ganja was seized."])  # a number changed
+    assert not _pieces_ok(o, ["Police said two men were arrested.", "Police said 5 kg of ganja was seized."])           # a name lost
+    assert not _pieces_ok("The court did not grant bail and listed the case for Friday.",
+                          ["The court granted bail.", "The court listed the case for Friday."])                       # a "not" lost
+    assert not _pieces_ok(o, [o, o, o, o, o])                                                                         # more than 4
+    assert MAX_PARTS == 3

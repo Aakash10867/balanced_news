@@ -63,7 +63,13 @@ def action_key(action: str | None) -> str:
     return " ".join(sorted(words(a)))
 
 
+BPS = re.compile(r"(?i)\b(\d+(?:\.\d+)?)\s*(?:basis points?|bps)\b")
+
+
 def numbers(text: str | None) -> list[float]:
+    # 25 basis points is 0.25 per cent: one figure, read as one (story 13970: "by 0.25 percent" and "by
+    # 25 basis points" stayed two statements)
+    text = BPS.sub(lambda m: f"{float(m.group(1)) / 100:g} percent", text or "")
     out = []
     for n, mult in NUM.findall(text or ""):
         try:

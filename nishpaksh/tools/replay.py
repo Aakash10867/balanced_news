@@ -7,6 +7,7 @@ the shared quota counters.
 
     python -m nishpaksh.tools.replay --stories 10192,10254,10360
     python -m nishpaksh.tools.replay --stories 12099,14259 --mode context   # only the context checks (cheap)
+    python -m nishpaksh.tools.replay --stories 13970 --mode split           # compound statements split, matched
 """
 from __future__ import annotations
 
@@ -39,8 +40,9 @@ def _copy(src: Store, dst: Store, table, where) -> int:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--stories", required=True)
-    p.add_argument("--mode", default="write", choices=["write", "context"],
-                   help="context: only build each story and run the context checks (a few Flash-Lite calls)")
+    p.add_argument("--mode", default="write", choices=["write", "context", "split"],
+                   help="context: only the context checks; split: split compound statements, match and review "
+                        "(statements before and after); both a few Flash-Lite calls per story")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     ids = [int(x) for x in a.stories.split(",") if x.strip()]
@@ -57,7 +59,7 @@ def main() -> None:
 
     # the context checks are a test: not held back by the day's pacing (a paced night run answered nothing)
     router = Router(load_yaml("models.yaml")["tiers"], [GeminiBackend(k) for k in gemini_api_keys()], prod,
-                    paced=False if a.mode == "context" else None)
+                    paced=False if a.mode in ("context", "split") else None)
     router.resolve()
     from .. import compose
     from ..consolidate import consolidate_story
@@ -65,6 +67,27 @@ def main() -> None:
     report = []
     for sid in ids:
         entry = {"story": sid, "old_headline": old.get(sid)}
+        if a.mode == "split":
+            try:
+                from .. import match, split
+                from ..consolidate import consolidate_story
+                from ..narrative import ordered_items
+
+                def statements():
+                    pl = compose.build_payload(local, router, sid) or {}
+                    return [i["text"] for i in ordered_items(pl)] + [i["text"] for i in pl.get("context") or []] if pl else []
+                before = statements()
+                entry["split"] = split.split_story(local, router, sid)
+                match.match_story(local, router, sid)
+                entry["consolidate"] = consolidate_story(local, router, sid)
+                after = statements()
+                entry.update(before=len(before), after=len(after), statements=[t[:160] for t in after][:80])
+            except Exception as e:  # noqa: BLE001
+                log.exception("story %s failed", sid)
+                entry["error"] = repr(e)[:500]
+            report.append(entry)
+            log.info("%s", json.dumps(entry)[:800])
+            continue
         if a.mode == "context":
             try:
                 payload = compose.build_payload(local, router, sid)
