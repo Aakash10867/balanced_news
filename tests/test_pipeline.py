@@ -227,6 +227,20 @@ def test_end_to_end(store):
     assert again["version"] == 1 and again["updated_at"] == pub["updated_at"]
     assert [x["text"] for para in again["payload_en"]["narrative"]["paragraphs"] for x in para] == text
 
+    # a Hindi page published half-translated (story 15429: page models overloaded mid-translation) is
+    # finished on a later run; the English article is untouched
+    from nishpaksh.compose import finish_translations
+    from nishpaksh.config import load_yaml
+    half = dict(again["payload_hi"], translation_complete=False)
+    half["narrative"] = json.loads(json.dumps(again["payload_en"]["narrative"]))
+    store.exec(update(published).where(published.c.story_id == contested["id"]).values(payload_hi=half))
+    router = Router(load_yaml("models.yaml")["tiers"], backend, store)
+    assert finish_translations(store, router) == [contested["id"]]
+    done = store.one(select(published).where(published.c.story_id == contested["id"]))
+    assert done["payload_hi"]["translation_complete"] and done["payload_en"] == again["payload_en"]
+    assert all(x["text"].startswith("[हिं]") for para in done["payload_hi"]["narrative"]["paragraphs"] for x in para)
+    assert finish_translations(store, router) == []          # nothing left to finish
+
 
 def test_headline_with_loaded_word_is_rejected(store):
     from nishpaksh.run import run

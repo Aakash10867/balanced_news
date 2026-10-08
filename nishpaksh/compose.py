@@ -338,6 +338,27 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
     return hi
 
 
+def finish_translations(store: Store, router: Router, limit: int = 3) -> list[int]:
+    """Hindi pages published half-translated (Oct 8 2026, story 15429: the page models were overloaded
+    mid-translation and half the Hindi article stayed English) are finished on later runs. The English
+    article is unchanged (it is closed); only its translation is completed. Strings already translated
+    come from the cache, so a retry costs only the missing ones."""
+    done = []
+    incomplete = published.c.payload_hi["translation_complete"].as_boolean().is_(False)   # in SQL: no egress
+    for r in store.rows(select(published.c.story_id, published.c.payload_en, published.c.payload_hi)
+                        .where(incomplete).order_by(published.c.updated_at.desc()).limit(limit)):
+        if not r["payload_en"]:
+            continue
+        hi = translate_payload(store, router, r["payload_en"])
+        hi["version"] = (r["payload_hi"] or {}).get("version", 1)
+        store.exec(update(published).where(published.c.story_id == r["story_id"])
+                   .values(payload_hi=hi, headline_hi=hi["headline"]))
+        done.append(r["story_id"])
+        if not hi["translation_complete"]:
+            break                           # the page models are still refusing: next run
+    return done
+
+
 WRITER_LITE_OK = ("gemini-3.5-flash-lite",)   # owner, Oct 6 2026: the writer's last resort; older Lites read badly
 
 

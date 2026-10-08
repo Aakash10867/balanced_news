@@ -380,6 +380,10 @@ Hindi. At most 2 per clock hour.
 - Writer validator rejects Hindi in English text, and reported speech ("A said that B claimed X")
   turned into a fact or pinned on A.
 - `compose.tidy` removes "X (X)" duplicates.
+- Story 15429 (Oct 8 2026): the page models were overloaded mid-translation and the Hindi page went live
+  half in English. The desk now finishes half-translated Hindi pages after writing
+  (`compose.finish_translations`, selected in SQL by `payload_hi.translation_complete = false`, up to 3 per
+  run; cached strings cost nothing). Only the translation is completed; the English article stays closed.
 - Run stats: `rated`, `queue`, `settled`, `colours_matured`, `live_pages`; the desk's own stats are in
   `diagnostics` (kind 'desk': ready, tried, published, tier_calls). Health flags a writer with 0
   successes in the desk's last 2 runs and two clock hours without an article while stories are ready
