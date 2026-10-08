@@ -24,7 +24,7 @@ HEADERS = {"User-Agent": UA, "Accept": "text/html,application/xhtml+xml,applicat
            "Accept-Language": "en-IN,en;q=0.9,hi;q=0.8"}
 # Some sites block browser-looking requests from cloud servers but allow declared bots,
 # others the reverse. Try one, then the other.
-BOT_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; NishpakshBot/0.2; +https://github.com/Aakash10867/balanced_news)",
+BOT_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; NishpakshBot/0.2; +https://nishpaksh.github.io)",
                "Accept": "application/rss+xml,application/xml;q=0.9,*/*;q=0.8"}
 
 

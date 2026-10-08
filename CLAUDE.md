@@ -247,6 +247,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (slim pages) to the `feed` branch after every desk and pipeline run (`.github/scripts/publish_feed.sh`,
   one commit force-pushed, `continue-on-error`); the site reads them from raw.githubusercontent.com and falls
   back to Supabase, then the archive branch. Service worker keeps the page and last news offline.
+- **Address (owner, Oct 8 2026):** the repo moves to the free GitHub organisation `nishpaksh` as
+  `nishpaksh/nishpaksh.github.io`, so the site is https://nishpaksh.github.io. The page picks the feed/archive
+  repo from its own hostname; `pagearchive` uses `GITHUB_REPOSITORY`; migration `20261008000100_repo_moved.sql`
+  points both dispatch functions at the new repo (apply it only once the move is done, with a Vault token for
+  the new repo).
 - **Scheduling:** Supabase `pg_cron` calls GitHub's workflow_dispatch at :05 every hour
   (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); the pipeline has no GitHub
   schedule (removed Oct 8 2026). The writer (`writer.yml`) keeps its :55 GitHub schedule as backup.
