@@ -1,7 +1,7 @@
 // Nishpaksh offline support (nishpaksh_version_1.0). The page itself and its icons are kept for
 // offline use; news (the feed, articles) is always asked for fresh and the last copy is used offline;
 // fonts are kept once loaded.
-const VERSION = "np-main-1";
+const VERSION = "np-main-2";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", e => {

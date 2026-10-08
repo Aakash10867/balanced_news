@@ -243,8 +243,6 @@ const T = {
     k: {established: "established", developing: "developing", unverified: "not yet cross-checked", single: "one outlet only", disputed: "sources disagree", false: "shown false"},
     falseTag: "FALSE", sourcesTitle: "Sources", who: "Who reported what", reported: "Reported by", denied: "Denied by",
     unreadable: "could not be read", unread: "not read (same owner as another source, or reading limit)",
-    interim: "Which outlets form different perspectives is not yet known; this story is published because at least three independent outlets covered it.",
-    unsettled: "Nothing in this story is confirmed by independent sources yet.",
     helpline: "If you or someone you know is struggling, help is available: Tele-MANAS, free and confidential, 14416 or 1-800-891-4416 (24×7).",
     earlier: "Earlier in this story", next: "What happened next", ongoing: "part of an ongoing story",
     wording: "How each side worded it", fact: "Statement", perspectives: "Perspectives",
@@ -263,8 +261,6 @@ const T = {
     k: {established: "स्थापित", developing: "विकसित हो रही", unverified: "अभी पुष्टि नहीं", single: "केवल एक स्रोत", disputed: "स्रोतों में मतभेद", false: "असत्य सिद्ध"},
     falseTag: "असत्य", sourcesTitle: "स्रोत", who: "किसने क्या बताया", reported: "किसने बताया", denied: "किसने खंडन किया",
     unreadable: "पढ़ा नहीं जा सका", unread: "नहीं पढ़ा गया (दूसरे स्रोत का ही मालिक, या पढ़ने की सीमा)",
-    interim: "कौन-से स्रोत अलग-अलग दृष्टिकोण बनाते हैं, यह अभी पता नहीं है; यह ख़बर इसलिए प्रकाशित है क्योंकि कम से कम तीन स्वतंत्र स्रोतों ने इसे कवर किया।",
-    unsettled: "इस ख़बर की किसी भी बात की अभी स्वतंत्र स्रोतों से पुष्टि नहीं हुई है।",
     helpline: "अगर आप या आपका कोई परिचित मुश्किल में है, तो मदद उपलब्ध है: टेली-मानस, निःशुल्क और गोपनीय, 14416 या 1-800-891-4416 (24×7)।",
     earlier: "इस ख़बर में पहले", next: "इसके बाद क्या हुआ", ongoing: "जारी ख़बर का हिस्सा",
     wording: "किस पक्ष ने किन शब्दों में कहा", fact: "कथन", perspectives: "दृष्टिकोण",
@@ -556,8 +552,6 @@ function articleHtml(row) {
       `<li><a href="#/story/${encodeURIComponent(x.story_id)}" data-story="${esc(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul></div>` : "";
   return `<div class="key">${keyHtml(t, nar)}</div>
     <div class="paper essay">${essayHtml(nar, t)}</div>
-    ${p.has_established === false ? `<p class="note">${esc(t.unsettled)}</p>` : ""}
-    ${p.qualified_by === "interim" && p.perspective_mode !== "global" ? `<p class="note">${esc(t.interim)}</p>` : ""}
     ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
     ${thread(t.earlier, p.parents)}${thread(t.next, p.children)}
     ${sources ? `<div class="sec">${esc(t.sourcesTitle)}</div><div class="paper"><ol class="sources">${sources}</ol></div>` : ""}

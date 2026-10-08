@@ -247,6 +247,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (slim pages) to the `feed` branch after every desk and pipeline run (`.github/scripts/publish_feed.sh`,
   one commit force-pushed, `continue-on-error`); the site reads them from raw.githubusercontent.com and falls
   back to Supabase, then the archive branch. Service worker keeps the page and last news offline.
+- **No internal notes for readers (owner, Oct 8 2026):** the article page no longer shows "Nothing in this
+  story is confirmed by independent sources yet" (read as "this story is fake"; the colours already say which
+  parts are supported) nor "Which outlets form different perspectives is not yet known" (internal state, not
+  something a reader needs). Keep such status out of the reader's page.
 - **Address (owner, Oct 8 2026):** the repo lives in the free GitHub organisation `NishpakshNews` as
   `NishpakshNews/NishpakshNews.github.io`; the site is https://nishpakshnews.github.io ("nishpaksh" was taken). The
   page reads its feed/archive from that repo; `pagearchive` uses `GITHUB_REPOSITORY`; both Supabase dispatch
