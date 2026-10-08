@@ -5,14 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Nishpaksh · निष्पक्ष</title>
 <meta name="description" content="Indian news from every side, written as one story: what is established, what is disputed, and who says what.">
-<meta name="theme-color" content="#2f3a72">
+<meta name="theme-color" content="#1f2550" id="theme">
 <meta name="color-scheme" content="light">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Nishpaksh">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="icon" href="icon-maskable-192.png" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<!-- iPhone splash screens: the same indigo and wordmark as the Android splash (owner, Oct 8 2026) -->
+<link rel="apple-touch-startup-image" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1320x2868.png">
+<link rel="apple-touch-startup-image" media="(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1260x2736.png">
+<link rel="apple-touch-startup-image" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1206x2622.png">
+<link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1290x2796.png">
+<link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1179x2556.png">
+<link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1284x2778.png">
+<link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1170x2532.png">
+<link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1125x2436.png">
+<link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1242x2688.png">
+<link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="splash/828x1792.png">
+<link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="splash/750x1334.png">
+<link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/1242x2208.png">
+<link rel="apple-touch-startup-image" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="splash/640x1136.png">
+<script>
+  // opened from the home screen: start on the splash's indigo and fade into the page (no jump)
+  if ((matchMedia("(display-mode: standalone)").matches || navigator.standalone) && !/^#\/story\//.test(location.hash))
+    document.documentElement.classList.add("launch");
+</script>
 <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -188,12 +207,22 @@
     .card { padding: 30px 30px 22px; }
     .card h2 { font-size: 32px; }
   }
+  /* launch screen: the splash, continued inside the page, then faded away */
+  #intro { display: none; }
+  html.launch #intro { display: flex; position: fixed; inset: 0; z-index: 30; align-items: center; justify-content: center;
+                       background: #1f2550; transition: opacity 360ms ease 160ms, visibility 0s linear 520ms; }
+  html.launch #intro img { width: min(52vw, 300px); height: auto; transition: opacity 160ms ease, transform 200ms ease; }
+  html.launch.ready #intro { opacity: 0; visibility: hidden; }
+  html.launch.ready #intro img { opacity: 0; transform: scale(0.96); }
+  .greeting { transition: opacity 220ms ease; }
+  .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 </style>
 </head>
 <body>
+<div id="intro" aria-hidden="true"><img src="mark.png" alt=""></div>
 <div id="app">
   <header class="top brand">
     <div class="wordmark lift" id="wm">Nishpaksh</div>
@@ -237,7 +266,7 @@ const MAX_CARDS = 40;
 
 const T = {
   en: {
-    wordmark: "Nishpaksh", greet: ["Good morning.", "Good afternoon.", "Good evening."],
+    wordmark: "Nishpaksh", hello: "Hello.", greet: ["Good morning.", "Good afternoon.", "Good evening."],
     ago: (n, u) => `${n} ${u} ago`, units: {m: "min", h: "h", d: "d"},
     back: "Back to all stories", sources: (n, o) => `${n} independent source${n === 1 ? "" : "s"}` + (o && o > n ? ` · ${o} outlets` : ""),
     k: {established: "established", developing: "developing", unverified: "not yet cross-checked", single: "one outlet only", disputed: "sources disagree", false: "shown false"},
@@ -255,7 +284,7 @@ const T = {
     bar: (c) => `${c.e} established, ${c.o} one outlet only, ${c.d} disputed, ${c.r} shown false, ${c.u} not yet cross-checked`,
   },
   hi: {
-    wordmark: "निष्पक्ष", greet: ["सुप्रभात।", "नमस्कार।", "शुभ संध्या।"],
+    wordmark: "निष्पक्ष", hello: "नमस्ते।", greet: ["सुप्रभात।", "नमस्कार।", "शुभ संध्या।"],
     ago: (n, u) => `${n} ${u} पहले`, units: {m: "मिनट", h: "घंटे", d: "दिन"},
     back: "सभी ख़बरों पर लौटें", sources: (n, o) => `${n} स्वतंत्र स्रोत` + (o && o > n ? ` · ${o} समाचार माध्यम` : ""),
     k: {established: "स्थापित", developing: "विकसित हो रही", unverified: "अभी पुष्टि नहीं", single: "केवल एक स्रोत", disputed: "स्रोतों में मतभेद", false: "असत्य सिद्ध"},
@@ -677,7 +706,7 @@ function applyLang() {
   document.documentElement.lang = lang;
   document.documentElement.classList.toggle("hi", lang === "hi");
   $("wm").textContent = T[lang].wordmark; $("wm2").textContent = T[lang].wordmark;
-  $("greet").textContent = greeting();
+  $("greet").textContent = greeted ? greeting() : T[lang].hello;
   $("back").setAttribute("aria-label", T[lang].back);
   document.querySelectorAll(".pill button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
 }
@@ -718,7 +747,7 @@ new ResizeObserver(() => { const h = slotHeight(); if (h !== lastH) { lastH = h;
 let hiddenAt = 0;
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hiddenAt = Date.now(); return; }
-  $("greet").textContent = greeting();
+  if (greeted) $("greet").textContent = greeting();
   if (hiddenAt && Date.now() - hiddenAt > 15 * 60000) {
     const keep = cards[current] && cards[current].id;
     delete cardCache.en; delete cardCache.hi;
@@ -728,9 +757,34 @@ document.addEventListener("visibilitychange", () => {
   });
 });
 
+/* opening (owner, Oct 8 2026): "Hello." for a second, then the greeting for the time of day; when opened
+   from the home screen the splash's indigo fades away first */
+let greeted = false;
+function greetSoon() {
+  setTimeout(() => {
+    const el = $("greet");
+    el.classList.add("swap");
+    setTimeout(() => { greeted = true; el.textContent = greeting(); el.classList.remove("swap"); }, 220);
+  }, 1000);
+}
+const started = performance.now();
+let revealed = false;
+function revealPage() {
+  if (revealed) return;
+  revealed = true;
+  const root = document.documentElement;
+  if (!root.classList.contains("launch")) { greetSoon(); return; }
+  // the indigo stays at least half a second, so the splash and the page read as one screen
+  setTimeout(() => {
+    root.classList.add("ready");
+    $("theme").setAttribute("content", "#ECECE9");
+    setTimeout(greetSoon, 520);
+  }, Math.max(0, 500 - (performance.now() - started)));
+}
 applyLang();
 track.innerHTML = loadingHtml();
-showDeck();
+showDeck().finally(revealPage);
+setTimeout(revealPage, 1600);     // never hold the splash longer than this
 route(false);
 if (/^#\/story\//.test(location.hash)) openedFromDeck = false;
 

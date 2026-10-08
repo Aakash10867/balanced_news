@@ -2,7 +2,8 @@
 // offline use; news (the feed, articles) is always asked for fresh and the last copy is used offline;
 // fonts are kept once loaded.
 const VERSION = "np-main-2";
-const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-192.png",
+               "./icon-maskable-512.png", "./apple-touch-icon.png", "./mark.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
