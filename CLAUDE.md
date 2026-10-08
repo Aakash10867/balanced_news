@@ -395,8 +395,11 @@ Hindi. At most 2 per clock hour.
   (`belong.code_stage`; background never, its setting often shares none); the model answers connected / other
   news per line (worked examples with the traps; the second asking reverses the lines and is asked only where
   the bar needs it), answers kept RAW per line text in `stories.analysis.context_checks`, so a line whose role
-  changes is judged against its new bar without asking again. Not asked (quota): background kept, related and
-  explanation dropped. Word and name rules were measured first and failed (a word rule dropped "the project is
+  changes is judged against its new bar without asking again. NOT ASKED IS NOT AN ANSWER: a check the model
+  could not finish (quota) makes the story WAIT (`publish_story` outcome "context not checked", no writer try
+  used); a paced night replay had answered none of a story's lines and every explanation was dropped. A line
+  asked 3 times with no usable answer (`context_misses`) falls to its bar's safe side (background kept, related
+  and explanation dropped). An explanation's term is found by root, or as written for acronyms (DGP, HAPS). Word and name rules were measured first and failed (a word rule dropped "the project is
   expected to generate employment" in the project's own story; a name rule dropped 38 of 154 related lines
   and kept the cricket one). `replay --mode context` runs only this, on stored stories.
 - One spelling per name in an article by code (`spelling.py`, Oct 7 2026: Machhar / Machar / Matchar /

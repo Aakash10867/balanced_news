@@ -28,7 +28,9 @@ Three stages, the same for every line:
        and each line is judged against its role's bar (`model_stage`). Answers are kept raw per line text
        (stories.analysis.context_checks), so a retried story, or a line whose role changes, is not asked
        again for what is already known.
-Not asked (quota): background kept; related and explanation dropped.
+Not fully asked (quota): the story WAITS for the next desk run (`check` reports it pending; publish_story
+returns "context not checked"). A paced night run once answered none of a story's lines and every related
+and explanation line was dropped: unasked is not an answer.
 
 Shared words alone could not do stage 2: on the 60 latest articles a word rule dropped "the project is
 expected to generate employment" in the project's own story, and a name rule dropped 38 of 154 related
@@ -38,6 +40,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 
 from .db import Store, select, stories, update
 from .router import QuotaExhausted, Router
@@ -94,6 +97,7 @@ Reply with JSON only: {{"results": [{{"n": 1, "answer": "connected"}}, {{"n": 2,
 {{"n": 3, "answer": "connected", "term": "Project Cheetah"}}]}}"""
 
 BATCH = 8
+MAX_MISSES = 3      # a line the model was asked about this often without an answer is decided by its bar
 
 
 def _roots(text: str) -> set[str]:
@@ -157,11 +161,19 @@ def _story_text(payload: dict) -> tuple[str, str]:
     return shown.strip(), " ".join(i["text"] for i in items)
 
 
+ACRONYM = re.compile(r"\b[A-Z][A-Z0-9-]{1,7}s?\b")
+
+
 def _term_found(term: str, line: str, story: str) -> bool:
-    """The thing an explanation explains must be in the story AND in the line (by root): "Section 22" in a
-    story that never mentions it is no explanation of this story."""
-    t = _roots(term)
-    return bool(t) and bool(t & _roots(story)) and bool(t & _roots(line))
+    """The thing an explanation explains must be in the story AND in the line: by root for words ("Section 22"
+    in a story that never mentions it is no explanation of this story), as written for acronyms ("DGP", "HAPS",
+    "FIR": words under four letters have no root, and the first replay dropped a DGP explanation the model had
+    called connected twice)."""
+    def found(where: str) -> bool:
+        if _roots(term) & _roots(where):
+            return True
+        return any(re.search(rf"\b{re.escape(a)}\b", where) for a in ACRONYM.findall(term))
+    return bool(_roots(term) or ACRONYM.findall(term)) and found(story) and found(line)
 
 
 def _verdict(role: str, answers: list[dict], line: str, story: str) -> bool | None:
@@ -180,14 +192,17 @@ def _verdict(role: str, answers: list[dict], line: str, story: str) -> bool | No
     return True if len(yes) >= 2 else None
 
 
-def model_stage(store: Store, router: Router | None, story_id: int, payload: dict) -> int:
+def model_stage(store: Store, router: Router | None, story_id: int, payload: dict) -> tuple[int, int]:
+    """(lines dropped, lines still undecided). Undecided lines are left in; the caller decides (the desk
+    makes the story wait)."""
     lines = [i for i in payload.get("context") or [] if i.get("role") in MODEL_ROLES and i.get("text")]
     if not lines:
-        return 0
+        return 0, 0
     row = store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}
     an = dict(row.get("analysis") or {})
     cache: dict[str, list[dict]] = {k: list(v) for k, v in (an.get("context_checks") or {}).items()
                                     if isinstance(v, list)}       # earlier entries were plain verdicts
+    misses: dict[str, int] = dict(an.get("context_misses") or {})   # asked, no usable answer
     shown, story = _story_text(payload)
 
     def ask(todo: list[dict]) -> None:
@@ -201,15 +216,20 @@ def model_stage(store: Store, router: Router | None, story_id: int, payload: dic
             except Exception as e:  # noqa: BLE001
                 log.warning("context check failed: %s", str(e)[:200])
                 continue
+            got = set()
             for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
                 try:
                     n = int(item["n"]) - 1
                 except (KeyError, TypeError, ValueError):
                     continue
-                if 0 <= n < len(chunk):
+                if 0 <= n < len(chunk) and n not in got:
+                    got.add(n)
                     a = str(item.get("answer") or "").strip().lower()
                     cache.setdefault(_key(chunk[n]["text"]), []).append(
-                        {"a": "connected" if a == "connected" else "other", "term": str(item.get("term") or "")[:80]})
+                        {"a": "connected" if a == "connected" else "other", "term": str(item.get("term") or "")[:120]})
+            for n, i in enumerate(chunk):
+                if n not in got:
+                    misses[_key(i["text"])] = misses.get(_key(i["text"]), 0) + 1
 
     if router is not None:
         # the first asking for lines never asked; the second, with the lines in reverse order, only where
@@ -218,24 +238,29 @@ def model_stage(store: Store, router: Router | None, story_id: int, payload: dic
         ask([i for i in lines if not cache.get(_key(i["text"]))])
         ask(list(reversed([i for i in lines if len(cache.get(_key(i["text"])) or []) == 1
                            and _verdict(i["role"], cache[_key(i["text"])], i["text"], story) is None])))
-        if cache != (an.get("context_checks") or {}):
-            an["context_checks"] = cache
+        if cache != (an.get("context_checks") or {}) or misses != (an.get("context_misses") or {}):
+            an["context_checks"], an["context_misses"] = cache, misses
             store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
-    keep, dropped = [], 0
+    keep, dropped, pending = [], 0, 0
     for i in payload.get("context") or []:
         if i in lines:
             v = _verdict(i["role"], cache.get(_key(i["text"])) or [], i["text"], story)
-            if v is None:                                   # not fully asked (quota): the bar's safe side
-                v = BAR[i["role"]] == LENIENT
+            if v is None and misses.get(_key(i["text"]), 0) >= MAX_MISSES:
+                v = BAR[i["role"]] == LENIENT               # the model never answers this line: the bar's safe side
+            if v is None:                                   # not fully asked (quota): not decided
+                pending += 1
+                v = True
             if not v:
                 dropped += 1
                 log.info("context line dropped as other news (%s, story %s): %s", i["role"], story_id, i["text"][:100])
                 continue
         keep.append(i)
     payload["context"] = keep
-    return dropped
+    return dropped, pending
 
 
-def check(store: Store, router: Router | None, story_id: int, payload: dict) -> int:
-    """Stage 1 then stage 2; the number of context lines dropped."""
-    return code_stage(payload) + model_stage(store, router, story_id, payload)
+def check(store: Store, router: Router | None, story_id: int, payload: dict) -> dict:
+    """Stage 1 then stage 2: {"dropped": n, "pending": lines the model could not yet answer}."""
+    n = code_stage(payload)
+    dropped, pending = model_stage(store, router, story_id, payload)
+    return {"dropped": n + dropped, "pending": pending}

@@ -55,7 +55,9 @@ def main() -> None:
     _copy(prod, local, story_links, story_links.c.child_id.in_(keep))
     old = {r["story_id"]: r["headline_en"] for r in local.rows(select(published.c.story_id, published.c.headline_en))}
 
-    router = Router(load_yaml("models.yaml")["tiers"], [GeminiBackend(k) for k in gemini_api_keys()], prod)
+    # the context checks are a test: not held back by the day's pacing (a paced night run answered nothing)
+    router = Router(load_yaml("models.yaml")["tiers"], [GeminiBackend(k) for k in gemini_api_keys()], prod,
+                    paced=False if a.mode == "context" else None)
     router.resolve()
     from .. import compose
     from ..consolidate import consolidate_story
@@ -74,7 +76,7 @@ def main() -> None:
                     compose.drop_outlet_self_talk(payload)
                     belong.code_stage(payload)
                     after_words = {i["text"] for i in payload.get("context") or []}
-                    belong.model_stage(local, router, sid, payload)
+                    _, entry["pending"] = belong.model_stage(local, router, sid, payload)
                     kept = {i["text"] for i in payload.get("context") or []}
                     checks = ((local.one(select(stories.c.analysis).where(stories.c.id == sid)) or {})
                               .get("analysis") or {}).get("context_checks") or {}

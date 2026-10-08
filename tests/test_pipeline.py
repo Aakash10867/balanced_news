@@ -2590,7 +2590,7 @@ def test_each_context_role_has_its_own_bar(store):
         store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
         p = payload()
         m = Says(*answers, term=term)
-        belong.model_stage(store, m, sid, p)
+        assert belong.model_stage(store, m, sid, p)[1] == 0
         return [c["id"] for c in p["context"]], m
     kept, m = run("connected", "connected")
     assert kept == [2, 3, 4, 5]
@@ -2606,7 +2606,20 @@ def test_each_context_role_has_its_own_bar(store):
     again = Says("other news")
     belong.model_stage(store, again, sid, p)
     assert again.prompts == [] and [c["id"] for c in p["context"]] == [2, 3, 5]
-    # nothing could be asked (no model): background stays, related and explanation go
+    # an acronym is a term too ("DGP": no root under four letters)
+    assert belong._term_found("DGP", "The officer appointed as DGP must have six months left",
+                              "Jharkhand appointed Anurag Gupta as DGP")
+    assert not belong._term_found("DGP", "The repo rate is set by the RBI", "Jharkhand appointed a DGP")
+    # nothing could be asked (quota): undecided, the story waits; nothing is dropped for it
     store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
     p = payload()
-    assert belong.model_stage(store, None, sid, p) == 2 and [c["id"] for c in p["context"]] == [3, 5]
+    assert belong.model_stage(store, None, sid, p) == (0, 3) and len(p["context"]) == 4
+
+    class Silent:                     # answers nothing usable, run after run
+        def call(self, tier, prompt, **kw):
+            return LLMResult("", {"results": []}, "m", [], 1)
+    for _ in range(belong.MAX_MISSES - 1):
+        assert belong.model_stage(store, Silent(), sid, payload())[1] == 3
+    p = payload()
+    assert belong.model_stage(store, Silent(), sid, p) == (2, 0)      # then each bar's safe side
+    assert [c["id"] for c in p["context"]] == [3, 5]
