@@ -234,9 +234,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 - **Reading site nishpaksh_version_1.0 (owner, Oct 8 2026; `site/v1/`, served at `/v1/`).** Designed on a canvas
   (trial versions 0.1-0.6) and approved: one card at a time (swipe up/down, snap, loops newest <-> oldest),
   the card shows the headline then the article itself fading out, a colour bar (green / purple / amber / red /
-  grey shares of the article's coloured pieces) with the time beside it; header = brand gradient (muted
-  purple -> plum -> rose -> terracotta -> ochre -> sage), wordmark Alfa Slab One / Rozha One (Hindi), greeting
-  Instrument Serif / Tiro Devanagari italic by IST time, EN/हिं switch. Tapping a card grows it into the
+  grey shares of the article's coloured pieces) with the time beside it. **Version 1.1 (owner, Oct 8 2026, after
+  reviews said the multicolour sweep and the rounded sans looked like Instagram):** header and article headline
+  box = one indigo gradient, light to deep (#46549a -> #161a38); headlines Newsreader (Hindi: Noto Serif
+  Devanagari); greeting upright Newsreader / Tiro Devanagari by IST time; wordmark Alfa Slab One / Rozha One
+  (Hindi); EN/हिं switch. Tapping a card grows it into the
   article (clip-path from the card, headline glides into the gradient box); back gesture closes it. The
   article keeps everything the old page had (sections, colour key, source numbers, sources, threads, notes,
   framing, perspectives) and "Who reported what" (folded; outlets link to their articles). Mobile first;
