@@ -70,10 +70,11 @@ def main() -> None:
                     entry["error"] = "no payload"
                 else:
                     before = [(i.get("role"), i["text"]) for i in payload.get("context") or []]
+                    from .. import belong
                     compose.drop_outlet_self_talk(payload)
-                    compose.drop_unrelated_context(payload)
+                    belong.code_stage(payload)
                     after_words = {i["text"] for i in payload.get("context") or []}
-                    compose.check_context(local, router, sid, payload)
+                    belong.model_stage(local, router, sid, payload)
                     kept = {i["text"] for i in payload.get("context") or []}
                     entry["context"] = [{"role": r, "text": t[:200],
                                          "result": "kept" if t in kept else "other news" if t in after_words else "no shared word"}

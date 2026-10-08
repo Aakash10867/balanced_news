@@ -2306,18 +2306,20 @@ def test_a_page_about_its_own_publisher_is_not_the_story():
 
 
 def test_a_context_line_must_share_something_with_the_story():
-    """Owner, Oct 7 2026: "Hindustan was established in 1936 ..." sat in the Background of a story on
-    stubble burning; background that shares no specific word with the story's event is not its context."""
-    from nishpaksh.compose import drop_unrelated_context
+    """Owner, Oct 7 2026: "Hindustan was established in 1936 ..." sat in a story on stubble burning. Code drops
+    a related, explanation, reaction or next line that shares no specific word with the story's event; a
+    background line goes to the model instead (Oct 8 2026: a story's setting often shares no word with it,
+    "Heavy rainfall in Nepal's catchment raised the Gandak" in a Bihar flood story)."""
+    from nishpaksh.belong import code_stage
     core = {"id": 1, "role": "core", "text": "The Commission for Air Quality Management deployed flying squads in "
                                               "34 districts of Punjab and Haryana to curb stubble burning."}
     bg1 = {"id": 2, "role": "background", "text": "Stubble burning is a practice where farmers set fire to crop residue."}
-    bg2 = {"id": 3, "role": "background", "text": "Air pollution in Delhi-NCR in winter is attributed to stubble burning and vehicles."}
-    junk = {"id": 4, "role": "background", "text": "Hindustan was established in 1936 by Madan Mohan Malaviya and is the "
-                                                 "second most widely read Hindi newspaper in India."}
-    p = {"timeline": [[core]], "undated": [], "established": [], "contested": [], "context": [bg1, bg2, junk]}
-    assert drop_unrelated_context(p) == 1 and p["context"] == [bg1, bg2]
-
+    ex = {"id": 3, "role": "explanation", "text": "Air pollution in Delhi-NCR in winter is attributed to stubble burning."}
+    junk = {"id": 4, "role": "related", "text": "Hindustan was established in 1936 by Madan Mohan Malaviya and is the "
+                                              "second most widely read Hindi newspaper in India."}
+    setting = {"id": 5, "role": "background", "text": "Heavy rainfall in Nepal raised the Gandak."}
+    p = {"timeline": [[core]], "undated": [], "established": [], "contested": [], "context": [bg1, ex, junk, setting]}
+    assert code_stage(p) == 1 and p["context"] == [bg1, ex, setting]
 
 
 def test_one_structure_decides_the_same_fact_on_the_words():
@@ -2552,70 +2554,59 @@ def test_who_speaks_is_code_s_job_story_13107():
     assert "he " not in " ".join(t2[1:]).lower().replace("the ", "")
 
 
-def test_context_that_is_other_news_on_the_same_page_is_dropped(store):
-    """Owner, Oct 8 2026: a Kerala vigilance probe sat under "Related events" in the cheetah story (a video
-    page listed other videos); a cricket comeback in a story of students' deaths. Words cannot tell, so one
-    question is asked twice (lines reversed the second time); only "connected" both times is kept, and the
-    answers are cached so a retried story is not asked again."""
-    from nishpaksh import compose
+def test_each_context_role_has_its_own_bar(store):
+    """Owner, Oct 8 2026: other news from the same page (a Kerala vigilance probe in the cheetah story, a cricket
+    comeback in a story of students' deaths). Each role's bar follows the harm of a wrong one: background is
+    kept unless "other news" twice; a related event needs "connected" twice; an explanation needs "connected"
+    twice AND the term it explains, found by code in the story and in the line. Answers are kept raw per line."""
+    from nishpaksh import belong
     from nishpaksh.router import LLMResult
     sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=False, qualifies=True,
                                                   signature="cheetah cubs", analysis={}))
-    core = {"id": 1, "text": "A cheetah gave birth to five cubs in Kuno National Park", "verdict": "corroborated",
-            "kind": "event", "sources": [], "n_sources": 3}
-    ctx = [{"id": 2, "role": "related", "text": "Kerala Home Minister Ramesh Chennithala defended a vigilance probe "
-                                                  "into a road upgrade project"},
+    core = {"id": 1, "role": "core", "text": "A cheetah gave birth to five cubs in Kuno National Park under Project Cheetah",
+            "verdict": "corroborated", "kind": "event", "sources": [], "n_sources": 3}
+    ctx = [{"id": 2, "role": "related", "text": "Kerala Home Minister defended a vigilance probe into a road project"},
            {"id": 3, "role": "background", "text": "Cheetahs were brought to Kuno National Park from Namibia in 2022"},
-           {"id": 4, "role": "reaction", "text": "The minister congratulated the field staff"}]   # not asked
-
-    class Asker:
-        def __init__(self, flip=False):
-            self.prompts, self.flip = [], flip
-
-        def call(self, tier, prompt, **kw):
-            self.prompts.append(prompt)
-            lines = prompt.split("LINES:")[1]
-            res = []
-            for n, t in re.findall(r'^(\d+)\. "(.*)"$', lines, re.M):
-                yes = "Kuno" in t and not (self.flip and len(self.prompts) > 1)
-                res.append({"n": int(n), "answer": "connected" if yes else "other news"})
-            return LLMResult("", {"results": res}, "m", [], 1)
+           {"id": 4, "role": "explanation", "text": "Project Cheetah is the programme to bring the cheetah back to India"},
+           {"id": 5, "role": "reaction", "text": "The minister congratulated the Kuno field staff"}]   # never asked
 
     def payload():
         return {"established": [dict(core)], "contested": [], "undated": [], "timeline": [],
                 "context": [dict(c, kind="event", verdict="unverified", sources=[]) for c in ctx]}
-    a = Asker()
-    p = payload()
-    assert compose.check_context(store, a, sid, p) == 1
-    assert [c["id"] for c in p["context"]] == [3, 4]
-    # one asking was enough: the related line said other news (dropped), the background said connected
-    assert len(a.prompts) == 1
-    # cached: nothing asked the second time
-    b = Asker()
-    p = payload()
-    assert compose.check_context(store, b, sid, p) == 1 and b.prompts == []
 
-    class Says:                      # a fixed pair of answers for every line: first asking, second asking
-        def __init__(self, first, second):
-            self.answers, self.prompts = [first, second], []
+    class Says:
+        """answers[k] is the k-th asking's answer for every line; terms per line id."""
+        def __init__(self, *answers, term="Project Cheetah"):
+            self.answers, self.term, self.prompts = list(answers), term, []
 
         def call(self, tier, prompt, **kw):
             self.prompts.append(prompt)
-            ans = self.answers[min(len(self.prompts), 2) - 1]
-            res = [{"n": int(n), "answer": ans} for n, _ in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("LINES:")[1], re.M)]
+            ans = self.answers[min(len(self.prompts), len(self.answers)) - 1]
+            res = [{"n": int(n), "answer": ans, "term": self.term}
+                   for n, _, _ in re.findall(r'^(\d+)\. \((\w+)\) "(.*)"$', prompt.split("LINES:")[1], re.M)]
             return LLMResult("", {"results": res}, "m", [], 1)
 
-    def run(first, second):
+    def run(*answers, term="Project Cheetah"):
         store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
         p = payload()
-        compose.check_context(store, Says(first, second), sid, p)
-        return [c["id"] for c in p["context"]]
-    # a related event needs "connected" twice; background is dropped only on "other news" twice
-    assert run("connected", "connected") == [2, 3, 4]
-    assert run("connected", "other news") == [3, 4]          # related: one no is enough to drop it
-    assert run("other news", "connected") == [3, 4]          # background: one yes is enough to keep it
-    assert run("other news", "other news") == [4]
-    # nothing could be asked (no model): the related line goes, background stays
+        m = Says(*answers, term=term)
+        belong.model_stage(store, m, sid, p)
+        return [c["id"] for c in p["context"]], m
+    kept, m = run("connected", "connected")
+    assert kept == [2, 3, 4, 5]
+    # background said connected once: not asked again; related and explanation asked twice
+    assert "Namibia" not in m.prompts[1].split("LINES:")[1] and "Kerala" in m.prompts[1].split("LINES:")[1]
+    assert run("connected", "other news")[0] == [3, 5]       # one no drops related and explanation
+    assert run("other news", "connected")[0] == [3, 5]       # background: one yes keeps it
+    assert run("other news", "other news")[0] == [5]         # background goes only on two noes
+    # an explanation whose term is not in the story (or not in the line) is no explanation of it
+    assert run("connected", "connected", term="repo rate")[0] == [2, 3, 5]
+    # answers are kept: nothing asked again
+    p = payload()
+    again = Says("other news")
+    belong.model_stage(store, again, sid, p)
+    assert again.prompts == [] and [c["id"] for c in p["context"]] == [2, 3, 5]
+    # nothing could be asked (no model): background stays, related and explanation go
     store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
     p = payload()
-    assert compose.check_context(store, None, sid, p) == 1 and [c["id"] for c in p["context"]] == [3, 4]
+    assert belong.model_stage(store, None, sid, p) == 2 and [c["id"] for c in p["context"]] == [3, 5]

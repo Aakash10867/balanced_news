@@ -114,9 +114,10 @@ class FakeBackend:
             # connected when the line shares a word of 5+ letters with the story, else other news
             story = prompt.split("THE STORY:")[1].split("LINES:")[0].lower()
             res = []
-            for n, t in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("LINES:")[1], re.M):
-                hit = any(w in story for w in re.findall(r"[a-z]{5,}", t.lower()) if w not in ("which", "there", "their"))
-                res.append({"n": int(n), "answer": "connected" if hit else "other news"})
+            for n, role, t in re.findall(r'^(\d+)\. \((\w+)\) "(.*)"$', prompt.split("LINES:")[1], re.M):
+                shared = [w for w in re.findall(r"[a-z]{5,}", t.lower()) if w in story and w not in ("which", "there", "their")]
+                res.append({"n": int(n), "answer": "connected" if shared else "other news",
+                            "term": shared[0] if shared else ""})
             return json.dumps({"results": res}), [], 100
         if "careful annotator" in prompt:
             title = re.search(r"Title: (.*)", prompt).group(1).strip()

@@ -384,19 +384,21 @@ Hindi. At most 2 per clock hour.
   (`narrative._is_figure`); (5) a context line (background, related, explained, next) must share a
   specific word or name, by root, with the story's own event, or code drops it
   (`compose.drop_unrelated_context`; common words like India, government, said do not count).
-- Story 12099 (Oct 8 2026): "Kerala Home Minister defended a vigilance probe into a road project" under Related
-  events in the cheetah story (a video page listed other videos); on the 60 latest articles many "related" lines
-  were other news from the page (a cricket comeback in a story of students' deaths, a plague death in Siberia in
-  the story of Indians in the Russian army). Shared words cannot tell (a word rule dropped "the project is
-  expected to generate employment" in the project's own story; a name rule dropped 38 of 154 related lines and
-  kept the cricket one). So `compose.check_context` asks one question per story for its related, background and
-  explanation lines (owner: reactions and "what next" not asked): connected / other news, worked examples with
-  the traps and the story's news plus up to 10 of its own statements, batches of 8, asked twice (lines
-  reversed) where it matters: a RELATED line is kept only if "connected" both times (not asked = dropped); a
-  BACKGROUND or EXPLANATION line is dropped only if "other news" both times (not asked = kept): asked strictly,
-  the first replay dropped "Cheetahs live in Kuno and Gandhi Sagar" and the floods in a story about flood
-  victims. Answers cached per line text in `stories.analysis.context_checks`. Page tier, ~2-4
-  Flash-Lite calls per article. `replay --mode context` runs only this on stored stories (cheap).
+- **Context belongs by role (owner, Oct 8 2026; `belong.py`; story 12099: a Kerala vigilance probe under
+  Related events in the cheetah story, from a video page's list of other videos; on the 60 latest articles
+  many context lines were other news from the page).** Each role's bar follows the harm of a wrong one:
+  BACKGROUND (the setting; mild) kept unless the model says "other news" twice; RELATED (a link; a false link)
+  needs "connected" twice; EXPLANATION (what something means; a false explanation) needs "connected" twice AND
+  the term it explains, named by the model and found by code in the story and the line. Three stages, one
+  path: reading is told to ignore other stories the page lists (`extract.py`); code drops only what it can be
+  sure of, a related / explanation / reaction / next line sharing no specific word with the story
+  (`belong.code_stage`; background never, its setting often shares none); the model answers connected / other
+  news per line (worked examples with the traps; the second asking reverses the lines and is asked only where
+  the bar needs it), answers kept RAW per line text in `stories.analysis.context_checks`, so a line whose role
+  changes is judged against its new bar without asking again. Not asked (quota): background kept, related and
+  explanation dropped. Word and name rules were measured first and failed (a word rule dropped "the project is
+  expected to generate employment" in the project's own story; a name rule dropped 38 of 154 related lines
+  and kept the cricket one). `replay --mode context` runs only this, on stored stories.
 - One spelling per name in an article by code (`spelling.py`, Oct 7 2026: Machhar / Machar / Matchar /
   Machchhar on one page): capitalised words with the same key (tch/chh = ch, ee = i, oo = u, doubled letters
   single) take the spelling most reports use; applied to statements before writing and to the article and
