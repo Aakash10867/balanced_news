@@ -381,9 +381,9 @@ Hindi. At most 2 per clock hour.
   (`compose.drop_outlet_self_talk`) and extraction is told to ignore it; (3) every article opens with a
   news lead: a missing "news" section triggers the news fill, and failing that the first "What happened"
   paragraph becomes the lead; (4) "By the numbers" takes figures only, never years or dates
-  (`narrative._is_figure`); (5) a context line (background, related, explained, next) must share a
-  specific word or name, by root, with the story's own event, or code drops it
-  (`compose.drop_unrelated_context`; common words like India, government, said do not count).
+  (`narrative._is_figure`); (5) a context line must share a specific word or name, by root, with the
+  story's own event, or code drops it (now `belong.code_stage`, background excepted: see "Context belongs by
+  role"; common words like India, government, said do not count).
 - **Context belongs by role (owner, Oct 8 2026; `belong.py`; story 12099: a Kerala vigilance probe under
   Related events in the cheetah story, from a video page's list of other videos; on the 60 latest articles
   many context lines were other news from the page).** Each role's bar follows the harm of a wrong one:
