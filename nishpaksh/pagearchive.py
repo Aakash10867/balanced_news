@@ -31,7 +31,7 @@ from .db import Store, published, select, utcnow
 
 log = logging.getLogger(__name__)
 # the repository the workflow runs in (GITHUB_REPOSITORY), so a moved or renamed repository needs no change
-DEFAULT_URL = f"https://raw.githubusercontent.com/{os.environ.get('GITHUB_REPOSITORY') or 'nishpaksh/nishpaksh.github.io'}/archive"
+DEFAULT_URL = f"https://raw.githubusercontent.com/{os.environ.get('GITHUB_REPOSITORY') or 'NishpakshNews/NishpakshNews.github.io'}/archive"
 PENDING = ".pending.json"
 
 

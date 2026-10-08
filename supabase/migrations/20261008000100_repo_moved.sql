@@ -1,5 +1,5 @@
--- The repository moved to the nishpaksh organisation as nishpaksh/nishpaksh.github.io (owner, Oct 8 2026),
--- so the site is served at https://nishpaksh.github.io. Both scheduled jobs are started at the new address.
+-- The repository moved to the NishpakshNews organisation as NishpakshNews/NishpakshNews.github.io (owner, Oct 8 2026),
+-- so the site is served at https://nishpakshnews.github.io. Both scheduled jobs are started at the new address.
 -- 'github_dispatch_token' in Vault must be a token for the new repository (Actions read and write).
 create or replace function public.dispatch_workflow(workflow text) returns bigint
 language plpgsql security definer set search_path = public, extensions, vault as $$
@@ -13,7 +13,7 @@ begin
     return null;
   end if;
   select net.http_post(
-    url := 'https://api.github.com/repos/nishpaksh/nishpaksh.github.io/actions/workflows/' || workflow || '/dispatches',
+    url := 'https://api.github.com/repos/NishpakshNews/NishpakshNews.github.io/actions/workflows/' || workflow || '/dispatches',
     body := jsonb_build_object('ref', 'main', 'inputs', jsonb_build_object('reason', 'supabase-cron')),
     headers := jsonb_build_object(
       'Authorization', 'Bearer ' || tok,
