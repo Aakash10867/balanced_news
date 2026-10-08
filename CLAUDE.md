@@ -248,7 +248,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   one commit force-pushed, `continue-on-error`); the site reads them from raw.githubusercontent.com and falls
   back to Supabase, then the archive branch. Service worker keeps the page and last news offline.
 - **Scheduling:** Supabase `pg_cron` calls GitHub's workflow_dispatch at :05 every hour
-  (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); GitHub's own schedule is backup.
+  (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); the pipeline has no GitHub
+  schedule (removed Oct 8 2026). The writer (`writer.yml`) keeps its :55 GitHub schedule as backup.
 
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →

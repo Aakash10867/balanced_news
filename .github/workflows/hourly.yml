@@ -1,12 +1,10 @@
 name: hourly-pipeline
 
-# Started every hour at :05 by Supabase (pg_cron -> workflow_dispatch, see supabase/migrations),
-# because GitHub's own schedule is best-effort and skipped hours at a time. GitHub's schedule
-# stays as a backup. The gate lets an automatic trigger through only if no run has started
-# recently, so the two never double up. "Run workflow" (manual) always goes ahead.
+# Started every hour at :05 by Supabase (pg_cron -> workflow_dispatch, see supabase/migrations).
+# GitHub's own schedule was removed (owner, Oct 8 2026): it is best-effort, skipped hours at a time,
+# and only added runs the gate had to turn away. The gate lets the Supabase trigger through only if
+# no run has started recently. "Run workflow" (manual) always goes ahead.
 on:
-  schedule:
-    - cron: "23,53 * * * *"
   workflow_dispatch:
     inputs:
       reason:
@@ -35,12 +33,10 @@ jobs:
           REASON: ${{ github.event.inputs.reason }}
         run: |
           reason="$REASON"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$reason" != "supabase-cron" ]; then
-            echo "go=true" >> "$GITHUB_OUTPUT"; echo "manual run: going ahead"
-          elif [ "$reason" = "supabase-cron" ]; then
+          if [ "$reason" = "supabase-cron" ]; then
             python -m nishpaksh.gate --min-gap 35 | tee -a "$GITHUB_OUTPUT"
           else
-            python -m nishpaksh.gate --min-gap 50 | tee -a "$GITHUB_OUTPUT"
+            echo "go=true" >> "$GITHUB_OUTPUT"; echo "manual run: going ahead"
           fi
 
   run:
