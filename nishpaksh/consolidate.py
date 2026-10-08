@@ -211,14 +211,14 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     proposals = {tuple(sorted((x, y))) for g in same_groups for i, x in enumerate(g) for y in g[i + 1:] if x != y}
     proposals |= {p for p, v in by_frame.items() if v == "same"}
     # the same fact in other words, found topic by topic (dupes.py, Oct 8 2026, story 13970): proposals only,
-    # decided below like every other proposal; a "covers" proposal must keep the short line's numbers and its
-    # "not" before the twice-asked question
+    # decided below like every other proposal; a "covers" proposal must keep the short line's numbers before
+    # the twice-asked question
     from .dupes import propose
     dupe_checks = dict(analysis.get("dupe_checks") or {})
     d_same, d_cover = propose(router, texts, dupe_checks)
     proposals |= d_same
     for big, small in d_cover:
-        if (prof[big].neg == prof[small].neg and all(any(abs(x - y) <= 0.05 * max(abs(x), abs(y), 1) for y in prof[big].nums)
+        if (all(any(abs(x - y) <= 0.05 * max(abs(x), abs(y), 1) for y in prof[big].nums)
                                                     for x in prof[small].nums)):
             ask_cover.append((big, small))
     ask_cover = list(dict.fromkeys(ask_cover))
@@ -226,8 +226,12 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     for a, b in sorted(proposals - code_same_set):
         r = relate(texts[a], texts[b], times[a], times[b], prof[a], prof[b])
         # a model or the frames said "same": checked by the twice-asked question, unless the words plainly
-        # differ (one negated, or numbers that do not agree even after rounding)
-        if r in ("same", "ask") or (prof[a].neg == prof[b].neg and numbers_close(prof[a], prof[b])):
+        # differ (one negated, or numbers that do not agree even after rounding). A pair the topic step
+        # proposed is asked even with a "no" on one side (owner, Oct 8 2026: "rate cuts were off the table" /
+        # "there is no option for rate cuts" mean the same); the twice-asked question decides, its examples
+        # holding the trap ("arrested him" / "did not arrest him" -> different). Numbers must still agree.
+        neg_ok = prof[a].neg == prof[b].neg or (a, b) in d_same
+        if r in ("same", "ask") or (neg_ok and numbers_close(prof[a], prof[b])):
             ask_pairs.append((a, b))
     ask_pairs = list(dict.fromkeys(tuple(sorted(p)) for p in ask_pairs if tuple(sorted(p)) not in code_same_set))
     same_checks = dict(analysis.get("same_checks") or {})

@@ -78,7 +78,10 @@ Question: do A and B report the SAME single fact, only in different words?
               charge as chief" -> different (two steps). "He took charge as vice chief in July" and "He will
               take charge as chief in October" -> different. "He is Deputy Chief of the Air Staff" and "He will be
               Chief of the Air Staff" -> different (two posts). "He got the Param Vishisht Seva Medal" and "He
-              got the Vishisht Seva Medal" -> different (two medals).
+              got the Vishisht Seva Medal" -> different (two medals). "Police arrested him" and "Police did not
+              arrest him" -> different (one says it happened, the other that it did not).
+A "no" or "not" can be the same fact in other words: "Rate cuts are off the table" and "There is no option
+for rate cuts" -> same. Judge what each sentence MEANS, not whether one has "no" in it.
 
 If you are not sure, answer "different".
 

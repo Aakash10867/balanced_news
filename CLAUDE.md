@@ -143,7 +143,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   outrank the labels. `relate.relate(a, b)` decides by code on numbers (as numbers, ordinals, "eleven"),
   names (capitalised words; the names both lines share are left out of the word overlap) and root words:
   same / a covers b / ask / ask-covers / different; one negated and one not, or different times, is
-  always different. Code merges only "same"; "ask" goes to `match.same_facts` (asked twice, A/B swapped)
+  always different BY CODE (a pair the topic step proposes is still asked: see "The same fact in other words"). Code merges only "same"; "ask" goes to `match.same_facts` (asked twice, A/B swapped)
   and "ask-covers" to `match.covers_facts` (asked twice, reversed order); a short synonym list
   (`relate.SYNONYM`: injured/hurt/wounded, arrested/detained, part/section...; never injured/killed)
   is read as one word; proposals from the
@@ -179,8 +179,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   same pair goes through the existing gate (relate by code, then `same_facts` asked twice); a covers pair must
   keep the short line's numbers and its "not" (code), then `covers_facts` asked twice. Topics and answers kept by
   TEXT in `stories.analysis.dupe_checks` (ids change after merges). `CONSOLIDATE_VERSION` 9: every unpublished
-  story is reviewed once more. Known limit: a pair where one side is phrased negatively ("no option for rate
-  cuts") is still kept apart by the negation rule of "One structure for the same fact".
+  story is reviewed once more. A "no" does not keep a proposed pair apart (owner, Oct 8 2026: "if they mean the
+  same thing, we should not leave them unmerged because one has no in it"): a pair the topic step proposed is
+  asked even when one side is negated, and the twice-asked same question decides; its examples hold the trap
+  ("Police arrested him" / "did not arrest him" -> different; "rate cuts are off the table" / "no option for
+  rate cuts" -> same). Numbers must still agree. Code alone still never merges a negated and a plain line.
 - **A sentence in coloured parts (owner, Oct 7 2026).** A sentence joining statements of different
   statuses is written in at most two "parts" (three since Oct 8 2026, see "One fact per statement"; main fact first, split at a comma or "and"), each citing
   only its own statements; the site colours each part, the source numbers follow the sentence. Code
