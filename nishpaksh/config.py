@@ -87,6 +87,7 @@ class Settings:
     story_join_cosine: float = 0.92     # mean similarity to the story's two closest articles: join
     story_core_cosine: float = 0.85     # ...and at least this close to the story's core article
     story_ask_cosine: float = 0.75      # from here up to join: ask a model "same specific event?"
+    story_before_hours: int = 12        # a borderline article this much older than a story's first report: not asked in
     story_split_cosine: float = 0.72    # average-linkage cut when re-checking a story for separate events
     story_split_min_size: int = 4
     heal_per_run: int = 20

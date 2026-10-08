@@ -15,7 +15,10 @@ What went wrong before, and the rule that replaces it:
   Now a new article is judged against the story's actual articles:
     join   its similarity to the story's closest members (mean of the top two) is high, AND it is
            close to the story's core article (the medoid), so a story cannot drift by chaining
-    ask    a middle band goes to a cheap model in batches: "same specific event?"
+    ask    a middle band goes to a cheap model in batches: "same specific event?", the article
+           against the story's core article (dates, headlines, opening words), asked twice with
+           the two swapped; only two "same" join. A borderline article published 12 h or more
+           before the story's first report is not asked: it is an earlier event
     else   it starts a new story
   Every run, stories are re-checked: one whose articles fall into separate groups is split.
 
@@ -38,15 +41,22 @@ from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
 
-SAME_EVENT_PROMPT = """Each numbered line shows a news item N and the core of an existing story S (a headline, and
-the headline of the story item most similar to N). Decide if N reports the SAME specific event as S:
-the same incident, announcement, decision or statement (a follow-up on that exact incident counts).
-A different event on the same broad topic (another protest, another statement in the same row,
-another state's version of a scheme) is NOT the same. Hindi and English may be mixed.
+SAME_EVENT_PROMPT = """Each numbered line shows two news reports, A and B, each with its publication date (IST),
+headline and opening words. Do A and B report the SAME specific event: the same incident, announcement,
+decision or statement (a later report on that exact incident counts)?
+
+Same kind of event is not the same event. Look at WHO, WHERE and WHEN:
+- "Former sarpanch shot dead in Ludhiana" (Oct 4) / "AAP sarpanch shot dead by bike-borne men in Tarn
+  Taran" (Oct 6): two killings, two people, two places -> "different"
+- "Bus falls into gorge in Kullu, 12 dead" (Oct 3) / "Kullu bus accident: toll rises to 15" (Oct 4):
+  one accident, a later report -> "same"
+- "Farmers protest in Mumbai over prices" / "Farmers protest in Chennai over prices": two protests -> "different"
+- "Minister X resigns" / "मंत्री X का इस्तीफा": one event in Hindi and English -> "same"
+If the reports do not let you tell, or you are unsure, answer "different".
 
 {pairs}
 
-Reply with JSON only: {{"results": [{{"n": 1, "same": true}}, ...]}}"""
+Reply with JSON only: {{"results": [{{"n": 1, "answer": "same"}}, {{"n": 2, "answer": "different"}}, ...]}}"""
 
 
 def _story_text(a: dict) -> str:
@@ -163,20 +173,24 @@ def _embed_missing(store: Store, router: Router | None, arts: list[dict]) -> int
     return done
 
 
-def _same_event(router: Router | None, asks: list[tuple[dict, dict, dict]]) -> list[bool]:
-    """(new article, story core article, nearest member) -> same specific event? No answer = no."""
-    out = [False] * len(asks)
-    if router is None:
-        return out
-    for start in range(0, len(asks), 20):
-        chunk = asks[start:start + 20]
-        body = "\n".join(
-            f'{k + 1}. N: "{a["title"]} — {_lead(a)}" | S: "{core["title"]}" / "{near["title"]}"'
-            for k, (a, core, near) in enumerate(chunk))
+def _ist(t) -> str:
+    return (t + dt.timedelta(hours=5, minutes=30)).strftime("%b %d") if t else "date unknown"
+
+
+def _item(a: dict) -> str:
+    return f'{_ist(a.get("published_at"))} | {a["title"]} — {_lead(a)}'.replace('"', "'")
+
+
+def _ask_same(router: Router, pairs: list[tuple[dict, dict]]) -> list[bool | None]:
+    """One pass of the question over (A, B) pairs: True / False, None when not answered."""
+    out: list[bool | None] = [None] * len(pairs)
+    for start in range(0, len(pairs), 20):
+        chunk = pairs[start:start + 20]
+        body = "\n".join(f'{k + 1}. A: "{_item(a)}" | B: "{_item(b)}"' for k, (a, b) in enumerate(chunk))
         try:
             res = router.call("light", SAME_EVENT_PROMPT.format(pairs=body), json_out=True, max_output_tokens=900)
         except QuotaExhausted:
-            log.info("stories: light tier exhausted; %d borderline articles start their own stories", len(asks) - start)
+            log.info("stories: light tier exhausted; %d borderline articles start their own stories", len(pairs) - start)
             break
         except Exception as e:  # noqa: BLE001
             log.warning("same-event check failed: %s", str(e)[:200])
@@ -186,9 +200,34 @@ def _same_event(router: Router | None, asks: list[tuple[dict, dict, dict]]) -> l
                 n = int(it["n"]) - 1
             except (KeyError, TypeError, ValueError):
                 continue
-            if 0 <= n < len(chunk) and it.get("same") is True:
-                out[start + n] = True
+            if 0 <= n < len(chunk):
+                ans = str(it.get("answer", "")).strip().lower()
+                out[start + n] = True if ans == "same" else False if ans == "different" else None
     return out
+
+
+def _same_event(router: Router | None, asks: list[tuple[dict, dict]]) -> list[bool]:
+    """(new article, story core article) -> same specific event? Asked twice, A and B swapped; only
+    two "same" answers join (Oct 8 2026, story 13968: one question on two headlines, "former sarpanch
+    murder mystery" / "AAP sarpanch shot dead in Punjab", merged two killings a day and 150 km apart)."""
+    if router is None or not asks:
+        return [False] * len(asks)
+    first = _ask_same(router, [(a, b) for a, b in asks])
+    again = [k for k, x in enumerate(first) if x is True]
+    second = _ask_same(router, [(asks[k][1], asks[k][0]) for k in again]) if again else []
+    out = [False] * len(asks)
+    for k, x in zip(again, second):
+        out[k] = x is True
+    return out
+
+
+def _before_story(a: dict, members: list[dict]) -> bool:
+    """A report published well before a story's first report is about an earlier event: a borderline
+    one is never asked into it (story 13968: a Ludhiana killing of Oct 4-5 joined a Tarn Taran killing
+    of Oct 6). Only the strict code rule can still place it there."""
+    first = min((m["published_at"] for m in members if m.get("published_at")), default=None)
+    return bool(first and a.get("published_at") and first - a["published_at"] >= dt.timedelta(
+        hours=SETTINGS.story_before_hours))
 
 
 def _lead(a: dict, n: int = 140) -> str:
@@ -414,7 +453,8 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
         if cands and cands[0][0] >= SETTINGS.story_join_cosine and cands[0][1] >= SETTINGS.story_core_cosine:
             place(i, cands[0][2])
         elif (cands and cands[0][0] >= SETTINGS.story_ask_cosine and cands[0][1] >= SETTINGS.story_ask_cosine - 0.05
-              and arts[i]["id"] not in asked_before.get(cands[0][2], set())):
+              and arts[i]["id"] not in asked_before.get(cands[0][2], set())
+              and not _before_story(arts[i], [arts[j] for j in index.members[cands[0][2]]])):
             asks.append((i, cands[0][2], cands[0][3]))
         else:
             place(i, None)
@@ -429,7 +469,7 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
     if gone:
         log.info("stories: %d questions dropped, their story was merged away in this pass", len(gone))
     if asks:
-        verdicts = _same_event(router, [(arts[i], arts[index.medoid[sid]], arts[near]) for i, sid, near in asks])
+        verdicts = _same_event(router, [(arts[i], arts[index.medoid[sid]]) for i, sid, _ in asks])
         rejected = []
         for (i, sid, _), same in zip(asks, verdicts):
             if same and sid not in index.medoid:    # emptied by an earlier answer in this loop

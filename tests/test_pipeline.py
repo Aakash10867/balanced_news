@@ -547,10 +547,10 @@ class _NoLLM(FakeBackend):
         if "SAME specific event" in prompt:
             import json as _j, re as _re
             res = []
-            for n, a, b in _re.findall(r'(\d+)\. N: "(.*?)" \| S: "(.*?)"', prompt):
+            for n, a, b in _re.findall(r'(\d+)\. A: "(.*?)" \| B: "(.*?)"', prompt):
                 ta = _re.search(r"\[(\w+)\]", a)
                 tb = _re.search(r"\[(\w+)\]", b)
-                res.append({"n": int(n), "same": bool(ta and tb and ta.group(1) == tb.group(1))})
+                res.append({"n": int(n), "answer": "same" if ta and tb and ta.group(1) == tb.group(1) else "different"})
             return _j.dumps({"results": res}), [], 50
         return super().generate(model, prompt, json_mode, grounded)
 
@@ -576,6 +576,40 @@ def test_same_topic_different_events_stay_apart(store):
         sids[r["title"][:3]].add(r["story_id"])
     assert len(sids["[A]"]) == 1 and len(sids["[B]"]) == 1
     assert sids["[A]"] != sids["[B]"]
+
+
+def test_earlier_event_is_not_asked_into_a_later_story(store):
+    """Story 13968 (Oct 8 2026): a Ludhiana sarpanch killing reported Oct 4-5 sat as a lone unread
+    article; on Oct 6 a Tarn Taran sarpanch killing came in at cosine 0.80 and one model question on two
+    headlines joined them. A borderline article published 12 h+ before a story's first report is not
+    asked in, and the question is asked twice (A/B swapped): one "same" is not enough."""
+    from nishpaksh.stories import group_stories
+    mk = lambda: store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, signature="s",
+                                                          dirty=False, qualifies=False))
+    old = _put(store, "[L] former sarpanch shot dead", _vec(30, jitter=1), hours_ago=40, story_id=mk())
+    patti = mk()
+    for k in range(3):
+        _put(store, f"[L] AAP sarpanch shot dead {k}", _vec(0 + k * 0.5, jitter=5 + k), hours_ago=10 - k,
+             story_id=patti)
+    group_stories(store, _router(store))
+    rows = {r["id"]: r["story_id"] for r in store.rows(select(articles.c.id, articles.c.story_id))}
+    assert sum(1 for v in rows.values() if v == rows[old]) == 1
+
+
+def test_same_event_needs_two_same_answers():
+    from nishpaksh.stories import _same_event
+
+    class Flip:
+        def __init__(self):
+            self.n = 0
+        def call(self, tier, prompt, **kw):
+            self.n += 1
+            class R:
+                data = {"results": [{"n": 1, "answer": "same" if self.n == 1 else "different"}]}
+            return R()
+    a = {"title": "A", "text": "x", "published_at": NOW}
+    r = Flip()
+    assert _same_event(r, [(a, a)]) == [False] and r.n == 2
 
 
 def test_story_cannot_drift_by_chaining(store):

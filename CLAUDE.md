@@ -211,7 +211,12 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   Oct 6 2026; was ranked by importance and read as random); top 20, then "More stories". Filler is never published. A thread timeline page is a possible later step.
 - **Grouping:** one embedding model only (`gemini-embedding-001`, chosen on 216 labelled real pairs);
   join only on high similarity to closest members and the story's fixed core, a model checks the
-  middle band, stories holding separate events are split. When unsure, keep apart.
+  middle band, stories holding separate events are split. When unsure, keep apart. The middle-band
+  question (Oct 8 2026, story 13968: a Ludhiana sarpanch killing of Oct 4-5 merged into a Tarn Taran
+  sarpanch killing of Oct 6 on one question about two headlines) compares the article with the story's
+  CORE article (IST date, headline, opening words; worked examples incl. the sarpanch trap), asked
+  twice A/B swapped, two "same" join, unsure = different; a borderline article published 12 h+ before
+  the story's first report (`story_before_hours`) is never asked in (an earlier event).
 - **Scheduling:** Supabase `pg_cron` calls GitHub's workflow_dispatch at :05 every hour
   (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); GitHub's own schedule is backup.
 

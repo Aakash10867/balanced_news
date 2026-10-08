@@ -249,9 +249,9 @@ class FakeBackend:
                 r"conspiracy|negligen|blame", t, re.I) else "fact"} for n, t in items]}), [], 100
         if "SAME specific event" in prompt:
             res = []
-            for n, a, b in re.findall(r'(\d+)\. N: "(.*?)" \| S: "(.*?)"', prompt):
+            for n, a, b in re.findall(r'(\d+)\. A: "(.*?)" \| B: "(.*?)"', prompt):
                 topic = lambda x: "k" if ("Kesarganj" in x or "केसरगंज" in x) else ("a" if "ssembly" in x else x)
-                res.append({"n": int(n), "same": topic(a) == topic(b)})
+                res.append({"n": int(n), "answer": "same" if topic(a) == topic(b) else "different"})
             return json.dumps({"results": res}), [], 100
         raise AssertionError(f"unexpected prompt: {prompt[:80]}")
 
