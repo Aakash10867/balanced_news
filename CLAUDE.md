@@ -291,6 +291,14 @@ Hindi. At most 2 per clock hour.
   before his arrest" on the arrest itself); prefer the absolute date in fallbacks.
 
 ## Fixed at the root (Oct 2026), keep the guards
+- Story 14231 (Oct 8 2026): one "What they say" paragraph of 18 lines, each "..., according to Modi".
+  Code finds a paragraph naming one speaker in 3+ sentences or running 7+ sentences (`narrative._cohere`)
+  and one writer call rewrites it (speaker named once, then "he said" only where the statements make the
+  gender clear, else the surname; grouped into 2-3 paragraphs by subject); kept only if it passes every
+  check and carries every statement, at most 2 per article. Code never writes a pronoun itself (it cannot
+  know anyone's gender). Also: days and months are not names, and the numbers of a date are not figures
+  (`relate.Profile`: "on Thursday, October 8, 2026" kept one call told twice apart); two lines with
+  different years or dates are never one fact.
 - Story 11867 (Oct 8 2026): (1) dispute marks made before the dispute gate were published, because the
   story was never reviewed again: the desk now runs `consolidate_story` before writing (a no-op when the
   review is current), so an article is written only from analysis under the current rules; (2) the

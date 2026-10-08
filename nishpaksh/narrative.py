@@ -927,6 +927,86 @@ def _target_length(items: list[dict]) -> str:
     return f"{lo}-{lo + max(3, lo // 3)}"
 
 
+COHERE_PROMPT = """Below is one paragraph of a news article, written from numbered statements. It reads badly:
+{problem}
+Rewrite it the way a good newspaper would:
+- name each speaker in full ONCE; after that continue with "he said", "she said", "they said" (only when
+  the statements make the person's gender clear; otherwise use the surname) or with no attribution in
+  a sentence that plainly continues the same speaker's words
+- put sentences about the same subject together, and split the text into 2 or 3 paragraphs by subject
+  when it is long; join two statements in one sentence only when they are about the same thing
+- keep EVERY fact; add nothing; never change a number; never turn a claim into a plain fact
+- every sentence lists in "ids" the statements it uses; every id below must be used at least once
+- never write "according to reports", "reportedly" or "one report said"; never name a news outlet
+
+The paragraph:
+{paragraph}
+
+Its statements:
+{statements}
+
+Reply with JSON only: {{"paragraphs": [[{{"text": "...", "ids": [3]}}], [ ... ]]}}"""
+
+COHERE_MAX = 2          # rewrites per article (each is a writer call)
+LONG_PARAGRAPH = 7      # sentences
+
+
+def _speaker_runs(para: list[dict], by_id: dict) -> tuple[str, int] | None:
+    """The speaker named in the most sentences of a paragraph, and how many."""
+    count: dict[str, int] = {}
+    for sent in para:
+        low = sent["text"].lower()
+        for sp in {by_id[i].get("speaker") for i in sent["ids"] if by_id.get(i) and by_id[i].get("speaker")}:
+            last = sp.split()[-1].lower()
+            if len(last) >= 3 and re.search(rf"\b{re.escape(last)}\b", low):
+                count[sp] = count.get(sp, 0) + 1
+    return max(count.items(), key=lambda kv: kv[1]) if count else None
+
+
+def _cohere(router: Router, paragraphs: list, keys: list, by_id: dict, banned: set, outlets: list):
+    """Code finds paragraphs that name one speaker in 3+ sentences or run past LONG_PARAGRAPH sentences;
+    one writer call rewrites each (named once, then "he said", grouped by subject); the rewrite is kept
+    only if it passes every check and carries every statement the paragraph carried."""
+    done = 0
+    out_p, out_k = [], []
+    for para, key in zip(paragraphs, keys):
+        run = _speaker_runs(para, by_id)
+        problem = []
+        if run and run[1] >= 3:
+            problem.append(f"it names {run[0]} in {run[1]} sentences (\"{run[0]} said\", \"according to {run[0]}\")")
+        if len(para) >= LONG_PARAGRAPH:
+            problem.append(f"it is one block of {len(para)} sentences on several subjects")
+        if not problem or done >= COHERE_MAX or any(by_id[i]["verdict"] == "disputed" for s_ in para for i in s_["ids"]):
+            out_p.append(para)
+            out_k.append(key)
+            continue
+        ids = list(dict.fromkeys(i for s_ in para for i in s_["ids"]))
+        prompt = COHERE_PROMPT.format(problem="; ".join(problem),
+                                      paragraph=" ".join(s_["text"] for s_ in para),
+                                      statements="\n".join(_statement_line(by_id[i]) for i in ids))
+        try:
+            res = router.call("writer", prompt, json_out=True, max_output_tokens=3000, max_attempts=8)
+            new = [p for p in (res.data or {}).get("paragraphs") or [] if isinstance(p, list) and p] \
+                if isinstance(res.data, dict) else []
+        except Exception as e:  # noqa: BLE001
+            log.info("narrative: coherence rewrite not done (%s)", str(e)[:120])
+            new = []
+        done += 1
+        if new:
+            saved = dict(_reasons())
+            checked, failed, _ = _check_paragraphs(new, by_id, banned, outlets)
+            _reasons().clear()
+            _reasons().update(saved)
+            got = {i for p in checked for s_ in p for i in s_["ids"]}
+            if checked and got >= set(ids) and not failed:
+                out_p += checked
+                out_k += [key] * len(checked)
+                continue
+        out_p.append(para)                 # the rewrite lost something: the paragraph stays as written
+        out_k.append(key)
+    return out_p, out_k, done
+
+
 def _call_writer(router: Router, prompt: str) -> tuple[list[tuple[str, list]], str | None, str | None]:
     """([(section, paragraph)], model, failure)."""
     try:
@@ -1108,6 +1188,12 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         else:
             _reasons().clear()
             _reasons().update(saved)
+    # a paragraph that names one speaker sentence after sentence, or runs long, is rewritten for
+    # coherence (owner, Oct 8 2026, story 14231: 18 lines of "..., according to Modi")
+    if model and router is not None:
+        paragraphs, keys, cohered = _cohere(router, paragraphs, keys, by_id, banned, outlets)
+        if cohered:
+            filled.append(f"cohere x{cohered}")
     # an article always opens with the news (owner's rule): if the writer gave no "news" section, the
     # first "What happened" paragraph is the lead (Oct 7 2026, story 12687 opened with background)
     if paragraphs and "news" not in keys and "happened" in keys:

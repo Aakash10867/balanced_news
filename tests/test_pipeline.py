@@ -2239,7 +2239,11 @@ def test_one_structure_decides_the_same_fact_on_the_words():
     assert relate("Police arrested Ravi Kumar.", "Police did not arrest Ravi Kumar.") == "different"
     assert relate("12 crew members were injured.", "12 crew members were killed.") == "ask"     # never by code
     # a detailed line that adds a year or "another" may be a different event: the model is asked
-    assert relate("Police arrested Ravi Kumar in 2019 in another case.", "Police arrested Ravi Kumar.") == "ask_a_covers_b"
+    assert relate("Police arrested Ravi Kumar in 2019 in another case.", "Police arrested Ravi Kumar.") in ("ask", "ask_a_covers_b")
+    assert relate("Police arrested Ravi Kumar in 2019.", "Police arrested Ravi Kumar in 2024.") == "different"
+    # a date is not a figure: the same call told with and without its date is asked, not kept apart
+    assert relate("Modi called for strict global regulations to address deepfakes and cyber fraud.",
+                  "Modi called for a global framework to tackle cyber frauds and deepfakes on Thursday, October 8, 2026.") == "ask"
 
 
 
@@ -2292,3 +2296,32 @@ def test_a_sentence_in_parts_colours_each_part_and_never_paints_a_detail_green()
             assert [p["class"] for p in s1["parts"]] == want
         else:
             assert "parts" not in s1                   # "11" sat in the part citing the other statement
+
+
+def test_a_paragraph_naming_one_speaker_every_line_is_rewritten_only_if_nothing_is_lost():
+    """Owner, Oct 8 2026 (story 14231): 18 lines of "..., according to Modi" in one paragraph."""
+    from nishpaksh.narrative import _cohere
+    from nishpaksh.router import LLMResult
+    by = {i: {"id": i, "kind": "claim", "verdict": "unverified", "speaker": "Narendra Modi", "sources": [],
+              "conflicts_with": [], "n_sources": 2, "text": t} for i, t in
+          ((1, "Deepfakes have become a big challenge"), (2, "Digital threats have crossed national boundaries"),
+           (3, "Technology can achieve scale only when it gains people's trust"))}
+    para = [{"text": "Deepfakes have become a big challenge, according to Modi.", "ids": [1]},
+            {"text": "Digital threats have crossed national boundaries, according to Modi.", "ids": [2]},
+            {"text": "Technology can achieve scale only when it gains people's trust, Modi said.", "ids": [3]}]
+
+    class Good:
+        def call(self, tier, prompt, **kw):
+            return LLMResult("", {"paragraphs": [[
+                {"text": "Prime Minister Narendra Modi said deepfakes have become a big challenge.", "ids": [1]},
+                {"text": "Digital threats have crossed national boundaries, he said.", "ids": [2]},
+                {"text": "Technology can achieve scale only when it gains people's trust, he added.", "ids": [3]}]]}, "m", [], 1)
+
+    class Lossy:
+        def call(self, tier, prompt, **kw):
+            return LLMResult("", {"paragraphs": [[
+                {"text": "Prime Minister Narendra Modi said deepfakes have become a big challenge.", "ids": [1]}]]}, "m", [], 1)
+    out, keys, n = _cohere(Good(), [para], ["say"], by, set(), [])
+    assert n == 1 and "he said" in out[0][1]["text"] and keys == ["say"]
+    out, keys, n = _cohere(Lossy(), [para], ["say"], by, set(), [])
+    assert out == [para]                                   # it lost two statements: kept as written

@@ -64,14 +64,25 @@ CONTRAST = re.compile(r"(?i)\b(another|other|earlier|previous|previously|former|
                       r"separate|different|second|again|also|before|after)\b")
 
 
+_DATE_WORDS = {_stem(w) for w in """monday tuesday wednesday thursday friday saturday sunday january february
+march april may june july august september october november december jan feb mar apr jun jul aug sep sept oct
+nov dec""".split()}
+
+
+_MONTHS = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
+
+
 class Profile:
-    __slots__ = ("norm", "nums", "names", "roots", "neg", "contrast")
+    __slots__ = ("norm", "nums", "names", "roots", "neg", "contrast", "date", "years")
 
     def __init__(self, text: str):
         t = text or ""
         self.norm = re.sub(r"\W+", " ", t.lower()).strip()
-        nums = {round(x, 3) for x in _numbers(t)}
-        nums |= {float(n) for n in re.findall(r"\b(\d+)(?:st|nd|rd|th)\b", t)}       # "29th"
+        # the numbers of a date are a time, compared as one (times), not figures ("October 8, 2026")
+        nt = re.sub(r"(?i)\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?" + _MONTHS + r"\b(?:,?\s+(?:19|20)\d\d)?|"
+                    + _MONTHS + r"\s+\d{1,2}(?:st|nd|rd|th)?\b(?:,?\s+(?:19|20)\d\d)?|\b(?:19|20)\d\d\b", " ", t)
+        nums = {round(x, 3) for x in _numbers(nt)}
+        nums |= {float(n) for n in re.findall(r"\b(\d+)(?:st|nd|rd|th)\b", nt)}      # "29th"
         nums |= {float(WORD_NUM[w]) for w in re.findall(r"[a-z]+", t.lower()) if w in WORD_NUM}
         self.nums = frozenset(nums)
         # names: capitalised words inside the sentence (the first word is capitalised anyway)
@@ -80,9 +91,14 @@ class Profile:
         # the first word is a name when it starts a run of capitalised words ("Air Marshal ...")
         if len(toks) > 1 and toks[0][0].isupper() and toks[1][0].isupper() and toks[0].lower() not in _STOP:
             names.add(_stem(toks[0].lower()))
-        self.names = frozenset(names)
+        # days and months are dates, compared as dates (times), not names: "on Thursday" kept two
+        # tellings of one call apart (Oct 8 2026, story 14231)
+        self.names = frozenset(names - _DATE_WORDS)
         self.roots = frozenset(SYNONYM.get(r, r) for r in _roots(t) if r not in FILLER and not r.isdigit())
         self.neg = bool(NEGATION.search(t))
+        from .frames import date_of
+        self.date = date_of(t)
+        self.years = frozenset(re.findall(r"\b(?:19|20)\d\d\b", t))
         self.contrast = bool(CONTRAST.search(t))
 
 
@@ -104,6 +120,11 @@ def relate(a: str, b: str, time_a: dict | None = None, time_b: dict | None = Non
     """'same', 'a_covers_b', 'b_covers_a', 'ask' or 'different', by code from the words."""
     pa, pb = pa or Profile(a), pb or Profile(b)
     if pa.neg != pb.neg or _times_apart(time_a, time_b):
+        return "different"
+    # dates in the words: two lines with different dates are never one fact (arrested in 2019 / 2024)
+    if pa.years and pb.years and not pa.years & pb.years:
+        return "different"
+    if pa.date and pb.date and any(x is not None and y is not None and x != y for x, y in zip(pa.date, pb.date)):
         return "different"
     if pa.norm == pb.norm:
         return "same"
