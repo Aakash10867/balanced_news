@@ -2675,3 +2675,47 @@ def test_split_check_and_quantities():
     assert not _pieces_ok(emi, ["The increase in the repo rate will lead to higher EMIs for home loans.",
                                 "The increase in the repo rate will lead to higher EMIs for car loans and personal loans."])
     assert MAX_PARTS == 3
+
+
+def test_paraphrases_are_proposed_topic_by_topic_story_13970():
+    """Owner, Oct 8 2026: after the split, 13970 still said "rate cuts were off the table" and "there is no option
+    for interest rate cuts" separately, and the decision as "by 0.25 percent" and "by 25 basis points to 5.50
+    per cent". One call sorts statements into topics; per topic one call proposes same / covers pairs. They are
+    proposals only (consolidate.py decides them by code and the twice-asked question); kept by text, cached."""
+    from nishpaksh import dupes
+    from nishpaksh.router import LLMResult
+    texts = {10: "The RBI increased the repo rate by 0.25 percent.",
+             11: "The RBI raised the repo rate by 25 basis points to 5.50 per cent.",
+             12: "Fixed rate loans are not directly affected by repo rate increases.",
+             13: "Malhotra said rate cuts were off the table.",
+             14: "Malhotra said there is no option for interest rate cuts in the near term.",
+             15: "The RBI raised its GDP growth forecast to 7.1 per cent."}
+
+    class Model:
+        def __init__(self):
+            self.prompts = []
+
+        def call(self, tier, prompt, **kw):
+            self.prompts.append(prompt)
+            lines = dict((int(n), t) for n, t in re.findall(r"^(\d+)\. (.*)$", prompt, re.M))
+            num = {t: n for n, t in lines.items()}
+            if "Sort them into TOPICS" in prompt:
+                return LLMResult("", {"topics": [[num[texts[10]], num[texts[11]], num[texts[12]]],
+                                                 [num[texts[13]], num[texts[14]]]]}, "m", [], 1)   # 15 left out
+            data = {"same": [], "covers": []}
+            if texts[13] in num:
+                data["same"] = [[num[texts[13]], num[texts[14]]]]
+            if texts[10] in num:
+                data["covers"] = [[num[texts[11]], num[texts[10]]]]
+            return LLMResult("", data, "m", [], 1)
+    m, cache = Model(), {}
+    same, covers = dupes.propose(m, texts, cache)
+    assert same == {(13, 14)} and covers == [(11, 10)]
+    assert len(m.prompts) == 3                                  # topics + two topics (15 alone: not asked)
+    # the same statements again: nothing asked
+    m2 = Model()
+    assert dupes.propose(m2, texts, cache) == (same, covers) and m2.prompts == []
+    # ids changed after a merge, texts the same: the cached answer still finds the pair
+    moved = {i + 100: t for i, t in texts.items()}
+    same3, covers3 = dupes.propose(Model(), moved, cache)
+    assert same3 == {(113, 114)} and covers3 == [(111, 110)]

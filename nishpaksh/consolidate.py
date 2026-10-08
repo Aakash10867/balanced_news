@@ -66,7 +66,8 @@ Reply with JSON only:
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
 SAME_ASK_MAX = 30         # same-fact questions per consolidation, closest pairs first (the rest next time)
-CONSOLIDATE_VERSION = 8   # part of the cache key: stories are consolidated again when the task changes
+CONSOLIDATE_VERSION = 9   # part of the cache key: stories are consolidated again when the task changes
+                          # (9, Oct 8 2026: paraphrases proposed by topic, dupes.py)
 
 
 
@@ -209,6 +210,18 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     code_same, covered, ask_pairs, ask_cover = group(texts, times)
     proposals = {tuple(sorted((x, y))) for g in same_groups for i, x in enumerate(g) for y in g[i + 1:] if x != y}
     proposals |= {p for p, v in by_frame.items() if v == "same"}
+    # the same fact in other words, found topic by topic (dupes.py, Oct 8 2026, story 13970): proposals only,
+    # decided below like every other proposal; a "covers" proposal must keep the short line's numbers and its
+    # "not" before the twice-asked question
+    from .dupes import propose
+    dupe_checks = dict(analysis.get("dupe_checks") or {})
+    d_same, d_cover = propose(router, texts, dupe_checks)
+    proposals |= d_same
+    for big, small in d_cover:
+        if (prof[big].neg == prof[small].neg and all(any(abs(x - y) <= 0.05 * max(abs(x), abs(y), 1) for y in prof[big].nums)
+                                                    for x in prof[small].nums)):
+            ask_cover.append((big, small))
+    ask_cover = list(dict.fromkeys(ask_cover))
     code_same_set = {tuple(sorted(p)) for p in code_same}
     for a, b in sorted(proposals - code_same_set):
         r = relate(texts[a], texts[b], times[a], times[b], prof[a], prof[b])
@@ -322,6 +335,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                     roles=roles, related_event=related, responses=[list(p) for p in all_resp],
                     name_conflicts=name_conf, conflict_checks=dict(list(checks.items())[-400:]),
                     same_checks=dict(list(same_checks.items())[-400:]),
+                    dupe_checks=dict(list(dupe_checks.items())[-60:]),
                     # a line another line says in full, with more: not written on its own (relate.py)
                     covered={str(k): v for k, v in resolve_covered(
                         {merged_into.get(k, k): merged_into.get(v, v) for k, v in covered.items()}).items()

@@ -118,6 +118,12 @@ class FakeBackend:
                 shared = [w for w in re.findall(r"[a-z]{5,}", t.lower()) if w in story and w not in ("which", "there", "their")]
                 res.append({"n": int(n), "answer": "connected" if shared else "other news"})
             return json.dumps({"results": res}), [], 100
+        if "Sort them into TOPICS" in prompt:
+            # every statement its own topic: the topic step is tested on its own
+            n = len(re.findall(r"^\d+\. ", prompt, re.M))
+            return json.dumps({"topics": [[k + 1] for k in range(n)]}), [], 100
+        if "Find the pairs that repeat each other" in prompt:
+            return json.dumps({"same": [], "covers": []}), [], 100
         if "Split each sentence into its SEPARATE facts" in prompt:
             # one fact each: the sentence unchanged (the split itself is tested on its own)
             res = [{"n": int(n), "facts": [t]} for n, t in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("SENTENCES:")[1], re.M)]
