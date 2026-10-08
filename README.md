@@ -89,7 +89,7 @@ find nothing. Quotas reset at midnight Pacific (12:30 pm IST).
 5. **Schedule.** GitHub's own schedule skips hours, so Supabase starts the run every hour at :05
    (`pg_cron`, see the scheduler migration). Create a fine-grained GitHub token for this repo only with
    *Actions: read and write* and store it in Supabase: `select vault.create_secret('<token>', 'github_dispatch_token');`
-6. **Website.** `site/index.html` is deployed to GitHub Pages by the `site` workflow. Add `?lang=hi` for Hindi.
+6. **Website.** `site/` (nishpaksh_version_1.1: one card at a time, the card grows into the article) is deployed to GitHub Pages by the `site` workflow. It reads the ready-made files on the `feed` branch (`nishpaksh/feed.py`), then Supabase, then the `archive` branch. Add `?lang=hi` for Hindi.
 
 ## Archive
 

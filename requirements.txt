@@ -9,6 +9,5 @@ numpy>=1.26
 scikit-learn>=1.4
 scipy>=1.11
 networkx>=3.2
-streamlit>=1.40
 pytest>=8.0
 snowballstemmer>=2.2

@@ -2,296 +2,481 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Nishpaksh · निष्पक्ष</title>
 <meta name="description" content="Indian news from every side, written as one story: what is established, what is disputed, and who says what.">
+<meta name="theme-color" content="#2f3a72">
+<meta name="color-scheme" content="light">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Nishpaksh">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=Noto+Serif+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Rozha+One&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Noto+Serif+Devanagari:wght@600&family=Tiro+Devanagari+Hindi&family=Hind:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* nishpaksh_version_1.0 (owner, Oct 8 2026): one card at a time, the card grows into the article.
+     Design approved on the canvas as trial_version_0.6; version 1.1 (indigo, serif headlines, upright greeting). Served at the main address since Oct 8 2026; /v1/ redirects here. */
   :root {
+    --ground: #ECECE9;
+    --card: #ffffff;
+    --ink: #16181A;
+    --ink-soft: #3d4043;
+    --muted: #5f6368;
+    --edge: #d3d3cf;
+    /* sentence colours (text on white) */
+    --est: #1d6a45; --unv: #5f6368; --one: #6a3d9a; --dis: #8a6100; --fal: #b2251c;
+    /* the colour bar */
+    --bar-e: #2f8a5b; --bar-o: #7a4bb0; --bar-d: #d39a12; --bar-r: #c0392b; --bar-u: #a3a6aa;
+    /* version 1.1 (owner, Oct 8 2026): one indigo, light to deep; the multicolour sweep read as Instagram */
+    --brand: radial-gradient(120% 130% at 0% 0%, rgba(140,160,255,0.22) 0%, rgba(140,160,255,0) 55%),
+             linear-gradient(135deg, #46549a 0%, #2f3a72 45%, #1f2550 75%, #161a38 100%);
+    --ease: cubic-bezier(.2,.8,.2,1);
+    --head: "Newsreader", Georgia, "Noto Serif Devanagari", serif;
+    --body: "Hind", system-ui, -apple-system, "Segoe UI", sans-serif;
     color-scheme: light;
-    --paper: #ffffff;
-    --ink: #1d1d1b;
-    --ink-soft: #5c5f63;
-    --rule: #e3e1dc;
-    --brand: #8c1c13;
-    /* verification inks, tuned for long reading on white */
-    --v-established: #1d6a45;
-    --v-disputed: #8a6100;    /* amber-gold: far from the red of 'false' */
-    --v-unverified: #6b7075;
-    --v-single: #6a3d9a;      /* purple: one outlet only (an exclusive, or wrong) */
-    --v-false: #b2251c;
-    --serif: "Source Serif 4", "Noto Serif Devanagari", Georgia, "Times New Roman", serif;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Devanagari", sans-serif;
   }
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
-  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--serif);
-         font-size: 19px; line-height: 1.62; text-rendering: optimizeLegibility; }
+  html.hi { --head: "Noto Serif Devanagari", "Hind", serif; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body { background: var(--ground); color: var(--ink); font-family: var(--body); text-rendering: optimizeLegibility; }
   a { color: inherit; }
-  :focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 2px; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid #46549a; outline-offset: 3px; border-radius: 6px; }
 
-  .wrap { max-width: 40rem; margin: 0 auto; padding: 0 1.25rem; }
+  #app { height: 100vh; height: 100dvh; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px;
+         padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
 
-  /* masthead */
-  header.mast { border-bottom: 1px solid var(--rule); }
-  header.mast .wrap { display: flex; align-items: baseline; justify-content: space-between;
-                      padding-top: 1.1rem; padding-bottom: .9rem; gap: 1rem; }
-  .brand { text-decoration: none; color: var(--brand); font-weight: 700; font-size: 1.55rem;
-           letter-spacing: -.01em; line-height: 1; }
-  .brand span { font-weight: 600; margin-left: .35rem; }
-  .lang { font-family: var(--sans); font-size: .82rem; display: flex; gap: .2rem; }
-  .lang button { font: inherit; background: none; border: 0; padding: .3rem .45rem; cursor: pointer;
-                 color: var(--ink-soft); border-radius: 4px; }
-  .lang button[aria-pressed="true"] { color: var(--ink); font-weight: 600; text-decoration: underline;
-                                      text-underline-offset: 4px; text-decoration-color: var(--brand); }
+  /* header: the wordmark, the greeting, the language switch */
+  .brand { background: var(--brand); }
+  .lift { text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); }
+  header.top { color: #fff; border-radius: 22px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+  .wordmark { display: flex; justify-content: center; font-family: "Alfa Slab One", "Rozha One", serif; font-size: 23px;
+              letter-spacing: 0.6px; line-height: 1.15; }
+  html.hi .wordmark { font-family: "Rozha One", serif; font-size: 26px; letter-spacing: 0.3px; }
+  .greetrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .greeting { font-family: "Newsreader", Georgia, serif; font-weight: 500; font-size: 22px; line-height: 1.1; }
+  html.hi .greeting { font-family: "Tiro Devanagari Hindi", serif; font-size: 21px; }
+  .pill { display: flex; flex: none; background: rgba(18,12,30,0.34); border: 1px solid rgba(255,255,255,0.22); border-radius: 999px;
+          padding: 3px; font-size: 14px; font-weight: 600; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  .pill button { border: 0; background: transparent; color: #fff; border-radius: 999px; padding: 4px 11px; min-height: 30px; cursor: pointer;
+                 transition: background-color 200ms ease, color 200ms ease; }
+  .pill button[aria-pressed="true"] { background: #fff; color: #1f2550; }
+  .pill.light { background: #fff; border: 0; box-shadow: 0 2px 0 var(--edge); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .pill.light button { color: var(--ink); padding: 6px 11px; min-height: 36px; }
+  .pill.light button[aria-pressed="true"] { background: linear-gradient(135deg, #46549a, #1f2550); color: #fff; }
 
-  /* front page */
-  .front { padding: 1.4rem 0 4rem; }
-  .front .intro { font-family: var(--sans); font-size: .9rem; color: var(--ink-soft); margin: 0 0 1.6rem; }
-  .item { display: block; text-decoration: none; padding: 1.25rem 0 1.35rem; border-bottom: 1px solid var(--rule); }
-  .item:last-child { border-bottom: 0; }
-  .item h2 { font-size: 1.42rem; line-height: 1.24; margin: 0 0 .45rem; font-weight: 700; letter-spacing: -.005em; }
-  .item:hover h2 { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
-  .item p { margin: 0 0 .5rem; color: #3b3d40; font-size: 1.02rem; line-height: 1.5; }
-  .meta { font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); }
+  /* the deck: one card at a time, swiped up and down, looping */
+  #deck { flex: 1; min-height: 0; position: relative; }
+  .track { position: absolute; inset: 0; overflow-y: scroll; scroll-snap-type: y mandatory; overscroll-behavior: contain;
+           scrollbar-width: none; -ms-overflow-style: none; outline: none; }
+  .track::-webkit-scrollbar { display: none; width: 0; height: 0; }
+  .slot { height: 100%; padding-bottom: 12px; scroll-snap-align: start; scroll-snap-stop: always; }
+  .card { height: 100%; display: flex; flex-direction: column; background: var(--card); border-radius: 24px; box-shadow: 0 4px 0 var(--edge);
+          padding: 24px 22px 18px; text-decoration: none; color: var(--ink); transition: transform 160ms ease; overflow: hidden; }
+  .card:active { transform: scale(0.985); }
+  .card h2 { margin: 0; font-family: var(--head); font-weight: 600; font-size: 27px; line-height: 1.15; letter-spacing: -0.005em; text-align: start; }
+  html.hi .card h2 { font-size: 24px; line-height: 1.45; letter-spacing: 0; font-weight: 600; }
+  .card .text { flex: 1; min-height: 0; overflow: hidden; margin-top: 14px; font-size: 17px; line-height: 1.65;
+                -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
+  .card .text p { margin: 0 0 10px; }
+  .card .foot { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+  .bar { flex: 1; display: flex; height: 8px; border-radius: 999px; overflow: hidden; gap: 2px; }
+  .bar span { flex-basis: 0; min-width: 0; }
+  .ago { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .state { height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px;
+           background: var(--card); border-radius: 24px; box-shadow: 0 4px 0 var(--edge); color: var(--ink-soft); font-size: 16px; line-height: 1.5; }
+  .loading .bone { background: #efefec; border-radius: 8px; height: 18px; margin: 0 0 12px; }
 
-  /* story */
-  article { padding: 1.8rem 0 4.5rem; }
-  .back { font-family: var(--sans); font-size: .85rem; color: var(--ink-soft); text-decoration: none; }
-  .back:hover { color: var(--ink); }
-  article h1 { font-size: 2.35rem; line-height: 1.14; margin: 1rem 0 .7rem; font-weight: 700; letter-spacing: -.015em; }
-  article .meta { margin-bottom: 2rem; }
-  .story p { margin: 0 0 1.15rem; hyphens: manual; }
-  .story p:first-child { font-size: 1.1em; line-height: 1.55; }
-  .story h2.sec { font-family: var(--sans); font-size: .78rem; font-weight: 700; letter-spacing: .08em;
-                  text-transform: uppercase; color: var(--ink-soft); margin: 2rem 0 .6rem; }
-  .s.established { color: var(--v-established); }
-  .s.disputed { color: var(--v-disputed); }
-  .s.unverified { color: var(--v-unverified); }
-  .s.single { color: var(--v-single); }
-  .s.developing { color: var(--v-unverified); text-decoration: underline dotted #9aa0a6; text-underline-offset: 4px; }
-  .ftag { font-family: var(--sans); font-size: .62em; font-weight: 700; letter-spacing: .06em; color: #fff;
-          background: var(--v-false); border-radius: 3px; padding: .08em .38em; margin-right: .35em; vertical-align: .14em; }
-  .sources li.unread { color: var(--ink-soft); }
-  .thread { padding-left: 1.1rem; margin: 0 0 1rem; }
-  .thread li { margin: 0 0 .35rem; }
-  details.more summary { font-family: var(--sans); font-size: .9rem; color: var(--ink-soft); cursor: pointer; margin: 1.5rem 0 .8rem; }
-  .sources .why { font-family: var(--sans); font-size: .75rem; margin-left: .35em; }
-  .s.false { color: var(--v-false); }
-  .plain .s { color: inherit; }
-  sup { font-family: var(--sans); font-size: .58em; line-height: 0; margin-left: .1em; color: var(--ink-soft); }
-  sup a { text-decoration: none; }
-  sup a:hover { color: var(--brand); text-decoration: underline; }
+  /* sentence colours */
+  .s.established, .s.corroborated, .s.confirmed { color: var(--est); }
+  .s.developing { color: var(--unv); text-decoration: underline dotted #9aa0a6; text-underline-offset: 4px; }
+  .s.unverified, .s.pending { color: var(--unv); }
+  .s.single { color: var(--one); }
+  .s.disputed { color: var(--dis); }
+  .s.false { color: var(--fal); }
+  .ftag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; color: #fff; background: var(--fal);
+          border-radius: 4px; padding: 1px 5px; margin-right: 5px; vertical-align: 2px; }
 
-  /* after the story */
-  /* the colour key sits between the headline and the article (owner, Oct 7 2026): the colour, not
-     words like "according to reports", says how well each sentence is supported */
-  .key { font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); margin: .9rem 0 1.4rem;
-         padding: .6rem 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
-         display: flex; flex-wrap: wrap; gap: .35rem 1.1rem; align-items: center; }
-  .key i { display: inline-block; width: .62em; height: .62em; border-radius: 50%; margin-right: .4em;
-           vertical-align: .02em; }
-  .key label { margin-left: auto; cursor: pointer; display: inline-flex; align-items: center; gap: .35rem; }
-  .after { font-family: var(--sans); font-size: .86rem; line-height: 1.6; color: #3b3d40; }
-  .after h3 { font-family: var(--serif); font-size: 1.15rem; color: var(--ink); margin: 2.2rem 0 .6rem; }
-  .sources { margin: 0; padding: 0; list-style: none; }
-  .sources li { display: flex; gap: .55rem; margin: 0 0 .45rem; scroll-margin-top: 1rem; }
-  .sources li b { min-width: 1.3rem; text-align: right; color: var(--ink-soft); font-weight: 500; }
-  .sources a { text-decoration-color: #c9c6bf; text-underline-offset: 3px; }
-  .sources a:hover { text-decoration-color: var(--brand); }
-  .sources li.hit { background: #fbf1cf; border-radius: 3px; }
-  .outlet { font-weight: 600; color: var(--ink); }
-  details { margin-top: 1.4rem; border-top: 1px solid var(--rule); padding-top: .8rem; }
-  summary { cursor: pointer; font-family: var(--serif); font-size: 1.05rem; color: var(--ink); }
-  table { border-collapse: collapse; width: 100%; margin: .6rem 0 0; font-size: .84rem; }
-  th, td { text-align: left; vertical-align: top; padding: .45rem .5rem .45rem 0; border-bottom: 1px solid var(--rule); }
-  th { font-weight: 600; color: var(--ink); }
-  .stmt { margin: .7rem 0; }
-  .stmt .tag { font-size: .74rem; padding: .05rem .4rem; border-radius: 3px; margin-right: .4rem; color: #fff; }
-  .note { color: var(--ink-soft); }
-  .empty, .error { font-family: var(--sans); color: var(--ink-soft); padding: 3rem 0; }
+  /* the article: a sheet that grows out of the card */
+  #sheet { position: fixed; inset: 0; z-index: 10; background: var(--card); visibility: hidden; }
+  #sheet.on { visibility: visible; }
+  #sheet.anim { transition: clip-path 460ms var(--ease), -webkit-clip-path 460ms var(--ease), background-color 460ms ease; }
+  #sheet.open { background: var(--ground); }
+  .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .sheet-scroll::-webkit-scrollbar { display: none; }
+  .col { max-width: 560px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 48px max(14px, env(safe-area-inset-left)); }
+  /* back button | wordmark | language: equal side columns keep the wordmark at the true centre */
+  .chrome { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 2px 2px 12px; opacity: 0; }
+  .chrome > :first-child { justify-self: start; }
+  .chrome > :last-child { justify-self: end; }
+  #sheet.anim .chrome { transition: opacity 260ms ease 220ms; }
+  #sheet.open .chrome { opacity: 1; }
+  .back { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; border: 0;
+          background: #fff; box-shadow: 0 2px 0 var(--edge); cursor: pointer; }
+  .chrome .wordmark { color: var(--ink); font-size: 19px; }
+  html.hi .chrome .wordmark { font-size: 21px; }
+  .hbox { position: relative; border-radius: 22px; color: var(--ink); padding: 0 var(--hx, 22px); transform: translate(0, var(--hy, 0px)); }
+  .hbox .layer { position: absolute; inset: 0; border-radius: 22px; opacity: 0; }
+  #sheet.anim .hbox { transition: padding 460ms var(--ease), transform 460ms var(--ease), color 320ms ease 120ms; }
+  #sheet.anim .hbox .layer { transition: opacity 340ms ease 100ms; }
+  #sheet.open .hbox { padding: 18px; transform: none; color: #fff; }
+  #sheet.open .hbox .layer { opacity: 1; }
+  #sheet.open .hbox h1 { text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); }
+  .hbox h1 { position: relative; margin: 0; font-family: var(--head); font-weight: 600; font-size: 27px; line-height: 1.15; letter-spacing: -0.005em; }
+  html.hi .hbox h1 { font-size: 24px; line-height: 1.45; letter-spacing: 0; }
+  .hbox .meta { position: relative; margin-top: 10px; font-size: 13px; opacity: 0; }
+  #sheet.open .hbox .meta { opacity: .92; }
+  #sheet.anim .hbox .meta { transition: opacity 260ms ease 260ms; }
+  .rise { opacity: 0; transform: translateY(24px); }
+  #sheet.anim .rise { transition: opacity 300ms ease 200ms, transform 420ms var(--ease) 160ms; }
+  #sheet.open .rise { opacity: 1; transform: none; }
 
-  footer { border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); }
-  footer .wrap { padding-top: 1.2rem; padding-bottom: 2rem; }
+  .key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 12px 4px 0; font-size: 13px; font-weight: 500; }
+  .key span { white-space: nowrap; }
+  .paper { margin-top: 12px; background: #fff; border-radius: 20px; padding: 16px; box-shadow: 0 3px 0 var(--edge); }
+  .essay { font-size: 17.5px; line-height: 1.7; }
+  html.hi .essay { font-size: 18px; line-height: 1.8; }
+  .essay p { margin: 0 0 12px; }
+  .essay p:last-child { margin-bottom: 0; }
+  .essay h3 { font-family: var(--head); font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 20px 0 8px; color: var(--ink); }
+  sup { font-size: 10.5px; line-height: 0; color: #7a7d81; margin-left: 1px; }
+  sup a { text-decoration: none; color: inherit; padding: 0 1px; }
+  .sec { font-family: var(--head); font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 24px 4px 8px; }
+  .note { margin: 12px 4px 0; font-size: 14.5px; line-height: 1.55; color: var(--ink-soft); }
+  .helpline { background: #fff7e6; border-radius: 14px; padding: 12px 14px; color: #5a4300; }
+  .thread { margin: 0; padding: 0; list-style: none; }
+  .thread li + li { border-top: 1px solid #efefec; }
+  .thread a { display: block; padding: 10px 0; font-size: 16px; line-height: 1.4; text-decoration: none; }
+  .sources { margin: 0; padding: 0; list-style: none; font-size: 14.5px; line-height: 1.45; }
+  .sources li { display: grid; grid-template-columns: 26px 1fr; gap: 2px 8px; padding: 9px 0; scroll-margin-top: 90px; }
+  .sources li + li { border-top: 1px solid #efefec; }
+  .sources b { color: var(--muted); font-weight: 600; font-size: 13px; padding-top: 1px; }
+  .sources .outlet { font-weight: 600; }
+  .sources a { color: var(--ink-soft); text-decoration: underline; text-decoration-color: #c9c9c4; text-underline-offset: 3px; }
+  .sources .unread { color: var(--muted); }
+  .sources .why { display: block; font-size: 12.5px; color: var(--muted); }
+  .sources li.flash { background: #f6f1fb; border-radius: 10px; }
+  details.who > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+                          font-family: var(--head); font-size: 17px; font-weight: 600; min-height: 28px; }
+  details.who > summary::-webkit-details-marker { display: none; }
+  details.who > summary::after { content: ""; width: 9px; height: 9px; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink);
+                                 transform: rotate(45deg); transition: transform 200ms ease; margin-right: 4px; flex: none; }
+  details.who[open] > summary::after { transform: rotate(-135deg); }
+  .stmt { padding: 12px 0; border-top: 1px solid #efefec; font-size: 15.5px; line-height: 1.5; }
+  .stmt:first-of-type { margin-top: 10px; }
+  .stmt .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+  .stmt .by { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .stmt .by a, .stmt .by span { font-size: 12.5px; text-decoration: none; background: #f2f2ef; color: var(--ink-soft); border-radius: 999px; padding: 3px 9px; }
+  .stmt .by a.den { background: #fbe9e7; color: #8c2a20; }
+  .stmt .by .lbl { background: none; padding: 3px 0; color: var(--muted); }
+  table.framing { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.framing th, table.framing td { text-align: left; vertical-align: top; padding: 6px 6px 6px 0; border-top: 1px solid #efefec; }
+  .tablebox { overflow-x: auto; }
+  .persp { font-size: 15px; line-height: 1.6; }
 
-  [lang="hi"] body, body.hi { font-size: 19.5px; line-height: 1.75; }
-
-  @media (max-width: 560px) {
-    body { font-size: 18px; }
-    article h1 { font-size: 1.85rem; }
-    .item h2 { font-size: 1.25rem; }
-    .key label { margin-left: 0; }
+  @media (max-width: 360px) {
+    .card h2, .hbox h1 { font-size: 24px; }
+    html.hi .card h2, html.hi .hbox h1 { font-size: 22px; }
+    .card .text { font-size: 16px; }
+  }
+  @media (min-width: 700px) {
+    #app { padding-top: 22px; padding-bottom: 22px; }
+    .card { padding: 30px 30px 22px; }
+    .card h2 { font-size: 32px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 </style>
 </head>
 <body>
-<header class="mast"><div class="wrap">
-  <a class="brand" href="#/" aria-label="Nishpaksh, front page">Nishpaksh<span>निष्पक्ष</span></a>
-  <nav class="lang" aria-label="Language">
-    <button type="button" data-lang="en">English</button>
-    <button type="button" data-lang="hi">हिंदी</button>
-  </nav>
-</div></header>
-
-<main class="wrap" id="main" tabindex="-1"></main>
-
-<footer><div class="wrap" id="foot"></div></footer>
-
+<div id="app">
+  <header class="top brand">
+    <div class="wordmark lift" id="wm">Nishpaksh</div>
+    <div class="greetrow">
+      <div class="greeting lift" id="greet">Hello.</div>
+      <div class="pill" role="group" aria-label="Language">
+        <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिं</button>
+      </div>
+    </div>
+  </header>
+  <main id="deck" aria-live="polite">
+    <div class="track" id="track" tabindex="-1"></div>
+  </main>
+</div>
+<div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-h">
+  <div class="sheet-scroll" id="sheet-scroll">
+    <div class="col">
+      <div class="chrome">
+        <button type="button" class="back" id="back" aria-label="Back to all stories">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="wordmark" id="wm2">Nishpaksh</div>
+        <div class="pill light" role="group" aria-label="Language">
+          <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिं</button>
+        </div>
+      </div>
+      <div class="hbox" id="hbox"><div class="layer brand"></div><h1 id="sheet-h"></h1><div class="meta" id="sheet-meta"></div></div>
+      <div class="rise" id="rise"></div>
+    </div>
+  </div>
+</div>
 <script>
+"use strict";
 const SUPABASE_URL = "https://mmjojuccdgmmiwyzypvh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_0Gex7dG16My6MPvW2M1Jsg_raI1lqfS";  // public, read-only: published stories
-// articles older than three days live on the repository's archive branch (nishpaksh/pagearchive.py)
-const ARCHIVE_URL = "https://raw.githubusercontent.com/Aakash10867/balanced_news/archive";
+const FEED_URL = "https://raw.githubusercontent.com/Aakash10867/balanced_news/feed";        // nishpaksh/feed.py
+const ARCHIVE_URL = "https://raw.githubusercontent.com/Aakash10867/balanced_news/archive";  // nishpaksh/pagearchive.py
+const MAX_CARDS = 40;
 
 const T = {
   en: {
-    intro: "Each story is written from every outlet that covered it. Colour shows how well each sentence is supported.",
-    sources: (n, o) => `${n} independent source${n === 1 ? "" : "s"}` + (o && o > n ? ` (${o} outlets)` : ""),
-    sameOwner: "Outlets with the same owner, and copies of the same wire story, count as one source.",
-    ongoing: "part of an ongoing story", more: "More stories", earlier: "Earlier in this story", next: "What happened next",
-    helpline: "If you or someone you know is struggling, help is available: Tele-MANAS, free and confidential, 14416 or 1-800-891-4416 (24×7).",
-    updated: "published", ago: a => `${a} ago`, back: "All stories",
-    k_established: "established", k_developing: "developing (recent)", k_disputed: "sources disagree",
-    k_unverified: "not yet cross-checked", k_single: "one outlet only", k_false: "shown false", falseTag: "FALSE",
+    wordmark: "Nishpaksh", greet: ["Good morning.", "Good afternoon.", "Good evening."],
+    ago: (n, u) => `${n} ${u} ago`, units: {m: "min", h: "h", d: "d"},
+    back: "Back to all stories", sources: (n, o) => `${n} independent source${n === 1 ? "" : "s"}` + (o && o > n ? ` · ${o} outlets` : ""),
+    k: {established: "established", developing: "developing", unverified: "not yet cross-checked", single: "one outlet only", disputed: "sources disagree", false: "shown false"},
+    falseTag: "FALSE", sourcesTitle: "Sources", who: "Who reported what", reported: "Reported by", denied: "Denied by",
     unreadable: "could not be read", unread: "not read (same owner as another source, or reading limit)",
     interim: "Which outlets form different perspectives is not yet known; this story is published because at least three independent outlets covered it.",
-    plain: "Plain text", sourcesTitle: "Sources", wording: "How each side worded it", fact: "Statement",
-    detail: "Every statement, with who reported it", perspectives: "Perspectives",
-    localNote: "Grouped from this story alone; stable perspectives need more history.",
-    reported: "reported by", denied: "denied by",
     unsettled: "Nothing in this story is confirmed by independent sources yet.",
+    helpline: "If you or someone you know is struggling, help is available: Tele-MANAS, free and confidential, 14416 or 1-800-891-4416 (24×7).",
+    earlier: "Earlier in this story", next: "What happened next", ongoing: "part of an ongoing story",
+    wording: "How each side worded it", fact: "Statement", perspectives: "Perspectives",
+    localNote: "Grouped from this story alone; stable perspectives need more history.",
     empty: "No stories yet. A story appears once at least three independent outlets have covered it.",
-    error: "Stories could not be loaded. Check your connection and reload the page.",
-    missing: "This story is no longer published.",
-    foot: "Nishpaksh reads Indian news outlets in English and Hindi every hour. A sentence is green only when at least three independent outlets report it, it traces to at least two independent origins (not one press release or unnamed sources repeated), nobody denies it, it is a checkable fact, and it has stood for six hours (until then it is underlined as developing). Grey means not yet cross-checked; purple means only one outlet reports it (an exclusive, or a mistake); amber means sources disagree; red, marked FALSE, means primary evidence (FIR, court record, official data, video) shows it is false.",
-    tags: {corroborated: "Established", confirmed: "Confirmed", developing: "Developing", disputed: "Sources disagree", unverified: "Not yet cross-checked", pending: "Not yet cross-checked", single: "One outlet only", false: "FALSE"},
-    units: {m: "min", h: "h", d: "d"},
-    sections: {happened: "What happened", numbers: "By the numbers", say: "What they say",
-               background: "Background", related: "Related events",
-               explained: "Explained", next: "What next"},
+    error: "Stories could not be loaded. Check your connection and try again.", retry: "Try again",
+    missing: "This story is no longer available.", loading: "Loading…",
+    sections: {happened: "What happened", numbers: "By the numbers", say: "What they say", background: "Background",
+               related: "Related events", explained: "Explained", next: "What next"},
+    bar: (c) => `${c.e} established, ${c.o} one outlet only, ${c.d} disputed, ${c.r} shown false, ${c.u} not yet cross-checked`,
   },
   hi: {
-    intro: "हर ख़बर उन सभी स्रोतों से लिखी गई है जिन्होंने उसे कवर किया। रंग बताता है कि हर वाक्य कितना पुष्ट है।",
-    sources: (n, o) => `${n} स्वतंत्र स्रोत` + (o && o > n ? ` (${o} समाचार माध्यम)` : ""),
-    sameOwner: "एक ही मालिक के माध्यम, और एक ही एजेंसी ख़बर की प्रतियाँ, एक स्रोत गिनी जाती हैं।",
-    ongoing: "जारी ख़बर का हिस्सा", more: "और ख़बरें", earlier: "इस ख़बर में पहले", next: "इसके बाद क्या हुआ",
-    helpline: "अगर आप या आपका कोई परिचित मुश्किल में है, तो मदद उपलब्ध है: टेली-मानस, निःशुल्क और गोपनीय, 14416 या 1-800-891-4416 (24×7)।",
-    updated: "प्रकाशित", ago: a => `${a} पहले`, back: "सभी ख़बरें",
-    k_established: "स्थापित", k_developing: "विकसित हो रही (ताज़ा)", k_disputed: "स्रोतों में मतभेद",
-    k_unverified: "अभी पुष्टि नहीं", k_single: "केवल एक स्रोत", k_false: "असत्य सिद्ध", falseTag: "असत्य",
+    wordmark: "निष्पक्ष", greet: ["सुप्रभात।", "नमस्कार।", "शुभ संध्या।"],
+    ago: (n, u) => `${n} ${u} पहले`, units: {m: "मिनट", h: "घंटे", d: "दिन"},
+    back: "सभी ख़बरों पर लौटें", sources: (n, o) => `${n} स्वतंत्र स्रोत` + (o && o > n ? ` · ${o} समाचार माध्यम` : ""),
+    k: {established: "स्थापित", developing: "विकसित हो रही", unverified: "अभी पुष्टि नहीं", single: "केवल एक स्रोत", disputed: "स्रोतों में मतभेद", false: "असत्य सिद्ध"},
+    falseTag: "असत्य", sourcesTitle: "स्रोत", who: "किसने क्या बताया", reported: "किसने बताया", denied: "किसने खंडन किया",
     unreadable: "पढ़ा नहीं जा सका", unread: "नहीं पढ़ा गया (दूसरे स्रोत का ही मालिक, या पढ़ने की सीमा)",
     interim: "कौन-से स्रोत अलग-अलग दृष्टिकोण बनाते हैं, यह अभी पता नहीं है; यह ख़बर इसलिए प्रकाशित है क्योंकि कम से कम तीन स्वतंत्र स्रोतों ने इसे कवर किया।",
-    plain: "सादा पाठ", sourcesTitle: "स्रोत", wording: "किस पक्ष ने किन शब्दों में कहा", fact: "कथन",
-    detail: "हर कथन, और किसने बताया", perspectives: "दृष्टिकोण",
-    localNote: "केवल इसी ख़बर के आधार पर समूह; स्थायी दृष्टिकोणों के लिए अभी और इतिहास चाहिए।",
-    reported: "किसने बताया", denied: "किसने खंडन किया",
     unsettled: "इस ख़बर की किसी भी बात की अभी स्वतंत्र स्रोतों से पुष्टि नहीं हुई है।",
+    helpline: "अगर आप या आपका कोई परिचित मुश्किल में है, तो मदद उपलब्ध है: टेली-मानस, निःशुल्क और गोपनीय, 14416 या 1-800-891-4416 (24×7)।",
+    earlier: "इस ख़बर में पहले", next: "इसके बाद क्या हुआ", ongoing: "जारी ख़बर का हिस्सा",
+    wording: "किस पक्ष ने किन शब्दों में कहा", fact: "कथन", perspectives: "दृष्टिकोण",
+    localNote: "केवल इसी ख़बर के आधार पर समूह; स्थायी दृष्टिकोणों के लिए अभी और इतिहास चाहिए।",
     empty: "अभी कोई ख़बर नहीं। ख़बर तब दिखती है जब कम से कम तीन स्वतंत्र स्रोत उसे कवर करें।",
-    error: "ख़बरें लोड नहीं हो सकीं। इंटरनेट जाँचें और पेज दोबारा खोलें।",
-    missing: "यह ख़बर अब प्रकाशित नहीं है।",
-    foot: "निष्पक्ष हर घंटे अंग्रेज़ी और हिंदी के भारतीय समाचार स्रोत पढ़ता है। वाक्य हरा तभी होता है जब कम से कम तीन स्वतंत्र स्रोत उसे बताएँ, वह कम से कम दो स्वतंत्र मूल स्रोतों तक जाए (एक ही प्रेस विज्ञप्ति या बेनाम सूत्र नहीं), कोई उसका खंडन न करे, वह जाँचा जा सकने वाला तथ्य हो, और छह घंटे टिका रहे (तब तक उसके नीचे बिंदुदार रेखा रहती है)। धूसर का अर्थ है अभी पुष्टि नहीं; बैंगनी का अर्थ है केवल एक स्रोत ने बताया (विशेष ख़बर या गलती); सुनहरा-पीला का अर्थ है स्रोतों में मतभेद; लाल, \"असत्य\" चिह्न के साथ, का अर्थ है प्राथमिक साक्ष्य (FIR, अदालती रिकॉर्ड, सरकारी आँकड़े, वीडियो) उसे असत्य दिखाते हैं।",
-    tags: {corroborated: "स्थापित", confirmed: "प्रमाणित", developing: "विकसित हो रही", disputed: "स्रोतों में मतभेद", unverified: "अभी पुष्टि नहीं", pending: "अभी पुष्टि नहीं", single: "केवल एक स्रोत", false: "असत्य"},
-    units: {m: "मिनट", h: "घंटे", d: "दिन"},
-    sections: {happened: "क्या हुआ", numbers: "आँकड़ों में", say: "किसने क्या कहा",
-               background: "पृष्ठभूमि", related: "जुड़ी घटनाएँ",
-               explained: "समझिए", next: "आगे क्या"},
+    error: "ख़बरें लोड नहीं हो सकीं। इंटरनेट जाँचें और दोबारा कोशिश करें।", retry: "दोबारा कोशिश करें",
+    missing: "यह ख़बर अब उपलब्ध नहीं है।", loading: "लोड हो रहा है…",
+    sections: {happened: "क्या हुआ", numbers: "आँकड़ों में", say: "किसने क्या कहा", background: "पृष्ठभूमि",
+               related: "जुड़ी घटनाएँ", explained: "समझिए", next: "आगे क्या"},
+    bar: (c) => `${c.e} स्थापित, ${c.o} केवल एक स्रोत, ${c.d} मतभेद, ${c.r} असत्य, ${c.u} अभी पुष्टि नहीं`,
   },
 };
-const VCOLOR = {established: "var(--v-established)", developing: "var(--v-unverified)", disputed: "var(--v-disputed)",
-                unverified: "var(--v-unverified)", single: "var(--v-single)", false: "var(--v-false)"};
-const TAGCOLOR = {corroborated: "#1d6a45", confirmed: "#1d6a45", developing: "#6b7075", disputed: "#8a6100",
-                  unverified: "#6b7075", pending: "#6b7075", single: "#6a3d9a", false: "#b2251c"};
+const KEYCOLOR = {established: "var(--est)", developing: "var(--unv)", unverified: "var(--unv)", single: "var(--one)", disputed: "var(--dis)", false: "var(--fal)"};
+const VERDICT = {corroborated: "established", confirmed: "established", established: "established", developing: "developing",
+                 disputed: "disputed", false: "false", single: "single", unverified: "unverified", pending: "unverified"};
+const BARKEY = {established: "e", corroborated: "e", confirmed: "e", single: "o", disputed: "d", false: "r", unverified: "u", pending: "u", developing: "u"};
 
-const params = new URLSearchParams(location.search);
-let lang = params.get("lang") || safeGet("np-lang") || "en";
-if (!T[lang]) lang = "en";
-let plain = safeGet("np-plain") === "1";
-const main = document.getElementById("main");
-
-function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
-function safeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
-function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-
-function ago(ts) {
-  const t = T[lang], then = new Date(ts.endsWith("Z") ? ts : ts + "Z");
-  const mins = Math.max(1, Math.round((Date.now() - then) / 60000));
-  if (mins < 60) return t.ago(`${mins} ${t.units.m}`);
-  const h = Math.round(mins / 60);
-  return h < 48 ? t.ago(`${h} ${t.units.h}`) : t.ago(`${Math.round(h / 24)} ${t.units.d}`);
-}
-
-async function api(path) {
-  if (window.NP_DEMO) return window.NP_DEMO(path);
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`,
-                        {headers: {apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`}});
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-}
-
-function setLang(l) {
-  lang = l; safeSet("np-lang", l);
-  document.documentElement.lang = l;
-  document.body.classList.toggle("hi", l === "hi");
-  const u = new URL(location); u.searchParams.set("lang", l); history.replaceState(null, "", u);
-  document.querySelectorAll(".lang button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === l)));
-  document.getElementById("foot").textContent = T[l].foot;
-  route();
-}
-document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
-
-/* ---------- front page ---------- */
-async function front() {
-  const t = T[lang];
-  document.title = "Nishpaksh · निष्पक्ष";
-  main.innerHTML = "";
-  let rows;
-  try {
-    rows = await api("published?select=story_id,updated_at,headline_en,headline_hi," +
-      "counts:payload_en->counts,lead_en:payload_en->narrative->paragraphs->0," +
-      "lead_hi:payload_hi->narrative->paragraphs->0,rank:payload_en->rank,thread:payload_en->thread," +
-      "parents:payload_en->parents&order=updated_at.desc&limit=200");
-  } catch (e) { main.innerHTML = `<p class="error">${esc(t.error)}</p>`; return; }
-  rows = rows.filter(r => r.lead_en);  // pages awaiting their first essay are skipped
-  if (!rows.length) { main.innerHTML = `<p class="empty">${esc(t.empty)}</p>`; return; }
-  // one entry per thread: its latest development
-  const byThread = new Map();
-  for (const r of rows) {
-    const k = r.thread || r.story_id;
-    const cur = byThread.get(k);
-    if (!cur) byThread.set(k, {latest: r, rank: r.rank || 0, size: 1});
-    else {
-      cur.size += 1;
-      cur.rank = Math.max(cur.rank, r.rank || 0);
-      if (new Date(r.updated_at) > new Date(cur.latest.updated_at)) cur.latest = r;
-    }
-  }
-  // newest first (owner, Oct 2026): by when each thread's latest article was published
-  const threads = [...byThread.values()].sort((a, b) =>
-    new Date(b.latest.updated_at) - new Date(a.latest.updated_at));
-  const item = th => {
-    const r = th.latest;
-    const head = lang === "hi" && r.headline_hi ? r.headline_hi : r.headline_en;
-    const lead = (lang === "hi" && r.lead_hi ? r.lead_hi : r.lead_en) || [];
-    const first = lead.length ? lead[0].text : "";
-    const n = (r.counts || {}).independent_sources || 0;
-    const ongoing = th.size > 1 || (r.parents || []).length ? ` · ${esc(t.ongoing)}` : "";
-    return `<a class="item" href="#/story/${r.story_id}">
-        <h2>${esc(head)}</h2>${first ? `<p>${esc(first)}</p>` : ""}
-        <div class="meta">${esc(t.sources(n))}, ${esc(t.updated)} ${esc(ago(r.updated_at))}${ongoing}</div></a>`;
-  };
-  const top = threads.slice(0, 20).map(item).join("");
-  const rest = threads.slice(20).map(item).join("");
-  main.innerHTML = `<section class="front"><p class="intro">${esc(t.intro)}</p>${top}
-    ${rest ? `<details class="more"><summary>${esc(t.more)} (${threads.length - 20})</summary>${rest}</details>` : ""}</section>`;
-}
-
-/* ---------- story ---------- */
-// links on the page only ever point to web pages (never javascript: or data:)
+/* ---------- small helpers ---------- */
+function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c])); }
 function safeUrl(u) { try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:"; } catch (e) { return false; } }
+function cls(c) { return VERDICT[c] || "unverified"; }
+const $ = id => document.getElementById(id);
 
-// [1,2,3,4,8] -> [[1,4],[8,8]]: "1–4, 8" instead of a long list
+let lang = new URLSearchParams(location.search).get("lang") || safeGet("np-lang") || "en";
+if (!T[lang]) lang = "en";
+
+function istHour() {
+  try { return Number(new Intl.DateTimeFormat("en-GB", {hour: "numeric", hourCycle: "h23", timeZone: "Asia/Kolkata"}).format(new Date())); }
+  catch (e) { return new Date().getHours(); }
+}
+function greeting() {
+  const h = istHour(), g = T[lang].greet;
+  return h >= 4 && h < 12 ? g[0] : h >= 12 && h < 17 ? g[1] : g[2];
+}
+function ago(ts) {
+  const t = T[lang], then = new Date(/Z|[+-]\d\d:?\d\d$/.test(ts) ? ts : ts + "Z");
+  const mins = Math.max(1, Math.round((Date.now() - then) / 60000));
+  if (mins < 60) return t.ago(mins, t.units.m);
+  const h = Math.round(mins / 60);
+  return h < 48 ? t.ago(h, t.units.h) : t.ago(Math.round(h / 24), t.units.d);
+}
+async function getJSON(url, opts = {}, ms = 6000) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, {...opts, signal: ctl.signal});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally { clearTimeout(timer); }
+}
+function api(path) {
+  return getJSON(`${SUPABASE_URL}/rest/v1/${path}`, {headers: {apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`}}, 12000);
+}
+
+/* ---------- data: the feed first, Supabase if the feed is missing ---------- */
+const cardCache = {};          // lang -> cards
+const storyCache = new Map();  // id -> Promise<row|null>
+
+function cardText(paras, limit = 9) {       // as nishpaksh/feed.py _card_text
+  const out = []; let n = 0;
+  for (const para of paras || []) {
+    if (n >= limit) break;
+    const keep = [];
+    for (const s of para || []) {
+      if (n >= limit) break;
+      const it = {t: s.text || "", c: s.class || "unverified"};
+      if (s.parts && s.parts.length > 1) it.p = s.parts.map(p => ({t: p.text || "", c: p.class || "unverified"}));
+      keep.push(it); n++;
+    }
+    if (keep.length) out.push(keep);
+  }
+  return out;
+}
+function barCounts(paras) {                   // as nishpaksh/feed.py bar_counts
+  const c = {e: 0, o: 0, d: 0, r: 0, u: 0};
+  for (const para of paras || []) for (const s of para || []) {
+    const ks = s.parts && s.parts.length > 1 ? s.parts.map(p => p.class) : [s.class];
+    for (const k of ks) c[BARKEY[k] || "u"] += 1;
+  }
+  return c;
+}
+async function loadCards(l) {
+  if (cardCache[l]) return cardCache[l];
+  let stories = null;
+  try {
+    const d = await getJSON(`${FEED_URL}/${l}.json`, {cache: "no-cache"}, 5000);
+    if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
+  } catch (e) { /* the feed is missing or slow: read the database */ }
+  if (!stories) {
+    const rows = await api("published?select=story_id,updated_at,headline_en,headline_hi," +
+      "pe:payload_en->narrative->paragraphs,ph:payload_hi->narrative->paragraphs,counts:payload_en->counts," +
+      "thread:payload_en->thread,parents:payload_en->parents&order=updated_at.desc&limit=200");
+    stories = rows.filter(r => r.pe && r.pe.length).map(r => ({
+      id: r.story_id, at: r.updated_at, thread: r.thread || r.story_id, ongoing: !!(r.parents && r.parents.length),
+      h: (l === "hi" && r.headline_hi) || r.headline_en, paras: cardText(l === "hi" && r.ph && r.ph.length ? r.ph : r.pe),
+      bar: barCounts(r.pe), n: (r.counts || {}).independent_sources || 0}));
+  }
+  // one card per thread: its latest development, newest first (owner, Oct 6 2026)
+  const byThread = new Map();
+  for (const s of stories) {
+    const k = s.thread || s.id, cur = byThread.get(k);
+    if (!cur) byThread.set(k, {...s, size: 1});
+    else { cur.size += 1; if (new Date(s.at) > new Date(cur.at)) byThread.set(k, {...s, size: cur.size}); }
+  }
+  const cards = [...byThread.values()].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, MAX_CARDS);
+  cardCache[l] = cards;
+  return cards;
+}
+async function fromArchive(id) {
+  if (!("DecompressionStream" in window)) return null;
+  try {
+    const r = await fetch(`${ARCHIVE_URL}/pages/${encodeURIComponent(id)}.json.gz`);
+    if (!r.ok) return null;
+    const p = await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).json();
+    return {story_id: p.story_id, updated_at: p.written_at, headline_en: p.headline_en, headline_hi: p.headline_hi,
+            payload_en: p.payload_en, payload_hi: p.payload_hi};
+  } catch (e) { return null; }
+}
+function loadStory(id) {
+  id = String(id);
+  if (!storyCache.has(id)) {
+    const p = (async () => {
+      try { return await getJSON(`${FEED_URL}/story/${encodeURIComponent(id)}.json`, {}, 5000); } catch (e) { /* fall through */ }
+      try { const rows = await api(`published?story_id=eq.${encodeURIComponent(id)}&select=*`); if (rows.length) return rows[0]; } catch (e) { /* fall through */ }
+      return await fromArchive(id);
+    })();
+    p.then(v => { if (!v) storyCache.delete(id); }, () => storyCache.delete(id));
+    storyCache.set(id, p);
+  }
+  return storyCache.get(id);
+}
+
+/* ---------- the deck ---------- */
+const track = $("track");
+let cards = [], current = 0, settleTimer = null;
+
+function sentenceHtml(x) {
+  if (x.p && x.p.length > 1) return x.p.map(p => `<span class="s ${esc(cls(p.c))}">${esc(p.t)}</span>`).join(" ") + " ";
+  const tag = x.c === "false" ? `<span class="ftag">${esc(T[lang].falseTag)}</span>` : "";
+  return `${tag}<span class="s ${esc(cls(x.c))}">${esc(x.t)}</span> `;
+}
+function cardHtml(c, i) {
+  const b = c.bar || {e: 0, o: 0, d: 0, r: 0, u: 0};
+  const seg = (k, v) => v ? `<span style="flex-grow:${v};background:var(--bar-${k})"></span>` : "";
+  return `<div class="slot" data-i="${i}"><a class="card" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
+      <h2>${esc(c.h)}</h2>
+      <div class="text">${(c.paras || []).map(p => `<p>${p.map(sentenceHtml).join("")}</p>`).join("")}</div>
+      <div class="foot"><div class="bar" role="img" aria-label="${esc(T[lang].bar(b))}">${seg("e", b.e)}${seg("o", b.o)}${seg("d", b.d)}${seg("r", b.r)}${seg("u", b.u)}</div>
+      <span class="ago">${esc(ago(c.at))}</span></div></a></div>`;
+}
+function renderDeck(keepId) {
+  if (!cards.length) { track.innerHTML = `<div class="slot"><div class="state">${esc(T[lang].empty)}</div></div>`; return; }
+  const n = cards.length;
+  // loop: a copy of the last card before the first and of the first after the last
+  const slots = n > 1 ? [[cards[n - 1], n - 1], ...cards.map((c, i) => [c, i]), [cards[0], 0]] : [[cards[0], 0]];
+  track.innerHTML = slots.map(([c, i]) => cardHtml(c, i)).join("");
+  let idx = 0;
+  if (keepId != null) { const k = cards.findIndex(c => String(c.id) === String(keepId)); if (k >= 0) idx = k; }
+  jumpTo(idx);
+}
+function slotHeight() { return track.clientHeight || 1; }
+function jumpTo(i) {   // i: index in cards; no animation
+  const pos = cards.length > 1 ? i + 1 : 0;
+  track.style.scrollSnapType = "none";
+  track.scrollTop = pos * slotHeight();
+  current = i;
+  requestAnimationFrame(() => { track.style.scrollSnapType = ""; });
+  prefetchAround();
+}
+function onSettle() {
+  const n = cards.length;
+  if (!n) return;
+  const k = Math.round(track.scrollTop / slotHeight());
+  if (n > 1 && k === 0) return jumpTo(n - 1);
+  if (n > 1 && k === n + 1) return jumpTo(0);
+  current = n > 1 ? k - 1 : 0;
+  prefetchAround();
+}
+track.addEventListener("scroll", () => { clearTimeout(settleTimer); settleTimer = setTimeout(onSettle, 130); }, {passive: true});
+if ("onscrollend" in window) track.addEventListener("scrollend", () => { clearTimeout(settleTimer); onSettle(); });
+function prefetchAround() {
+  if (!cards.length) return;
+  for (const d of [0, 1, 2, -1]) { const c = cards[(current + d + cards.length) % cards.length]; if (c) loadStory(c.id); }
+}
+function step(d) { track.scrollBy({top: d * slotHeight(), behavior: "smooth"}); }
+
+track.addEventListener("click", e => {
+  const a = e.target.closest("a.card");
+  if (!a) return;
+  e.preventDefault();
+  openStory(a.dataset.id, a);
+});
+track.addEventListener("pointerdown", e => { const a = e.target.closest("a.card"); if (a) loadStory(a.dataset.id); }, {passive: true});
+
+async function showDeck(keepId) {
+  try {
+    cards = await loadCards(lang);
+    renderDeck(keepId);
+  } catch (e) {
+    track.innerHTML = `<div class="slot"><div class="state"><div>${esc(T[lang].error)}<br><br>
+      <button type="button" class="back" style="width:auto;padding:0 18px;border-radius:999px" id="retry">${esc(T[lang].retry)}</button></div></div></div>`;
+    $("retry").onclick = () => { delete cardCache[lang]; track.innerHTML = loadingHtml(); showDeck(keepId); };
+  }
+}
+function loadingHtml() {
+  return `<div class="slot"><div class="card loading" aria-busy="true"><div class="bone" style="height:30px;width:85%"></div>
+    <div class="bone" style="height:30px;width:60%;margin-bottom:22px"></div><div class="bone"></div><div class="bone"></div><div class="bone" style="width:70%"></div></div></div>`;
+}
+
+/* ---------- the article ---------- */
+const sheet = $("sheet"), sheetScroll = $("sheet-scroll"), hbox = $("hbox");
+let openId = null, openedFromDeck = false, closing = null;
+
 function ranges(nums) {
   const out = [];
   for (const n of [...nums].sort((a, b) => a - b)) {
@@ -300,147 +485,262 @@ function ranges(nums) {
   }
   return out;
 }
-
 function essayHtml(nar, t) {
-  const names = Object.fromEntries(nar.sources.map(s => [s.n, s.outlet]));
+  const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
+  const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
   const sent = x => {
     const nums = x.sources || [];
-    const sup = ranges(nums).map(([a, b]) => b === a
-        ? `<a href="#src-${a}" title="${esc(names[a] || "")}" data-src="${a}">${a}</a>`
-        : `<a href="#src-${a}" title="${esc(names[a] || "")}" data-src="${a}">${a}</a>–<a href="#src-${b}" title="${esc(names[b] || "")}" data-src="${b}">${b}</a>`).join(",");
-    const who = [...new Set(nums.map(n => names[n]).filter(Boolean))].join(", ");
+    const sup = ranges(nums).map(([a, b]) => b === a ? link(a) : `${link(a)}–${link(b)}`).join(",");
     const tag = x.class === "false" ? `<span class="ftag">${esc(t.falseTag)}</span>` : "";
-    // a sentence in parts (owner, Oct 7 2026): the well-supported fact and the detail fewer outlets
-    // report each take their own colour; the source numbers follow the whole sentence
-    const body = (x.parts && x.parts.length > 1)
-      ? x.parts.map(p => `<span class="s ${esc(p.class)}" title="${esc(who)}">${esc(p.text)}</span>`).join(" ")
-      : `<span class="s ${esc(x.class)}" title="${esc(who)}">${esc(x.text)}</span>`;
-    return `${tag}${body}<sup>${sup}</sup>`;
+    const body = x.parts && x.parts.length > 1
+      ? x.parts.map(p => `<span class="s ${esc(cls(p.class))}">${esc(p.text)}</span>`).join(" ")
+      : `<span class="s ${esc(cls(x.class))}">${esc(x.text)}</span>`;
+    return `${tag}${body}${sup ? `<sup>${sup}</sup>` : ""}`;
   };
-  // everything is in the article itself (owner, Oct 2026); every statement is still listed in the
-  // "Every statement" section below for anyone checking
-  // the article in sections, like an explainer (owner, Oct 7 2026); the opening (the news) has no heading
   const keys = nar.section_keys || [];
   let last = null;
-  return nar.paragraphs.map((para, k) => {
+  return (nar.paragraphs || []).map((para, k) => {
     const key = keys[k];
-    const head = key && key !== last && key !== "news" && t.sections[key] ? `<h2 class="sec">${esc(t.sections[key])}</h2>` : "";
+    const head = key && key !== last && key !== "news" && t.sections[key] ? `<h3>${esc(t.sections[key])}</h3>` : "";
     last = key || last;
     return head + "<p>" + para.map(sent).join(" ") + "</p>";
   }).join("");
 }
-
-function keyHtml(t, present) {
-  const order = ["established", "developing", "disputed", "unverified", "single", "false"].filter(k => present.has(k));
-  return `<div class="key">${order.map(k => `<span><i style="background:${VCOLOR[k]}${k === "developing" ? ";outline:1px dotted #9aa0a6;outline-offset:1px" : ""}"></i>${esc(t["k_" + k])}</span>`).join("")}
-    <label><input type="checkbox" id="plain" ${plain ? "checked" : ""}> ${esc(t.plain)}</label></div>`;
-}
-
-function detailHtml(p, t) {
-  const all = [...p.timeline.flat(), ...p.undated, ...p.established, ...p.contested, ...(p.context || [])];
-  const line = i => {
-    const sup = [...new Set(i.sources.filter(s => s.stance !== "denies").map(s => s.outlet))];
-    const den = [...new Set(i.sources.filter(s => s.stance === "denies").map(s => s.outlet))];
-    // one outlet only (purple) unless disputed or shown false: as narrative.shade
-    const v = (i.verdict === "unverified" || i.verdict === "pending") && (i.n_sources || 0) <= 1 ? "single" : i.verdict;
-    return `<div class="stmt"><span class="tag" style="background:${TAGCOLOR[v] || "#6b7075"}">${esc(t.tags[v] || v)}</span>${esc(i.text)}
-      <div class="note">${sup.length ? `${esc(t.reported)}: ${esc(sup.join(", "))}` : ""}${den.length ? `; ${esc(t.denied)}: ${esc(den.join(", "))}` : ""}</div></div>`;
-  };
-  return all.map(line).join("");
-}
-
-// an archived article: the page exactly as it was published, gzipped JSON
-async function archived(id) {
-  if (window.NP_DEMO || !("DecompressionStream" in window)) return null;
-  try {
-    const r = await fetch(`${ARCHIVE_URL}/pages/${encodeURIComponent(id)}.json.gz`);
-    if (!r.ok) return null;
-    const page = await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).json();
-    return {story_id: page.story_id, updated_at: page.written_at, headline_en: page.headline_en,
-            headline_hi: page.headline_hi, payload_en: page.payload_en, payload_hi: page.payload_hi};
-  } catch (e) { return null; }
-}
-
-async function story(id) {
-  const t = T[lang];
-  main.innerHTML = "";
-  let rows;
-  try { rows = await api(`published?story_id=eq.${encodeURIComponent(id)}&select=*`); }
-  catch (e) { main.innerHTML = `<p class="error">${esc(t.error)}</p>`; return; }
-  if (!rows.length) {
-    const old = await archived(id);
-    if (old) rows = [old];
+function keyHtml(t, nar) {
+  const present = new Set();
+  for (const para of nar.paragraphs || []) for (const x of para) {
+    for (const c of (x.parts && x.parts.length > 1 ? x.parts.map(p => p.class) : [x.class])) present.add(cls(c));
   }
-  if (!rows.length) { main.innerHTML = `<p class="empty">${esc(t.missing)} <a href="#/">${esc(t.back)}</a></p>`; return; }
-  const row = rows[0];
-  const p = lang === "hi" && row.payload_hi ? row.payload_hi : row.payload_en;
-  const nar = p.narrative || {};
-  document.title = `${p.headline} · Nishpaksh`;
-  const n = (p.counts || {}).independent_sources || 0;
-  const paragraphs = nar.paragraphs || [];
-  const present = new Set(paragraphs.flat().flatMap(x => (x.parts && x.parts.length > 1) ? x.parts.map(p => p.class) : [x.class]));
-
-  const framing = (p.framing || []).length ? (() => {
-    const persp = [...new Set(p.framing.flatMap(f => Object.keys(f.words)))].sort();
-    return `<h3>${esc(t.wording)}</h3><table><thead><tr><th>${esc(t.fact)}</th>${persp.map(k => `<th>${esc(k)}</th>`).join("")}</tr></thead>
-      <tbody>${p.framing.map(f => `<tr><td>${esc(f.text)}</td>${persp.map(k => `<td>${esc((f.words[k] || []).join(", "))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-  })() : "";
-
-  // option B: every outlet that covered the story is listed; ones we could not read are marked
-  const sources = (nar.sources || []).map(s => {
-    const why = s.read === false ? `<span class="why">(${esc(s.readable === false ? t.unreadable : t.unread)})</span>` : "";
-    const link = safeUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title || s.url)}</a>` : esc(s.title || "");
-    return `<li id="src-${s.n}" class="${s.read === false ? "unread" : ""}"><b>${s.n}</b><span><span class="outlet">${esc(s.outlet)}</span>, ${link}${why}</span></li>`;
+  return ["established", "developing", "unverified", "single", "disputed", "false"].filter(k => present.has(k))
+    .map(k => `<span style="color:${KEYCOLOR[k]}">● ${esc(t.k[k])}</span>`).join("");
+}
+function whoHtml(p, t) {
+  const all = [...(p.timeline || []).flat(), ...(p.undated || []), ...(p.established || []), ...(p.contested || []), ...(p.context || [])];
+  if (!all.length) return "";
+  const seen = new Set();
+  const items = all.filter(i => i && i.text && !seen.has(i.text) && seen.add(i.text)).map(i => {
+    const v = (i.verdict === "unverified" || i.verdict === "pending") && (i.n_sources || 0) <= 1 ? "single" : cls(i.verdict);
+    const chips = (list, den) => {
+      const byOutlet = new Map();
+      for (const s of list) if (s.outlet && !byOutlet.has(s.outlet)) byOutlet.set(s.outlet, s.url);
+      return [...byOutlet].map(([o, u]) => safeUrl(u)
+        ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"${den ? ' class="den"' : ""}>${esc(o)}</a>`
+        : `<span${den ? ' class="den"' : ""}>${esc(o)}</span>`).join("");
+    };
+    const sup = (i.sources || []).filter(s => s.stance !== "denies"), den = (i.sources || []).filter(s => s.stance === "denies");
+    return `<div class="stmt"><span class="dot" style="background:${KEYCOLOR[v] || "var(--unv)"}"></span><span class="s ${esc(v)}">${esc(i.text)}</span>
+      ${sup.length ? `<div class="by"><span class="lbl">${esc(t.reported)}:</span>${chips(sup)}</div>` : ""}
+      ${den.length ? `<div class="by"><span class="lbl">${esc(t.denied)}:</span>${chips(den, true)}</div>` : ""}</div>`;
   }).join("");
-
-  // perspectives are shown only once the system has found some; until then the interim note explains
+  return `<div class="paper"><details class="who"><summary>${esc(t.who)}</summary>${items}</details></div>`;
+}
+function articleHtml(row) {
+  const t = T[lang];
+  const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
+  const nar = p.narrative || {};
+  const sources = (nar.sources || []).map(s => {
+    const why = s.read === false ? `<span class="why">${esc(s.readable === false ? t.unreadable : t.unread)}</span>` : "";
+    const title = safeUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title || s.url)}</a>` : esc(s.title || "");
+    return `<li id="src-${esc(s.n)}" class="${s.read === false ? "unread" : ""}"><b>${esc(s.n)}</b><span><span class="outlet">${esc(s.outlet)}</span> · ${title}${why}</span></li>`;
+  }).join("");
+  const framing = (p.framing || []).length ? (() => {
+    const persp = [...new Set(p.framing.flatMap(f => Object.keys(f.words || {})))].sort();
+    return `<div class="sec">${esc(t.wording)}</div><div class="paper tablebox"><table class="framing"><thead><tr><th>${esc(t.fact)}</th>${persp.map(k => `<th>${esc(k)}</th>`).join("")}</tr></thead>
+      <tbody>${p.framing.map(f => `<tr><td>${esc(f.text)}</td>${persp.map(k => `<td>${esc(((f.words || {})[k] || []).join(", "))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  })() : "";
   const persp = p.perspective_mode === "none" || !p.perspective_mode ? "" :
-    Object.entries(p.perspectives || {}).map(([k, v]) => `<b>${esc(k)}</b> ${esc(v.join(", "))}`).join("<br>");
+    Object.entries(p.perspectives || {}).map(([k, v]) => `<b>${esc(k)}</b> ${esc((v || []).join(", "))}`).join("<br>");
+  const thread = (title, list) => list && list.length ? `<div class="sec">${esc(title)}</div><div class="paper"><ul class="thread">${list.map(x =>
+      `<li><a href="#/story/${encodeURIComponent(x.story_id)}" data-story="${esc(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul></div>` : "";
+  return `<div class="key">${keyHtml(t, nar)}</div>
+    <div class="paper essay">${essayHtml(nar, t)}</div>
+    ${p.has_established === false ? `<p class="note">${esc(t.unsettled)}</p>` : ""}
+    ${p.qualified_by === "interim" && p.perspective_mode !== "global" ? `<p class="note">${esc(t.interim)}</p>` : ""}
+    ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
+    ${thread(t.earlier, p.parents)}${thread(t.next, p.children)}
+    ${sources ? `<div class="sec">${esc(t.sourcesTitle)}</div><div class="paper"><ol class="sources">${sources}</ol></div>` : ""}
+    ${framing}
+    ${persp ? `<div class="sec">${esc(t.perspectives)}</div><div class="paper persp">${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</div>` : ""}
+    <div style="height:12px"></div>${whoHtml(p, t)}`;
+}
+function fillSheet(row, card) {
+  const t = T[lang];
+  if (row) {
+    const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
+    const head = (lang === "hi" && row.headline_hi) || row.headline_en || p.headline || "";
+    $("sheet-h").textContent = head;
+    const n = (p.counts || {}).independent_sources || 0;
+    $("sheet-meta").textContent = `${t.sources(n, (p.counts || {}).outlets)} · ${ago(row.updated_at)}`;
+    $("rise").innerHTML = articleHtml(row);
+    document.title = `${head} · Nishpaksh`;
+  } else if (card) {
+    $("sheet-h").textContent = card.h;
+    $("sheet-meta").textContent = ago(card.at);
+    $("rise").innerHTML = `<div class="paper essay" aria-busy="true"><p style="color:var(--muted)">${esc(t.loading)}</p></div>`;
+  }
+}
+function cardRectFor(id) {
+  const el = track.querySelector(`.slot[data-i="${current}"] a.card`) || (id != null ? track.querySelector(`a.card[data-id="${CSS.escape(String(id))}"]`) : null);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return r.height ? r : null;
+}
+function setClip(r) {
+  const v = r ? `inset(${r.top}px ${innerWidth - r.right}px ${innerHeight - r.bottom}px ${r.left}px round 24px)` : "inset(0px 0px 0px 0px round 0px)";
+  sheet.style.clipPath = v; sheet.style.webkitClipPath = v;
+}
+function placeHeadlineOver(r) {   // the article's headline starts exactly where the card's was
+  hbox.style.setProperty("--hy", "0px"); hbox.style.setProperty("--hx", "22px");
+  const h = hbox.getBoundingClientRect();
+  hbox.style.setProperty("--hx", `${Math.max(0, r.left + 22 - h.left)}px`);
+  hbox.style.setProperty("--hy", `${r.top + 24 - h.top}px`);
+}
+async function openStory(id, fromCard, opts = {}) {
+  if (closing) { clearTimeout(closing); closing = null; }
+  id = String(id);
+  const card = cards.find(c => String(c.id) === id);
+  openId = id;
+  sheetScroll.scrollTop = 0;
+  const pending = loadStory(id);
+  const quick = await Promise.race([pending, new Promise(r => setTimeout(() => r(undefined), 120))]);
+  if (openId !== id) return;
+  fillSheet(quick || null, card);
+  const r = fromCard && !opts.instant ? fromCard.getBoundingClientRect() : null;
+  if (!opts.noHistory) {
+    const u = `#/story/${encodeURIComponent(id)}`;
+    if (location.hash !== u) { history.pushState({story: id}, "", u); openedFromDeck = true; }
+  }
+  sheet.classList.remove("anim", "open");
+  sheet.classList.add("on");
+  if (r) {
+    setClip(r); placeHeadlineOver(r);
+    void sheet.offsetWidth;                      // start from the card
+    sheet.classList.add("anim");
+    requestAnimationFrame(() => { setClip(null); sheet.classList.add("open"); });
+  } else {
+    setClip(null); sheet.classList.add("open");
+  }
+  if (!quick) {
+    const row = await pending;
+    if (openId !== id) return;
+    if (row) fillSheet(row, card);
+    else $("rise").innerHTML = `<div class="paper essay"><p>${esc(T[lang].missing)}</p></div>`;
+  }
+  setTimeout(() => { if (openId === id) $("back").focus({preventScroll: true}); }, 480);
+}
+function closeStory(animate = true) {
+  if (!openId) return;
+  const id = openId;
+  openId = null;
+  document.title = "Nishpaksh · निष्पक्ष";
+  const k = cards.findIndex(c => String(c.id) === id);
+  if (k >= 0 && k !== current) jumpTo(k);
+  const r = animate ? cardRectFor(id) : null;
+  if (r) {
+    sheet.classList.add("anim");
+    placeHeadlineOverForClose(r);
+    setClip(r); sheet.classList.remove("open");
+    closing = setTimeout(() => { sheet.classList.remove("on", "anim"); closing = null; }, 470);
+  } else {
+    sheet.classList.remove("on", "anim", "open");
+  }
+  const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
+  if (el) el.focus({preventScroll: true});
+}
+function placeHeadlineOverForClose(r) {   // the open headline box goes back to where the card's headline is
+  const h = hbox.getBoundingClientRect();
+  hbox.style.setProperty("--hx", `${Math.max(0, r.left + 22 - h.left)}px`);
+  hbox.style.setProperty("--hy", `${r.top + 24 - h.top}px`);
+}
+$("back").addEventListener("click", () => {
+  if (openedFromDeck && history.state && history.state.story) history.back();
+  else { history.replaceState(null, "", location.pathname + location.search); closeStory(true); }
+});
+window.addEventListener("popstate", () => route(true));
 
-  main.innerHTML = `<article>
-    <a class="back" href="#/">${esc(t.back)}</a>
-    <h1>${esc(p.headline)}</h1>
-    <div class="meta"><span title="${esc(t.sameOwner)}">${esc(t.sources(n, (p.counts || {}).outlets))}</span>, ${esc(t.updated)} ${esc(ago(row.updated_at))}</div>
-    ${keyHtml(t, present)}
-    <div class="story ${plain ? "plain" : ""}" id="story">${essayHtml(nar, t)}</div>
-    <div class="after">
-      ${p.has_established ? "" : `<p class="note">${esc(t.unsettled)}</p>`}
-      ${p.qualified_by === "interim" && p.perspective_mode !== "global" ? `<p class="note">${esc(t.interim)}</p>` : ""}
-      ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
-      ${(p.parents || []).length ? `<h3>${esc(t.earlier)}</h3><ul class="thread">${p.parents.map(x =>
-        `<li><a href="#/story/${encodeURIComponent(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul>` : ""}
-      ${(p.children || []).length ? `<h3>${esc(t.next)}</h3><ul class="thread">${p.children.map(x =>
-        `<li><a href="#/story/${encodeURIComponent(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul>` : ""}
-      <h3>${esc(t.sourcesTitle)}</h3><ol class="sources">${sources}</ol>
-      ${framing}
-      ${persp ? `<h3>${esc(t.perspectives)}</h3><p>${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</p>` : ""}
-      <details><summary>${esc(t.detail)}</summary>${detailHtml(p, t)}</details>
-    </div>
-  </article>`;
-  // source numbers scroll to the source list without leaving the story (the hash is the route)
-  main.querySelectorAll("a[data-src]").forEach(a => a.addEventListener("click", e => {
+// source numbers and thread links work inside the sheet without leaving it
+$("rise").addEventListener("click", e => {
+  const s = e.target.closest("a[data-src]");
+  if (s) {
     e.preventDefault();
-    const li = document.getElementById(`src-${a.dataset.src}`);
-    if (!li) return;
-    main.querySelectorAll(".sources li.hit").forEach(x => x.classList.remove("hit"));
-    li.classList.add("hit");
-    li.scrollIntoView({block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
-  }));
-  document.getElementById("plain").addEventListener("change", e => {
-    plain = e.target.checked; safeSet("np-plain", plain ? "1" : "0");
-    document.getElementById("story").classList.toggle("plain", plain);
-  });
-  window.scrollTo(0, 0);
+    const li = $("src-" + s.dataset.src);
+    if (li) { li.scrollIntoView({behavior: "smooth", block: "center"}); li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 1400); }
+    return;
+  }
+  const a = e.target.closest("a[data-story]");
+  if (a) {
+    e.preventDefault();
+    history.pushState({story: a.dataset.story}, "", `#/story/${encodeURIComponent(a.dataset.story)}`);
+    openedFromDeck = true;
+    openStory(a.dataset.story, null, {instant: true, noHistory: true});
+  }
+});
+
+/* ---------- language ---------- */
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.documentElement.classList.toggle("hi", lang === "hi");
+  $("wm").textContent = T[lang].wordmark; $("wm2").textContent = T[lang].wordmark;
+  $("greet").textContent = greeting();
+  $("back").setAttribute("aria-label", T[lang].back);
+  document.querySelectorAll(".pill button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+}
+async function setLang(l) {
+  if (l === lang || !T[l]) return;
+  lang = l; safeSet("np-lang", l);
+  const u = new URL(location); u.searchParams.set("lang", l); history.replaceState(history.state, "", u);
+  applyLang();
+  const keep = cards[current] && cards[current].id;
+  if (openId) { const row = await loadStory(openId); if (row) fillSheet(row, null); }
+  showDeck(openId || keep);
+}
+document.querySelectorAll(".pill button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
+/* ---------- keyboard (laptops): arrows move, Enter opens, Escape closes ---------- */
+document.addEventListener("keydown", e => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  if (openId) { if (e.key === "Escape") { e.preventDefault(); $("back").click(); } return; }
+  if (["ArrowDown", "PageDown", "j"].includes(e.key)) { e.preventDefault(); step(1); }
+  else if (["ArrowUp", "PageUp", "k"].includes(e.key)) { e.preventDefault(); step(-1); }
+  else if (e.key === "Enter" && !(e.target.closest && e.target.closest("button"))) {
+    const el = track.querySelector(`.slot[data-i="${current}"] a.card`); if (el) { e.preventDefault(); openStory(el.dataset.id, el); }
+  }
+});
+
+/* ---------- routing: #/ is the deck, #/story/<id> an article ---------- */
+function route(animate) {
+  const m = location.hash.match(/^#\/story\/([^/?#]+)/);
+  if (m) { const id = decodeURIComponent(m[1]); if (id !== openId) openStory(id, null, {instant: true, noHistory: true}); }
+  else if (openId) { openedFromDeck = false; closeStory(animate); }
 }
 
-function route() {
-  const m = location.hash.match(/^#\/story\/(\d+)/);
-  if (m) story(m[1]); else front();
+// keep the card in place when the phone rotates or the address bar resizes the screen
+let lastH = 0;
+new ResizeObserver(() => { const h = slotHeight(); if (h !== lastH) { lastH = h; if (cards.length) jumpTo(current); } }).observe(track);
+
+// coming back to the page after a while: fresh news and greeting
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  $("greet").textContent = greeting();
+  if (hiddenAt && Date.now() - hiddenAt > 15 * 60000) {
+    const keep = cards[current] && cards[current].id;
+    delete cardCache.en; delete cardCache.hi;
+    showDeck(keep);
+  } else if (!openId) track.querySelectorAll(".ago").forEach((el, i) => {
+    const slot = el.closest(".slot"); const c = cards[Number(slot.dataset.i)]; if (c) el.textContent = ago(c.at);
+  });
+});
+
+applyLang();
+track.innerHTML = loadingHtml();
+showDeck();
+route(false);
+if (/^#\/story\//.test(location.hash)) openedFromDeck = false;
+
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
-window.addEventListener("hashchange", route);
-// links from the old app looked like ?story=123
-if (params.get("story") && !location.hash) location.hash = `#/story/${params.get("story")}`;
-setLang(lang);
 </script>
 </body>
 </html>

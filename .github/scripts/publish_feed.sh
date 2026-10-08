@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Write the live articles as ready-made files (nishpaksh/feed.py) and replace the `feed` branch with
-# them: one commit, force-pushed, so the branch never grows. The reading site (site/v1) reads them
+# them: one commit, force-pushed, so the branch never grows. The reading site (site/) reads them
 # from GitHub's CDN and falls back to Supabase, so a failure here only costs speed.
 set -euo pipefail
 REMOTE="${FEED_REMOTE:-https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git}"
