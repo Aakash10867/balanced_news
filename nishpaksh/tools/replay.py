@@ -76,8 +76,11 @@ def main() -> None:
                     after_words = {i["text"] for i in payload.get("context") or []}
                     belong.model_stage(local, router, sid, payload)
                     kept = {i["text"] for i in payload.get("context") or []}
+                    checks = ((local.one(select(stories.c.analysis).where(stories.c.id == sid)) or {})
+                              .get("analysis") or {}).get("context_checks") or {}
                     entry["context"] = [{"role": r, "text": t[:200],
-                                         "result": "kept" if t in kept else "other news" if t in after_words else "no shared word"}
+                                         "result": "kept" if t in kept else "other news" if t in after_words else "no shared word",
+                                         "answers": checks.get(belong._key(t))}
                                         for r, t in before]
             except Exception as e:  # noqa: BLE001
                 log.exception("story %s failed", sid)
