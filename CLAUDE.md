@@ -291,6 +291,11 @@ Hindi. At most 2 per clock hour.
   before his arrest" on the arrest itself); prefer the absolute date in fallbacks.
 
 ## Fixed at the root (Oct 2026), keep the guards
+- Story 11867 (Oct 8 2026): (1) dispute marks made before the dispute gate were published, because the
+  story was never reviewed again: the desk now runs `consolidate_story` before writing (a no-op when the
+  review is current), so an article is written only from analysis under the current rules; (2) the
+  validator rejects a sentence naming the same multi-word name twice ("repeats a name"; disputes exempt)
+  and the fill pass rewrites it; the writer is told to use "the river", "he", "it" the second time.
 - Story 12687 (Oct 7 2026): (1) `style.py` shortened "Commission for Air Quality Management" to
   "Commission for Management" ("Air" read as a title): only PERSON_TITLES count as evidence of a person,
   and institutional words (Management, Commission, Quality...) are never a person's name; (2) a page's text

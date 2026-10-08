@@ -117,7 +117,8 @@ the statements give ("AAP Delhi chief Saurabh Bharadwaj", "Supreme Court judge U
 that, the surname ("Bharadwaj") or a short form. Never use a surname alone for someone not yet
 introduced. Vary how you attribute: not "He said ... He added ... He stated ..." sentence after sentence.
 No headings, no bullet points.
-Never use any of these words: {banned}
+Never name the same person, place or body twice in one sentence: the second time write "the river",
+"he", "it" or the short name. Never use any of these words: {banned}
 PARTS: when one sentence joins statements with DIFFERENT statuses (an ESTABLISHED fact and a detail
 only ONE OUTLET reports, say), write it in two parts, the main fact first, each part with only its own
 ids, split at a comma or "and": {{"parts": [{{"text": "Twelve crew members were injured in the
@@ -464,6 +465,13 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
     for c in CAUSAL:
         if re.search(rf"\b{c}\b", low) and c not in source_text.lower():
             return _no("cause not in statements")
+    # a sentence naming the same thing twice reads as written by a machine (Oct 8 2026: "The Gomti River
+    # in Lucknow flooded, and the water level of the Gomti River in Lucknow is rising"); a dispute
+    # naming both sides is not this
+    if style and "disputed" not in verdicts:
+        names = [re.sub(r"^(The|A|An)\s+", "", n) for n in re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+", text)]
+        if any(names.count(n) > 1 for n in names):
+            return _no("repeats a name")
     # statements joined in one sentence must share a subject (a name, place, number or key word);
     # two businesses and two findings glued together because both were unconfirmed read as one fact
     if style and len(ids) > 1 and not _connected([by_id[i] for i in ids]):

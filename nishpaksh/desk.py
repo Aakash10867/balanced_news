@@ -87,7 +87,7 @@ def refused_last_run(store: Store, now: dt.datetime | None = None) -> set[str]:
 
 
 def work(store: Store, router: Router, now: dt.datetime | None = None, until: float | None = None) -> dict:
-    from . import compose, verify
+    from . import compose, consolidate, verify
     now = now or utcnow()
     stats = {"already_this_hour": published_this_hour(store, now), "tried": 0, "published": []}
     room = SETTINGS.desk_per_hour - stats["already_this_hour"]
@@ -101,6 +101,10 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         # follow-up yet, no headline) do not use one up, but at most DESK_LOOK stories are looked at
         if room <= 0 or stats["tried"] >= SETTINGS.desk_tries or n >= DESK_LOOK or (until and time.time() > until):
             break
+        # written only from the current analysis: a story reviewed under older rules (Oct 8 2026, story
+        # 11867: dispute marks from before the dispute gate were published) is reviewed again first;
+        # when nothing changed this costs nothing (consolidate_story returns at once)
+        consolidate.consolidate_story(store, router, sid)
         verify.base_verdicts(store, sid)            # the 6-hour clock moved since it was analysed
         if compose.publish_story(store, router, sid):
             stats["published"].append(sid)
