@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 MAX_PIECES = 4      # owner: up to three is good, four at most
 BATCH = 10
 MIN_WORDS = 14      # a short sentence is one fact
+LIST_OVERLAP = 0.6  # two pieces sharing this share of their root words: a list split apart, not two facts
 JOINS = re.compile(r"(?i)(,? and |, which |, while |; | but |, who |, as well as |, adding that | and that )")
 
 PROMPT = """Each numbered sentence comes from a news report. Some say one fact; some join two, three or four
@@ -115,6 +116,14 @@ def _pieces_ok(original: str, pieces: list[str]) -> bool:
         got_names |= _names(p) | _caps(p)
     if got_nums != nums:
         return False                                   # a number lost
+    # a list split into near-identical sentences ("higher EMIs for home loans" / "... for car loans" / "... for
+    # personal loans", story 13970) is one fact with a list, not separate facts: pieces of a real compound say
+    # different things, so two pieces sharing most of their words means the split is wrong
+    rs = [set(roots(p)) for p in pieces]
+    for i in range(len(rs)):
+        for j in range(i + 1, len(rs)):
+            if rs[i] and rs[j] and len(rs[i] & rs[j]) / len(rs[i] | rs[j]) >= LIST_OVERLAP:
+                return False
     if not _names(original) <= got_names:
         return False                                   # a name lost
     if NEG.search(original) and not any(NEG.search(p) for p in pieces):

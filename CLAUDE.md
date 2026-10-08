@@ -164,8 +164,9 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   "and", ", which", ";", " but "...) is split into its single facts by one Flash-Lite question per batch of 10
   (reading tier): at most 3, 4 allowed, more = kept whole; one fact = unchanged. Code checks every piece: its
   numbers and names from the original, nearly all its words too, the pieces together carry every number and
-  name, a said thing keeps its speaker in every piece, a "not" is never lost or added; any failure keeps the
-  row whole. Pieces replace the row (same article, stance, speaker, evidence, time, context role; loaded words
+  name, a said thing keeps its speaker in every piece, a "not" is never lost or added, and no two pieces share 60%+
+  of their root words (a list split apart: "higher EMIs for home loans" / "... for car loans", seen on 13970);
+  any failure keeps the row whole. Pieces replace the row (same article, stance, speaker, evidence, time, context role; loaded words
   on the first piece; no frame; a relation naming the row names its first piece), marked `rel.split`
   ("piece"; checked rows "whole") so a row is asked once, and go through matching like any fact. Numbers:
   "25 basis points" reads as 0.25 per cent (`frames.numbers`). Writing: a sentence may now have up to THREE

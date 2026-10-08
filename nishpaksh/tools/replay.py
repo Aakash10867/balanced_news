@@ -75,7 +75,7 @@ def main() -> None:
 
                 def statements():
                     pl = compose.build_payload(local, router, sid) or {}
-                    return [i["text"] for i in ordered_items(pl)] + [i["text"] for i in pl.get("context") or []] if pl else []
+                    return [i["text"] for i in ordered_items(pl)] if pl else []   # context included
                 before = statements()
                 entry["split"] = split.split_story(local, router, sid)
                 match.match_story(local, router, sid)

@@ -2670,4 +2670,8 @@ def test_split_check_and_quantities():
     assert not _pieces_ok("The court did not grant bail and listed the case for Friday.",
                           ["The court granted bail.", "The court listed the case for Friday."])                       # a "not" lost
     assert not _pieces_ok(o, [o, o, o, o, o])                                                                         # more than 4
+    # a list split apart is one fact with a list, not separate facts (story 13970)
+    emi = "The increase in the repo rate will lead to higher EMIs for home loans, car loans and personal loans."
+    assert not _pieces_ok(emi, ["The increase in the repo rate will lead to higher EMIs for home loans.",
+                                "The increase in the repo rate will lead to higher EMIs for car loans and personal loans."])
     assert MAX_PARTS == 3
