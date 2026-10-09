@@ -87,6 +87,7 @@ def main() -> None:
                 entry["error"] = repr(e)[:500]
             report.append(entry)
             log.info("%s", json.dumps(entry)[:800])
+            _save(prod, [entry])
             continue
         if a.mode == "context":
             try:
@@ -110,6 +111,7 @@ def main() -> None:
                 entry["error"] = repr(e)[:500]
             report.append(entry)
             log.info("%s", json.dumps(entry)[:800])
+            _save(prod, [entry])
             continue
         try:
             # as in preparation (run.analyse): compound statements split, then matched, then reviewed
@@ -136,6 +138,11 @@ def main() -> None:
             entry["error"] = repr(e)[:500]
         report.append(entry)
         log.info("%s", json.dumps(entry)[:800])
+        _save(prod, [entry])           # each story saved as it finishes: a run cut off still leaves its results
+    log.info("replay done: %d stories", len(report))
+
+
+def _save(prod: Store, report: list) -> None:
     with prod.engine.begin() as c:
         c.execute(sql("insert into diagnostics (kind, report) values ('replay', :r)"), {"r": json.dumps(report)})
 
