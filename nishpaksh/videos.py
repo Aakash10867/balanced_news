@@ -3,7 +3,8 @@
 Fetched once, when the article is new (the desk, after publishing), so the site's videos button opens at once and
 costs nothing per click. YouTube's own order is kept (owner: "it is fine if videos are ranked as per YouTube"); what
 Nishpaksh adds is balance and two guards:
-  * two searches, the English headline and the Hindi headline, taken in turn, so both languages are there;
+  * two searches, the Hindi headline and the English headline, taken in turn, Hindi first (owner), so both
+    languages are there (when one runs out, the other fills the list);
   * at most 2 videos from one channel, so no one outlet fills the list (until perspectives are proven, this is how
     "all sides" is kept; then every perspective cluster gets a place);
   * only videos uploaded after the story's first report (an old clip passed off as new is the commonest video lie);
@@ -108,7 +109,7 @@ def fetch_new(store: Store, limit: int = 6, key: str | None = None, get=None) ->
         first = store.one(select(func.min(articles.c.published_at).label("t")).where(articles.c.story_id == r["story_id"]))
         after = ((first or {}).get("t") or since) - dt.timedelta(hours=1)
         lists = []
-        for q, lang in ((r["headline_en"], "en"), (r["headline_hi"], "hi")):
+        for q, lang in ((r["headline_hi"], "hi"), (r["headline_en"], "en")):   # Hindi first (owner, Oct 9 2026)
             if not q:
                 continue
             try:

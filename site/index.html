@@ -350,18 +350,125 @@
     nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
     #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
+
+  /* trial_version_2.1 (owner, Oct 9 2026): the menu at the left of the wordmark; the menu, the language switch and the
+     article's back button and switch all one small size (30px; the touch area reaches 7px further); after a while the
+     greeting fades and the language moves up beside the wordmark. The header's height changes ONCE; what moves on
+     screen moves by transform and clip only (no per-frame layout: the card would jitter as its height changed). */
+  header.top { position: relative; isolation: isolate; background: none; padding: 14px 16px; gap: 0; }
+  header.top .hbg { position: absolute; left: 0; right: 0; top: 0; height: 100%; border-radius: 22px; z-index: -1; pointer-events: none; }
+  .wmrow { position: relative; height: 30px; display: flex; align-items: center; justify-content: center; }
+  .wmrow .wordmark { line-height: 30px; padding: 0 40px; border: 0; background: none; color: inherit; cursor: pointer; }
+  .mbtn { position: absolute; left: 0; top: 0; z-index: 1; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
+          background: rgba(18,12,30,0.34); color: #fff; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
+          font-size: 13px; font-weight: 700; transition: background-color 160ms ease; }
+  .mbtn[aria-expanded="true"] { background: rgba(255,255,255,0.28); }
+  .hit { position: relative; } .hit::after { content: ""; position: absolute; inset: -7px; }
+  .gspace { height: 40px; }
+  header.top .greeting { position: absolute; left: 16px; right: 120px; top: 54px; line-height: 30px; height: 30px; white-space: nowrap;
+                         overflow: hidden; text-overflow: ellipsis; transition: opacity 280ms ease; }
+  .hpill { position: absolute; right: 16px; top: 54px; z-index: 1; transition: transform 520ms var(--ease); }
+  header.tidy .gspace { height: 0; }
+  header.tidy .greeting { opacity: 0; pointer-events: none; }
+  header.tidy .hpill { transform: translateY(-40px); }
+  .pill { height: 30px; padding: 2px; font-size: 12.5px; align-items: center; }
+  .pill button, .pill.light button { min-height: 0; height: 24px; padding: 0 9px; }
+  .pill.light { padding: 3px; }
+  #back { width: 30px; height: 30px; } #back svg { width: 15px; height: 15px; }
+  .crow { height: 30px; }
+
+  /* the article: the colour bar travels from the card to under the headline, then its names, then audio and video */
+  .abar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; gap: 2px; margin: 16px 4px 0; transform-origin: left center; }
+  .abar span { flex-basis: 0; min-width: 0; }
+  .abar:empty { display: none; }
+  #sheet:not(.open) .abar { opacity: 0; }
+  #sheet.anim:not(.open) .abar { transition: opacity 110ms ease; }
+  .rise > .key { margin-top: 10px; }
+  #sheet:not(.open) .rise > .key, #sheet:not(.open) .rise > .acts { opacity: 0; }
+  #sheet.anim.open .rise > .key, #sheet.anim.open .rise > .acts { transition: opacity 280ms ease 480ms; }
+  .acts { display: flex; gap: 12px; margin: 22px 4px 6px; }
+  .acts button { width: 52px; height: 52px; border-radius: 50%; border: 0; background: #fff; box-shadow: 0 3px 0 var(--edge); color: #2f3a72;
+                 display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 160ms ease; }
+  .acts button:active { transform: scale(0.94); }
+  .sent.lit .s { background: color-mix(in srgb, currentColor 14%, transparent); border-radius: 3px; }
+
+  /* the menu */
+  .mveil { position: fixed; inset: 0; z-index: 40; display: none; }
+  .mveil.on { display: block; }
+  .mdrop { position: fixed; z-index: 41; width: 272px; background: #fff; border-radius: 18px; box-shadow: 0 14px 40px rgba(22,26,56,0.28);
+           overflow: hidden; opacity: 0; transform: scale(0.96) translateY(-4px); transform-origin: top left; pointer-events: none; color: var(--ink);
+           transition: opacity 180ms ease, transform 220ms var(--ease), height 260ms var(--ease); }
+  .mdrop.on { opacity: 1; transform: none; pointer-events: auto; }
+  .mpanes { display: flex; align-items: flex-start; width: 544px; transition: transform 260ms var(--ease); }
+  .mdrop.sub .mpanes { transform: translateX(-272px); }
+  .mpane { width: 272px; padding: 8px 0; }
+  .mrow { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0 16px; border: 0; background: transparent;
+          font-size: 16px; color: var(--ink); cursor: pointer; text-align: start; }
+  .mrow:active, .mrow:hover { background: #f3f3f6; }
+  .mrow svg { flex: none; } .mrow .grow { flex: 1; min-width: 0; } .mrow small { font-size: 13px; color: var(--muted); }
+  .mme { display: flex; align-items: center; gap: 12px; padding: 10px 16px 12px; border-bottom: 1px solid #eeeef1; margin-bottom: 6px; }
+  .mav { width: 40px; height: 40px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
+  .msep { border-top: 1px solid #eeeef1; margin-top: 6px; padding-top: 6px; }
+
+  /* cards that rise from the bottom: sign in, audio, videos */
+  .bveil { position: fixed; inset: 0; z-index: 50; background: rgba(18,20,40,0.42); opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+  .bveil.on { opacity: 1; pointer-events: auto; }
+  .bsheet { position: fixed; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 51; width: min(540px, calc(100% - 20px));
+            background: #fff; border-radius: 24px; box-shadow: 0 -6px 30px rgba(0,0,0,0.18); transform: translate(-50%, 115%);
+            transition: transform 300ms var(--ease); max-height: 86vh; max-height: 86dvh; display: flex; flex-direction: column; overflow: hidden; color: var(--ink); }
+  .bsheet.on { transform: translate(-50%, 0); }
+  .bgrab { display: flex; justify-content: center; padding-top: 8px; } .bgrab span { width: 40px; height: 5px; border-radius: 999px; background: #d6d7dd; }
+  .bhead { display: flex; justify-content: space-between; align-items: center; padding: 8px 20px 4px; gap: 12px; }
+  .bhead h2 { margin: 0; font-family: var(--head); font-size: 22px; font-weight: 600; }
+  .bx { flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; background: #f1f1f4; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .bbody { padding: 8px 20px 22px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .bbody label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; }
+  .bfield { height: 48px; border: 1px solid #d6d7dd; border-radius: 12px; padding: 0 14px; font: inherit; font-size: 16px; background: #fff; color: var(--ink); }
+  .bfield:focus { outline: 2px solid #46549a; outline-offset: 1px; border-color: transparent; }
+  .bgo { height: 50px; border: 0; border-radius: 14px; color: #fff; font-size: 17px; font-weight: 600; cursor: pointer; }
+  .bgo[disabled] { opacity: 0.6; cursor: default; }
+  .bnote { margin: 0; font-size: 13px; color: var(--muted); }
+  .berr { margin: 0; font-size: 14px; color: #b2251c; }
+  .blink { border: 0; background: none; font-size: 14px; color: #2f3a72; font-weight: 600; cursor: pointer; min-height: 44px; }
+  .bquota { display: flex; align-items: center; gap: 10px; background: #f4f5fb; border-radius: 14px; padding: 12px 14px; font-size: 14px; }
+  .bdot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .bseg { display: flex; gap: 6px; background: #f1f1f4; border-radius: 12px; padding: 4px; }
+  .bseg button { flex: 1; height: 44px; border: 0; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; background: transparent; color: var(--muted); }
+  .bseg button.on { background: #fff; color: #1f2550; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+  .bok { display: flex; gap: 12px; background: #eef6f1; border-radius: 14px; padding: 14px; font-size: 15px; line-height: 1.5; }
+  .bvids { overflow-y: auto; padding: 4px 20px 18px; }
+  .bvid { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid #eeeef1; text-decoration: none; color: var(--ink); }
+  .bvid:first-child { border-top: 0; }
+  .bth { position: relative; width: 132px; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden; background: #2f3a72; }
+  .bth img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .btag { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; }
+  /* the player while an article is read aloud */
+  .player { position: fixed; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 45; width: min(540px, calc(100% - 20px));
+            transform: translate(-50%, 140%); transition: transform 300ms var(--ease); color: #fff; border-radius: 18px; padding: 10px 12px;
+            display: flex; align-items: center; gap: 10px; box-shadow: 0 8px 24px rgba(22,26,56,0.3); }
+  .player.on { transform: translate(-50%, 0); }
+  .player button { flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.16); color: #fff; cursor: pointer;
+                   display: flex; align-items: center; justify-content: center; }
+  .player input { flex: 1; min-width: 0; accent-color: #fff; }
+  .player .tl { font-size: 12px; font-variant-numeric: tabular-nums; min-width: 72px; text-align: end; }
+  @media (prefers-reduced-motion: reduce) {
+    .mdrop, .bsheet, .player, .hpill, header.top .greeting, .bveil { transition: none; }
+  }
 </style>
 </head>
 <body>
 <div id="intro" aria-hidden="true"><img src="mark.png" alt=""></div>
 <div id="app">
-  <header class="top brand">
-    <button type="button" class="wordmark lift" id="wm" aria-label="Nishpaksh: go to the latest story">Nishpaksh</button>
-    <div class="greetrow">
-      <div class="greeting lift" id="greet">Hello.</div>
-      <div class="pill" role="group" aria-label="Language">
-        <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिं</button>
-      </div>
+  <header class="top" id="top">
+    <div class="hbg brand" id="hbg" aria-hidden="true"></div>
+    <div class="wmrow">
+      <button type="button" class="mbtn hit" id="mbtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false"></button>
+      <button type="button" class="wordmark lift" id="wm" aria-label="Nishpaksh: go to the latest story">Nishpaksh</button>
+    </div>
+    <div class="gspace"></div>
+    <div class="greeting lift" id="greet">Hello.</div>
+    <div class="pill hpill" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिं</button>
     </div>
   </header>
   <main id="deck" aria-live="polite">
@@ -373,7 +480,7 @@
   <div class="sheet-scroll" id="sheet-scroll">
     <div class="col">
       <div class="chrome" id="chrome"><div class="crow">
-        <button type="button" class="back" id="back" aria-label="Back to all stories">
+        <button type="button" class="back hit" id="back" aria-label="Back to all stories">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         <div class="wordmark wm-ink" id="wm2">Nishpaksh</div>
@@ -383,6 +490,7 @@
       </div>
       <div class="rail" id="rail" aria-label="Sections of this article"></div><div class="readline"><i id="readfill"></i></div></div>
       <div class="hbox" id="hbox"><div class="layer brand"></div><div class="hpic" id="hpic"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
+<div class="abar" id="abar" aria-hidden="true"></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
       <div class="rise" id="rise"></div>
     </div>
@@ -452,6 +560,8 @@ const BARKEY = {established: "e", corroborated: "e", confirmed: "e", single: "o"
 /* ---------- small helpers ---------- */
 function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+let me = null;                    // the signed-in reader (2.1): kept on this device until they log out
+try { me = JSON.parse(safeGet("np-me") || "null"); } catch (e) { me = null; }
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c])); }
 function safeUrl(u) { try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:"; } catch (e) { return false; } }
 function cls(c) { return VERDICT[c] || "unverified"; }
@@ -466,7 +576,9 @@ function istHour() {
 }
 function greeting() {
   const h = istHour(), g = T[lang].greet;
-  return h >= 4 && h < 12 ? g[0] : h >= 12 && h < 17 ? g[1] : g[2];
+  const base = h >= 4 && h < 12 ? g[0] : h >= 12 && h < 17 ? g[1] : g[2];
+  const n = me && me.name ? me.name.trim().split(/\s+/)[0] : "";
+  return n ? base.replace(/[.।]\s*$/, "") + (lang === "hi" ? `, ${n}।` : `, ${n}.`) : base;
 }
 function ago(ts) {
   const t = T[lang], then = new Date(/Z|[+-]\d\d:?\d\d$/.test(ts) ? ts : ts + "Z");
@@ -624,9 +736,11 @@ function onSettle() {
   const k = Math.round(track.scrollTop / slotHeight());
   if (n > 1 && k === 0) return jumpTo(n - 1);
   if (n > 1 && k === n + 1) return jumpTo(0);
+  const prev = current;
   current = n > 1 ? k - 1 : 0;
   prefetchAround();
   awayChanged();
+  countSwipe(prev);
 }
 // the card leaving tips back and shrinks a little, the next rises from slightly behind; at rest nothing is moved
 const STILL = matchMedia("(prefers-reduced-motion: reduce)");
@@ -730,7 +844,7 @@ function essayHtml(nar, t) {
       ? x.parts.map(p => `<span class="s ${esc(cls(p.class))}">${esc(p.text)}</span>`).join(" ")
       : `<span class="s ${esc(cls(x.class))}">${esc(x.text)}</span>`);
   };
-  const sent = x => body(x) + sup(x);
+  const sent = x => `<span class="sent">${body(x)}${sup(x)}</span>`;   // one per sentence: lit while read aloud (2.1)
   const paras = nar.paragraphs || [], keys = nar.section_keys || [], who = nar.who || [];
   if (!keys.length) return `<div class="paper essay">${paras.map(p => "<p>" + p.map(sent).join(" ") + "</p>").join("")}</div>`;
   // group paragraphs into sections in the order they come
@@ -813,6 +927,7 @@ function articleHtml(row) {
   const thread = (title, list) => list && list.length ? `<div class="sec">${esc(title)}</div><div class="paper"><ul class="thread">${list.map(x =>
       `<li><a href="#/story/${encodeURIComponent(x.story_id)}" data-story="${esc(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul></div>` : "";
   return `<div class="key">${keyHtml(t, nar)}</div>
+    <div class="acts"><button type="button" data-act="audio" aria-label="${esc(t.listen)}">${ICON.audio}</button><button type="button" data-act="video" aria-label="${esc(t.videos)}">${ICON.video}</button></div>
     ${essayHtml(nar, t)}
     ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
     ${thread(t.earlier, p.parents)}${thread(t.next, p.children)}
@@ -863,8 +978,15 @@ function onSheetScroll() {
     r.scrollTo({left: Math.max(0, x), behavior: "smooth"});
   }
 }
+function abarHtml(b) {
+  b = b || {};
+  return ["e", "v", "o", "d", "r", "u"].map(k => b[k] ? `<span style="flex-grow:${b[k]};background:var(--bar-${k})"></span>` : "").join("");
+}
+let sheetRow = null;
 function fillSheet(row, card) {
   const t = T[lang];
+  if (row) { sheetRow = row; $("abar").innerHTML = abarHtml(barCounts(((row.payload_en || {}).narrative || {}).paragraphs)); }
+  else if (card) { sheetRow = null; $("abar").innerHTML = abarHtml(card.bar); }
   setSheetPicture(row ? row.story_id : card && card.id);
   if (row) {
     const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
@@ -873,6 +995,7 @@ function fillSheet(row, card) {
     const n = (p.counts || {}).independent_sources || 0;
     $("sheet-meta").textContent = `${t.sources(n, (p.counts || {}).outlets)} · ${ago(row.updated_at)}`;
     $("rise").innerHTML = articleHtml(row);
+    markSentences(row);
     buildRail();
     document.title = `${head} · Nishpaksh`;
   } else if (card) {
@@ -940,6 +1063,7 @@ async function openStory(id, fromCard, opts = {}) {
   if (r) {
     lastOff = headOffset(fromCard);
     setClip(r); placeOverCard(r, lastOff);
+    flyBar(fromCard);
     void sheet.offsetWidth;                      // start from the card
     sheet.classList.add("anim");
     requestAnimationFrame(() => { setClip(null); sheet.classList.add("open"); });
@@ -1033,7 +1157,16 @@ function inSection(c, k) {
   const cat = c.cat || {};
   return (cat.primary || []).includes(k) || (cat.secondary || []).includes(k) || (cat.tertiary || []).includes(k);
 }
-function sectionCards() { return pool.filter(c => inSection(c, fKey)).slice(0, MAX_CARDS); }
+// the reader's order (2.1, menu > Sort); ties keep the newest first. Not remembered: the front page opens newest first.
+let sortKey = "newest";
+const SORTS = {verified: c => -share(c, "e"), contested: c => -share(c, "d"), developing: c => -share(c, "v"),
+               outlets: c => -(c.n || 0), shortest: c => c.w || 1e9};
+function share(c, k) { const b = c.bar || {}, tot = Object.values(b).reduce((x, y) => x + y, 0) || 1; return (b[k] || 0) / tot; }
+function sectionCards() {
+  const list = pool.filter(c => inSection(c, fKey)), f = SORTS[sortKey];
+  const out = f ? list.map((c, i) => [f(c), i, c]).sort((x, y) => x[0] - y[0] || x[1] - y[1]).map(x => x[2]) : list;
+  return out.slice(0, MAX_CARDS);
+}
 const CHEV = `<svg class="chev" height="12" viewBox="0 0 10 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2L2 7l5 5"/></svg>`;
 function buildBar() {   // the buttons, once per language; layoutBar() moves them
   if (barLang === lang && sbar.childElementCount) { layoutBar(); return; }
@@ -1236,6 +1369,7 @@ async function setLang(l) {
   lang = l; safeSet("np-lang", l);
   const u = new URL(location); u.searchParams.set("lang", l); history.replaceState(history.state, "", u);
   applyLang();
+  paintMe(); closeMenu(); if (sheetKind) renderSheet();
   const keep = cards[current] && cards[current].id;
   if (openId) { const row = await loadStory(openId); if (row) fillSheet(row, null); }
   showDeck(openId || keep);
@@ -1294,14 +1428,418 @@ function revealPage() {
   if (revealed) return;
   revealed = true;
   const root = document.documentElement;
-  if (!root.classList.contains("launch")) { greetSoon(); return; }
+  if (!root.classList.contains("launch")) { greetSoon(); tidyTimer = setTimeout(tidy, 7000); return; }
   // the indigo stays at least half a second, so the splash and the page read as one screen
   setTimeout(() => {
     root.classList.add("ready");
+    tidyTimer = setTimeout(tidy, 7500);
     $("theme").setAttribute("content", "#ECECE9");
     setTimeout(greetSoon, 520);
   }, Math.max(0, 500 - (performance.now() - started)));
 }
+/* ---------- trial_version_2.1 (owner, Oct 9 2026): menu, sign in, sort, audio, videos, the header that tidies ---------- */
+const ICON = {
+  audio: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3z"/><path d="M3 19a2 2 0 0 0 2 2h1v-6H3z"/></svg>',
+  video: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M10 9.2v5.6l4.8-2.8z" fill="currentColor"/></svg>',
+  menu: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  user: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
+  sort: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></svg>',
+  bell: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+  mark: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+  recap: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22h14a2 2 0 0 0 2-2V4H8v16a2 2 0 0 1-4 0v-9h4"/><path d="M12 8h4M12 12h4M12 16h4"/></svg>',
+  search: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  out: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>',
+  chev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a9ca3" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+  back: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
+  tick: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2f3a72" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
+  x: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3d4043" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  ok: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1d6a45" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;margin-top:2px"><path d="M5 12l5 5 9-10"/></svg>',
+  play: '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>',
+  pause: '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>',
+};
+Object.assign(T.en, {
+  listen: "Listen", videos: "Videos", menu: "Menu", signIn: "Sign in", sort: "Sort", following: "Following", later: "Read later",
+  recap: "Daily recap", search: "Search", logout: "Log out", soon: "Coming soon", close: "Close",
+  sorts: {newest: "Newest", verified: "Most established", contested: "Most disputed", developing: "Still developing", outlets: "Most outlets", shortest: "Shortest read"},
+  loginTitle: "Log in", name: "Name", email: "Email", password: "Password", stay: "You stay signed in on this device until you log out.",
+  toLogin: "Already have an account? Log in", toSignup: "New here? Sign in", why: "Sign in so we can tell you when your audio is ready.",
+  errs: {name: "Please give your name.", email: "That email does not look right.", password: "The password needs 6 or more characters.",
+         taken: "This email already has an account. Log in instead.", wrong: "Wrong email or password.", too_many: "Too many new accounts from here. Try again in an hour.",
+         net: "Could not reach Nishpaksh. Check your connection and try again."},
+  audioTitle: "Listen to this article", audioBody: "We will make the audio of this article and notify you when it is ready, usually within an hour.",
+  left: n => `${n} of 1 audio left today`, free: "Audio already made by anyone is free.", langLabel: "Language", make: "Make the audio",
+  play: "Play", none: "You have used today's audio. Ask again tomorrow; audio already made is free.",
+  asked: l => `Asked for, in ${l}. We will notify you when it is ready.`, hindi: "Hindi", english: "English",
+  vnote: "From YouTube, Hindi first. Tap one to watch it on YouTube. Not checked by Nishpaksh.", novids: "No videos for this story yet.",
+  primary: "Primary footage", gone: "This article is no longer live, so it cannot be read aloud.", pause: "Pause", seek: "Position in the audio",
+});
+Object.assign(T.hi, {
+  listen: "सुनें", videos: "वीडियो", menu: "मेन्यू", signIn: "साइन इन", sort: "क्रम", following: "फ़ॉलो", later: "बाद में पढ़ें",
+  recap: "दिन का सार", search: "खोजें", logout: "लॉग आउट", soon: "जल्द आ रहा है", close: "बंद करें",
+  sorts: {newest: "सबसे नई", verified: "सबसे अधिक स्थापित", contested: "सबसे अधिक मतभेद", developing: "अभी विकसित हो रही", outlets: "सबसे अधिक स्रोत", shortest: "सबसे छोटी"},
+  loginTitle: "लॉग इन", name: "नाम", email: "ईमेल", password: "पासवर्ड", stay: "लॉग आउट करने तक आप इस डिवाइस पर साइन इन रहेंगे।",
+  toLogin: "पहले से खाता है? लॉग इन करें", toSignup: "नए हैं? साइन इन करें", why: "साइन इन करें, ताकि ऑडियो तैयार होने पर हम आपको बता सकें।",
+  errs: {name: "कृपया अपना नाम दें।", email: "यह ईमेल सही नहीं लगता।", password: "पासवर्ड में 6 या अधिक अक्षर चाहिए।",
+         taken: "इस ईमेल का खाता पहले से है। लॉग इन करें।", wrong: "ईमेल या पासवर्ड ग़लत है।", too_many: "यहां से बहुत सारे नए खाते बने। एक घंटे बाद कोशिश करें।",
+         net: "निष्पक्ष से जुड़ नहीं सके। इंटरनेट जांचें और फिर कोशिश करें।"},
+  audioTitle: "यह लेख सुनें", audioBody: "हम इस लेख का ऑडियो बनाएंगे और तैयार होने पर आपको सूचना देंगे, आमतौर पर एक घंटे में।",
+  left: n => `आज 1 में से ${n} ऑडियो बाकी`, free: "किसी का भी बनवाया ऑडियो मुफ़्त है।", langLabel: "भाषा", make: "ऑडियो बनाएं",
+  play: "चलाएं", none: "आज का ऑडियो आप ले चुके हैं। कल फिर मांगें; बने हुए ऑडियो मुफ़्त हैं।",
+  asked: l => `${l} में अनुरोध हो गया। तैयार होने पर सूचना मिलेगी।`, hindi: "हिंदी", english: "अंग्रेज़ी",
+  vnote: "YouTube से, हिंदी पहले। देखने के लिए टैप करें, YouTube पर खुलेगा। निष्पक्ष ने इन्हें जांचा नहीं है।", novids: "इस ख़बर के लिए अभी कोई वीडियो नहीं।",
+  primary: "मूल फ़ुटेज", gone: "यह लेख अब लाइव नहीं है, इसलिए इसे पढ़कर नहीं सुनाया जा सकता।", pause: "रोकें", seek: "ऑडियो में स्थान",
+});
+
+/* accounts: the session is kept on this device until the reader logs out (owner); it renews itself */
+const FN = `${SUPABASE_URL}/functions/v1/account`;
+const VAPID = "BFEdVPEJCsATLjoBAx5aVqtwreIZuNadvNy6-5MdcM9blblHfBVHOd0aegFs5NVywQIJlzU4R4oI9fmUVi0PY5U";
+function saveMe() { try { if (me) localStorage.setItem("np-me", JSON.stringify(me)); else localStorage.removeItem("np-me"); } catch (e) { /* private mode */ } }
+async function callFn(action, body = {}, auth = false) {
+  const h = {"Content-Type": "application/json", apikey: SUPABASE_KEY};
+  if (auth) h.Authorization = `Bearer ${await token()}`;
+  let r;
+  try { r = await fetch(FN, {method: "POST", headers: h, body: JSON.stringify({action, ...body})}); } catch (e) { throw new Error("net"); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || "net");
+  return d;
+}
+async function token() {
+  if (!me) throw new Error("login");
+  if ((me.expires_at || 0) * 1000 - Date.now() > 60000) return me.access_token;
+  const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {method: "POST",
+    headers: {apikey: SUPABASE_KEY, "Content-Type": "application/json"}, body: JSON.stringify({refresh_token: me.refresh_token})});
+  if (r.ok) {
+    const d = await r.json();
+    Object.assign(me, {access_token: d.access_token, refresh_token: d.refresh_token, expires_at: d.expires_at});
+    saveMe();
+    return me.access_token;
+  }
+  if (r.status === 400 || r.status === 401) { me = null; saveMe(); paintMe(); }   // the session was ended elsewhere
+  throw new Error("login");
+}
+async function rest(path, opts = {}) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {...opts, headers: {apikey: SUPABASE_KEY, Authorization: `Bearer ${await token()}`,
+    "Content-Type": "application/json", ...(opts.headers || {})}});
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;
+}
+function signedIn(d) {
+  me = {name: d.name, email: d.email, ...d.session};
+  saveMe(); paintMe();
+}
+const mbtn = $("mbtn");
+function paintMe() {
+  mbtn.innerHTML = me ? esc((me.name || "?").trim()[0].toUpperCase()) : ICON.menu;
+  mbtn.setAttribute("aria-label", me ? `${T[lang].menu}: ${me.name}` : T[lang].menu);
+  if (greeted) $("greet").textContent = greeting();
+}
+
+/* the header tidies after a while on the page or two swipes: the greeting fades, the language moves up beside the
+   wordmark. Its height changes once; the indigo is clipped up and the card's top edge and content glide, by clip and
+   transform only, so the card never relayouts while it moves (owner: the card must not jitter). */
+const top_ = $("top"), hbg = $("hbg");
+let tidied = false, swipes = 0, lastScroll = 0, tidyTimer = null;
+function tidy() {
+  if (tidied) return;
+  if (Date.now() - lastScroll < 400 || running) { clearTimeout(tidyTimer); tidyTimer = setTimeout(tidy, 500); return; }   // never mid-swipe
+  tidied = true;
+  const animate = !STILL.matches && !openId && cards.length;
+  const h0 = top_.offsetHeight;
+  const slot = animate ? track.querySelector(`.slot[data-i="${current}"]`) : null;
+  top_.classList.add("tidy");
+  const d = h0 - top_.offsetHeight;                    // one layout change, read at once
+  if (cards.length) jumpTo(current);                   // the card stays snapped (its height grew by d)
+  if (!animate || !slot || d <= 0) return;
+  const card = slot.querySelector("a.card"), parts = card ? [...card.querySelectorAll(":scope > h2, :scope > .text, :scope > .pic")] : [];
+  const ease = "520ms cubic-bezier(.2,.8,.2,1)";
+  hbg.style.height = `${h0}px`;
+  hbg.style.clipPath = "inset(0 0 0 0 round 22px)";
+  slot.style.clipPath = `inset(${d}px 0 0 0 round 24px 24px 0 0)`;
+  parts.forEach(p => { p.style.transform = `translateY(${d}px)`; });
+  void top_.offsetWidth;
+  requestAnimationFrame(() => {
+    hbg.style.transition = `clip-path ${ease}`;
+    hbg.style.clipPath = `inset(0 0 ${d}px 0 round 22px)`;
+    slot.style.transition = `clip-path ${ease}`;
+    slot.style.clipPath = "inset(0 0 0 0 round 24px 24px 0 0)";
+    parts.forEach(p => { p.style.transition = `transform ${ease}`; p.style.transform = "none"; });
+  });
+  setTimeout(() => {
+    for (const el of [hbg, slot, ...parts]) { el.style.transition = ""; el.style.clipPath = ""; el.style.transform = ""; }
+    hbg.style.height = "";
+  }, 620);
+}
+track.addEventListener("scroll", () => { lastScroll = Date.now(); }, {passive: true});
+function countSwipe(prev) { if (prev !== current && ++swipes >= 2) tidy(); }
+
+/* the colour bar travels from the card to under the headline (FLIP: transform only) */
+function flyBar(fromCard) {
+  const cb = fromCard && fromCard.querySelector(".bar"), ab = $("abar");
+  if (!cb || !ab || STILL.matches) return;
+  const a = cb.getBoundingClientRect(), b = ab.getBoundingClientRect();
+  if (!b.width) return;
+  ab.style.transition = "none";
+  ab.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, 0.8)`;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    ab.style.transition = "transform 560ms cubic-bezier(.3,.85,.25,1)";
+    ab.style.transform = "";
+    setTimeout(() => { ab.style.transition = ""; }, 600);
+  }));
+}
+// every sentence of the article knows its place (paragraph.sentence), for the audio's lighting
+function markSentences(row) {
+  const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
+  const flat = ((p.narrative || {}).paragraphs || []).flatMap((para, k) => (para || []).map((_, i) => `${k}.${i}`));
+  $("rise").querySelectorAll(".sent").forEach((el, i) => { if (flat[i]) el.dataset.k = flat[i]; });
+  if (player.key === `${row.story_id}-${lang}`) light(true);
+  if (/[?&]listen=1/.test(location.hash)) setTimeout(() => openAudio(), 500);
+}
+
+/* the menu */
+const mdrop = document.createElement("div"), mveil = document.createElement("div");
+mdrop.className = "mdrop"; mdrop.setAttribute("role", "menu"); mveil.className = "mveil";
+document.body.append(mveil, mdrop);
+function menuHtml() {
+  const t = T[lang];
+  const soon = (icon, label) => `<button type="button" class="mrow" data-m="soon">${ICON[icon]}<span class="grow">${esc(label)}</span>${ICON.chev}</button>`;
+  return `<div class="mpanes"><div class="mpane">
+      ${me ? `<div class="mme"><div class="mav brand">${esc((me.name || "?").trim()[0].toUpperCase())}</div><div style="min-width:0"><div style="font-weight:600">${esc(me.name)}</div><div class="bnote" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(me.email)}</div></div></div>`
+           : `<button type="button" class="mrow" data-m="signin" style="font-weight:600;color:#2f3a72">${ICON.user}<span class="grow">${esc(t.signIn)}</span>${ICON.chev}</button>`}
+      <button type="button" class="mrow" data-m="sort">${ICON.sort}<span class="grow">${esc(t.sort)}</span><small>${esc(t.sorts[sortKey])}</small>${ICON.chev}</button>
+      ${soon("bell", t.following)}${soon("mark", t.later)}${soon("recap", t.recap)}${soon("search", t.search)}
+      ${me ? `<div class="msep"><button type="button" class="mrow" data-m="logout" style="color:#b2251c">${ICON.out}<span class="grow">${esc(t.logout)}</span></button></div>` : ""}
+    </div><div class="mpane">
+      <button type="button" class="mrow" data-m="back" style="font-weight:600">${ICON.back}<span class="grow">${esc(t.sort)}</span></button>
+      ${Object.entries(t.sorts).map(([k, l]) => `<button type="button" class="mrow" data-sort="${k}" style="font-weight:${k === sortKey ? 600 : 400}"><span class="grow">${esc(l)}</span>${k === sortKey ? ICON.tick : ""}</button>`).join("")}
+    </div></div>`;
+}
+function fitMenu() { const p = mdrop.querySelectorAll(".mpane")[mdrop.classList.contains("sub") ? 1 : 0]; if (p) mdrop.style.height = `${p.offsetHeight}px`; }
+function openMenu() {
+  const r = mbtn.getBoundingClientRect();
+  mdrop.style.top = `${r.bottom + 12}px`; mdrop.style.left = `${Math.max(8, r.left - 2)}px`;
+  mdrop.classList.remove("sub"); mdrop.innerHTML = menuHtml(); fitMenu();
+  mdrop.classList.add("on"); mveil.classList.add("on"); mbtn.setAttribute("aria-expanded", "true");
+}
+function closeMenu() { mdrop.classList.remove("on"); mveil.classList.remove("on"); mbtn.setAttribute("aria-expanded", "false"); }
+mbtn.addEventListener("click", () => mdrop.classList.contains("on") ? closeMenu() : openMenu());
+mveil.addEventListener("click", closeMenu);
+mdrop.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.sort) {
+    closeMenu();
+    if (b.dataset.sort !== sortKey) {
+      sortKey = b.dataset.sort;
+      track.classList.add("swap");
+      setTimeout(() => { cards = sectionCards(); renderDeck(null); track.classList.remove("swap"); }, 170);
+    }
+    return;
+  }
+  const m = b.dataset.m;
+  if (m === "sort") { mdrop.classList.add("sub"); fitMenu(); }
+  else if (m === "back") { mdrop.classList.remove("sub"); fitMenu(); }
+  else if (m === "signin") { closeMenu(); openSheet("signin"); }
+  else if (m === "soon") toast(T[lang].soon);
+  else if (m === "logout") { me = null; saveMe(); paintMe(); closeMenu(); }
+});
+
+/* cards from the bottom: sign in, audio, videos */
+const bveil = document.createElement("div"), bsheet = document.createElement("div");
+bveil.className = "bveil"; bsheet.className = "bsheet"; bsheet.setAttribute("role", "dialog"); bsheet.setAttribute("aria-modal", "true");
+document.body.append(bveil, bsheet);
+let sheetKind = null, authMode = "signup", afterSignin = null, audioState = null, chosenLang = null, sheetErr = "", busy = false;
+function openSheet(kind) {
+  sheetKind = kind; sheetErr = "";
+  renderSheet();
+  bveil.classList.add("on");
+  requestAnimationFrame(() => bsheet.classList.add("on"));
+}
+function closeSheet() { bsheet.classList.remove("on"); bveil.classList.remove("on"); sheetKind = null; }
+bveil.addEventListener("click", closeSheet);
+function frame(title, body) {
+  return `<div class="bgrab"><span></span></div><div class="bhead"><h2>${esc(title)}</h2><button type="button" class="bx" data-b="close" aria-label="${esc(T[lang].close)}">${ICON.x}</button></div>${body}`;
+}
+function renderSheet() {
+  const t = T[lang];
+  bsheet.style.maxHeight = "";
+  if (sheetKind === "signin") {
+    const up = authMode === "signup";
+    bsheet.innerHTML = frame(up ? t.signIn : t.loginTitle, `<form class="bbody" id="authform" novalidate>
+      ${afterSignin ? `<p class="bnote" style="font-size:14px">${esc(t.why)}</p>` : ""}
+      ${up ? `<label>${esc(t.name)}<input class="bfield" id="f-name" autocomplete="name" required></label>` : ""}
+      <label>${esc(t.email)}<input class="bfield" id="f-email" type="email" autocomplete="email" inputmode="email" required></label>
+      <label>${esc(t.password)}<input class="bfield" id="f-pass" type="password" autocomplete="${up ? "new-password" : "current-password"}" minlength="6" required></label>
+      ${sheetErr ? `<p class="berr" role="alert">${esc(sheetErr)}</p>` : ""}
+      <button type="submit" class="bgo brand"${busy ? " disabled" : ""}>${esc(up ? t.signIn : t.loginTitle)}</button>
+      <p class="bnote" style="text-align:center">${esc(t.stay)}</p>
+      <button type="button" class="blink" data-b="switch">${esc(up ? t.toLogin : t.toSignup)}</button></form>`);
+  } else if (sheetKind === "audio") {
+    const s = audioState || {}, al = chosenLang || lang, ready = (s.ready || []).includes(al), mine = (s.mine || []).includes(al);
+    let body;
+    if (s.gone) body = `<p style="margin:0;font-size:15px;line-height:1.5">${esc(t.gone)}</p>`;
+    else if (!s.loaded) body = `<p class="bnote">…</p>`;
+    else {
+      const seg = `<div><div style="font-size:14px;font-weight:600;margin-bottom:6px">${esc(t.langLabel)}</div>
+        <div class="bseg" role="group"><button type="button" data-l="hi" class="${al === "hi" ? "on" : ""}" lang="hi">हिंदी</button><button type="button" data-l="en" class="${al === "en" ? "on" : ""}">English</button></div></div>`;
+      if (ready) body = `${seg}<button type="button" class="bgo brand" data-b="play">${esc(t.play)}</button><p class="bnote">${esc(t.free)}</p>`;
+      else if (mine) body = `${seg}<div class="bok">${ICON.ok}<div>${esc(t.asked(al === "hi" ? t.hindi : t.english))}</div></div>`;
+      else if (s.left <= 0) body = `${seg}<p style="margin:0;font-size:15px;line-height:1.5">${esc(t.none)}</p>`;
+      else body = `<p style="margin:0;font-size:15px;line-height:1.5;color:var(--ink-soft)">${esc(t.audioBody)}</p>
+        <div class="bquota"><span class="bdot" style="background:var(--bar-e)"></span><div><b>${esc(t.left(s.left))}</b><div class="bnote">${esc(t.free)}</div></div></div>
+        ${seg}${sheetErr ? `<p class="berr" role="alert">${esc(sheetErr)}</p>` : ""}<button type="button" class="bgo brand" data-b="make"${busy ? " disabled" : ""}>${esc(t.make)}</button>`;
+    }
+    bsheet.innerHTML = frame(t.audioTitle, `<div class="bbody">${body}</div>`);
+  } else if (sheetKind === "video") {
+    const items = (audioState && audioState.videos) || null;
+    bsheet.style.maxHeight = "78vh";
+    bsheet.innerHTML = frame(t.videos, `<div style="padding:0 20px 4px" class="bnote">${esc(t.vnote)}</div>
+      <div class="bvids">${items === null ? `<p class="bnote">…</p>` : !items.length ? `<p style="margin:8px 0 12px">${esc(t.novids)}</p>`
+        : items.map(v => `<a class="bvid" href="https://www.youtube.com/watch?v=${encodeURIComponent(v.id)}" target="_blank" rel="noopener noreferrer">
+          <div class="bth">${safeUrl(v.thumb) ? `<img src="${esc(v.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</div>
+          <div style="min-width:0"><div style="font-size:15px;font-weight:600;line-height:1.3">${esc(v.title)}</div><div class="bnote" style="margin-top:4px">${esc(v.channel)}</div>
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><span class="btag" style="background:${v.lang === "hi" ? "#fbefe0" : "#e9ecfb"};color:${v.lang === "hi" ? "#8a4b00" : "#2f3a72"}">${esc(v.lang === "hi" ? t.hindi : t.english)}</span>
+          ${v.primary ? `<span class="btag" style="background:#e8f3ee;color:#1d6a45">${esc(t.primary)}</span>` : ""}</div></div></a>`).join("")}</div>`);
+  }
+}
+bsheet.addEventListener("submit", async e => {
+  e.preventDefault();
+  if (busy) return;
+  const t = T[lang], v = id => (($(id) || {}).value || "").trim();
+  busy = true; sheetErr = "";
+  const vals = {name: v("f-name"), email: v("f-email"), password: ($("f-pass") || {}).value || ""};
+  try {
+    const d = authMode === "signup" ? await callFn("signup", {...vals, lang}) : await callFn("login", {email: vals.email, password: vals.password});
+    signedIn(d);
+    busy = false;
+    if (afterSignin) { const f = afterSignin; afterSignin = null; f(); } else closeSheet();
+  } catch (err) {
+    busy = false; sheetErr = t.errs[err.message] || t.errs.net;
+    if (err.message === "taken") authMode = "login";
+    renderSheet();
+    const keep = $("f-email"); if (keep) keep.value = vals.email;
+  }
+});
+bsheet.addEventListener("click", async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.l) { chosenLang = b.dataset.l; sheetErr = ""; renderSheet(); return; }
+  const a = b.dataset.b;
+  if (a === "close") closeSheet();
+  else if (a === "switch") { authMode = authMode === "signup" ? "login" : "signup"; sheetErr = ""; renderSheet(); }
+  else if (a === "play") { closeSheet(); playAudio(`${audioState.id}-${chosenLang || lang}`); }
+  else if (a === "make") makeAudio();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && (sheetKind || mdrop.classList.contains("on"))) { e.stopPropagation(); closeMenu(); closeSheet(); } }, true);
+
+/* audio: one new request a day per reader; audio already made is free (owner) */
+const istDayStart = () => { const ist = new Date(Date.now() + 5.5 * 3600e3); ist.setUTCHours(0, 0, 0, 0); return new Date(ist.getTime() - 5.5 * 3600e3).toISOString(); };
+async function openAudio() {
+  const id = openId;
+  if (!id) return;
+  if (!me) { afterSignin = openAudio; authMode = "signup"; openSheet("signin"); return; }
+  audioState = {id, loaded: false}; chosenLang = null; openSheet("audio");
+  try {
+    const [files, mineToday, mineHere] = await Promise.all([
+      api(`audio_files?select=lang&key=in.(${id}-en,${id}-hi)`),
+      rest(`audio_requests?select=id&requested_at=gte.${encodeURIComponent(istDayStart())}`),
+      rest(`audio_requests?select=lang&story_id=eq.${encodeURIComponent(id)}&status=eq.queued`)]);
+    audioState = {id, loaded: true, ready: files.map(f => f.lang), left: Math.max(0, 1 - mineToday.length), mine: mineHere.map(r => r.lang)};
+  } catch (e) { audioState = {id, loaded: true, ready: [], left: 1, mine: []}; if (e.message === "login") { afterSignin = openAudio; openSheet("signin"); return; } }
+  if (sheetKind === "audio" && openId === id) renderSheet();
+}
+async function makeAudio() {
+  const id = audioState.id, l = chosenLang || lang, perm = askPermission();   // asked inside the tap (Safari needs that)
+  busy = true; renderSheet();
+  try {
+    const r = await rest("rpc/request_audio", {method: "POST", body: JSON.stringify({p_story: Number(id), p_lang: l})});
+    busy = false;
+    if (r.status === "ready") { audioState.ready.push(l); renderSheet(); return; }
+    if (r.status === "gone") audioState.gone = true;
+    else if (r.status === "limit") audioState.left = 0;
+    else { audioState.mine.push(l); audioState.left = Math.max(0, audioState.left - 1); subscribePush(perm); }
+    renderSheet();
+  } catch (e) { busy = false; sheetErr = T[lang].errs.net; renderSheet(); }
+}
+function askPermission() {
+  if (!("Notification" in window)) return Promise.resolve("unsupported");
+  if (Notification.permission !== "default") return Promise.resolve(Notification.permission);
+  try { return Notification.requestPermission(); } catch (e) { return Promise.resolve("default"); }
+}
+async function subscribePush(permP) {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  if ((await permP) !== "granted") return;
+  try {
+    const raw = atob(VAPID.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - VAPID.length % 4) % 4));
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) ||
+      await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, c => c.charCodeAt(0))});
+    const j = sub.toJSON(), uid = JSON.parse(atob(me.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sub;
+    await rest("push_subscriptions?on_conflict=endpoint", {method: "POST", headers: {Prefer: "resolution=merge-duplicates"},
+      body: JSON.stringify({endpoint: j.endpoint, reader: uid, p256dh: j.keys.p256dh, auth: j.keys.auth, lang})});
+  } catch (e) { /* the notification still waits in the database */ }
+}
+
+/* videos: YouTube's order, Hindi first, the two languages in turn (owner) */
+async function openVideos() {
+  const id = openId;
+  if (!id) return;
+  audioState = {...(audioState || {}), videos: null};
+  openSheet("video");
+  let items = [];
+  try { const rows = await api(`videos?select=items&story_id=eq.${encodeURIComponent(id)}`); items = (rows[0] && rows[0].items) || []; } catch (e) { items = []; }
+  const hi = items.filter(v => v.lang === "hi"), en = items.filter(v => v.lang !== "hi"), out = [];
+  for (let k = 0; k < Math.max(hi.length, en.length); k++) { if (hi[k]) out.push(hi[k]); if (en[k]) out.push(en[k]); }
+  audioState.videos = out;
+  if (sheetKind === "video" && openId === id) renderSheet();
+}
+$("rise").addEventListener("click", e => {
+  const b = e.target.closest(".acts button"); if (!b) return;
+  if (b.dataset.act === "audio") openAudio(); else openVideos();
+});
+
+/* the player: each sentence lit in its own colour while it is read (owner: highlighting only) */
+const player = {el: null, key: null, units: [], on: null};
+const pbar = document.createElement("div");
+pbar.className = "player brand";
+pbar.innerHTML = `<button type="button" id="p-pp">${ICON.pause}</button><input type="range" id="p-seek" min="0" max="1000" value="0"><span class="tl" id="p-tl">0:00</span><button type="button" id="p-x">${ICON.x.replace('#3d4043', 'currentColor')}</button>`;
+document.body.append(pbar);
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+async function playAudio(key) {
+  if (!player.el) {
+    player.el = new Audio(); player.el.preload = "auto";
+    player.el.addEventListener("timeupdate", () => light(false));
+    player.el.addEventListener("play", () => { $("p-pp").innerHTML = ICON.pause; $("p-pp").setAttribute("aria-label", T[lang].pause); });
+    player.el.addEventListener("pause", () => { $("p-pp").innerHTML = ICON.play; $("p-pp").setAttribute("aria-label", T[lang].play); });
+    player.el.addEventListener("ended", unlight);
+  }
+  player.key = key; player.units = [];
+  try { player.units = (await getJSON(`audio/${key}.json`)).units || []; } catch (e) { /* plays without the lighting */ }
+  player.el.src = `audio/${key}.m4a`;
+  $("p-seek").setAttribute("aria-label", T[lang].seek); $("p-x").setAttribute("aria-label", T[lang].close);
+  pbar.classList.add("on");
+  player.el.play().catch(() => {});
+}
+$("p-pp").addEventListener("click", () => { const a = player.el; if (a) a.paused ? a.play() : a.pause(); });
+$("p-x").addEventListener("click", () => { if (player.el) player.el.pause(); pbar.classList.remove("on"); unlight(); player.key = null; });
+$("p-seek").addEventListener("input", e => { const a = player.el; if (a && a.duration) a.currentTime = a.duration * e.target.value / 1000; });
+function unlight() { document.querySelectorAll(".sent.lit").forEach(x => x.classList.remove("lit")); player.on = null; }
+function light(force) {
+  const a = player.el;
+  if (!a || !player.key) return;
+  if (a.duration) { $("p-seek").value = String(Math.round(1000 * a.currentTime / a.duration)); $("p-tl").textContent = `${fmt(a.currentTime)} / ${fmt(a.duration)}`; }
+  const us = player.units;
+  if (!us.length) return;
+  let lo = 0, hi = us.length - 1, k = 0;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (us[m].t <= a.currentTime) { k = m; lo = m + 1; } else hi = m - 1; }
+  const u = us[k], tag = `${u.p}.${u.s}`;
+  if (tag === player.on && !force) return;
+  unlight(); player.on = tag;
+  const [sid, l] = player.key.split("-");
+  if (openId !== sid || lang !== l || u.s < 0) return;
+  const el = $("rise").querySelector(`.sent[data-k="${tag}"]`);
+  if (el) { el.classList.add("lit"); if (!a.paused) el.scrollIntoView({block: "center", behavior: STILL.matches ? "auto" : "smooth"}); }
+}
+
+paintMe();
 applyLang();
 track.innerHTML = loadingHtml();
 showDeck().finally(revealPage);

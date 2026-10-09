@@ -191,7 +191,7 @@ def test_videos_are_fetched_once_for_new_articles(tmp_path):
         asked.append(params["relevanceLanguage"])
         return R(params["q"])
     assert videos.fetch_new(s, key="k", get=get) == [500]
-    assert asked == ["en", "hi"]
+    assert asked == ["hi", "en"]
     from nishpaksh.db import videos as vt
     items = s.one(select(vt))["items"]
     assert items[0]["title"] == "A & B" and items[0]["primary"] is True
