@@ -843,7 +843,8 @@ function layoutBar() {
   const away = isAway();
   const selRow = sub ? 1 + prims.length + deep.indexOf(sub) : level ? prims.indexOf(level) + 1 : 0;
   const selJ = sub ? (ter ? tree3()[sub].indexOf(ter) + 1 : 0) : level && sec ? s.tree[level].indexOf(sec) + 1 : 0;
-  const widths = (row, i, fs, room) => row.map((l, j) => textWidth(l, fs) + (i > 0 && j === 0 ? CH : 0) + (room && away && i === selRow && j === selJ ? 16 : 0));
+  // a short label ("HR", "All") still gets a pill, not a bubble: every label counts at least 3em wide
+  const widths = (row, i, fs, room) => row.map((l, j) => Math.max(textWidth(l, fs), 3 * fs) + (i > 0 && j === 0 ? CH : 0) + (room && away && i === selRow && j === selJ ? 16 : 0));
   let fs = lang === "hi" ? 13.5 : 12.5;
   rows.forEach((row, i) => { const t = widths(row, i, fs).reduce((a, b) => a + b, 0); if (t + 6 * MINPAD > W) fs = Math.min(fs, fs * (W - 6 * MINPAD) / t); });
   fs = Math.max(9.5, Math.floor(fs * 4) / 4);
