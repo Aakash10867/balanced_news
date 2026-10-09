@@ -45,6 +45,32 @@ def is_primary(channel: str) -> bool:
     return any(p in c for p in PRIMARY)
 
 
+STOP = set("""the a an and or of to in on at for with from by as is are was were be been has have had will would after before
+over under into about than this that these those its his her their new says said news live video latest update updates
+today full what why how who when where watch big breaking report reports की के का में से पर और है हैं को ने भी एक यह
+वह लिए साथ बाद तक कर किया गया गई गए हुआ हुई रहा रही रहे ख़बर खबर""".split())
+
+
+def _roots(text: str) -> set[str]:
+    """Root words of a title: lower case, Latin words cut to 5 letters ("margins" = "margin" = "margi"), Devanagari
+    words whole; small words and news words left out."""
+    out = set()
+    for w in re.findall(r"[A-Za-z]+|[\u0900-\u097f]+", text or ""):
+        w = w.lower()
+        if w in STOP or (w.isascii() and len(w) < 3):
+            continue
+        out.add(w[:5] if w.isascii() else w)
+    return out
+
+
+def relevant(title: str, headlines: list[str]) -> bool:
+    """A video is about the story only if its title shares two root words with a headline (English or Hindi):
+    YouTube returns whatever it has when nothing matches (Oct 10 2026: an audiobook and a Chinese drama for a US
+    sanctions story)."""
+    t = _roots(title)
+    return any(len(t & _roots(h)) >= 2 for h in headlines if h)
+
+
 def pick(lists: list[list[dict]], keep: int = KEEP, per_channel: int = PER_CHANNEL) -> list[dict]:
     """Take the lists in turn, each in YouTube's order; a channel at most `per_channel` times; one entry per video."""
     out, seen, per = [], set(), {}
@@ -120,6 +146,8 @@ def fetch_new(store: Store, limit: int = 6, key: str | None = None, get=None) ->
             store.quota_add("youtube-search", quota_day(), 100, 0)
         if any(x is None for x in lists):
             continue                            # tried again next run
+        heads = [r["headline_en"], r["headline_hi"]]
+        lists = [[v for v in lst if relevant(v["title"], heads)] for lst in lists]
         store.exec(insert(videos).values(story_id=r["story_id"], fetched_at=utcnow(), items=pick(lists)))
         done.append(r["story_id"])
     return done

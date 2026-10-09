@@ -273,3 +273,11 @@ def test_brief_problems():
     assert problem("Reportedly, the bridge fell.", "The bridge fell.").startswith("hedge")
     assert problem("Modi met Trump.", "The PM met the US President.").startswith("a name")
     assert problem("The RBI held rates.", "The Reserve Bank of India held rates.") is None
+
+
+def test_videos_must_share_two_words_with_a_headline():
+    heads = ["New 30 percent margin cap to lower cancer drug prices", "कैंसर की दवाओं की कीमतों के लिए 30 प्रतिशत मार्जिन कैप"]
+    assert videos.relevant("Cancer Drug Prices May Fall As Government Caps Trade Margins At 30%", heads)
+    assert videos.relevant("कैंसर की दवाओं का ट्रेड मार्जिन 30% तक सीमित", heads)
+    assert not videos.relevant("The Medicare Advantage Letter That Could RUIN Your Retirement", heads)
+    assert not videos.relevant("Anne of Green Gables | Full English Audiobook", heads)

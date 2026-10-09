@@ -516,7 +516,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     `audio` branch (force-pushed, live articles and 7 days of recaps), published under /audio/ by audio.yml and site.yml.
   - **Videos** (`videos.py`, desk): once per new article, two YouTube searches (English and Hindi headline), YouTube's own
     order (owner), max 2 per channel, uploaded after the story's first report, "Primary footage" badge, "not checked"
-    note. Needs the `YOUTUBE_API_KEY` secret (owner adds it after the design pass); without it nothing runs.
+    note. A video is kept only if its title shares two root words with the English or Hindi headline (`videos.relevant`;
+    Oct 10 2026, first run: YouTube filled empty searches with audiobooks, Chinese dramas and Medicare ads). Needs the `YOUTUBE_API_KEY` secret (owner adds it after the design pass); without it nothing runs.
   - **On the site: trial_version_2.1 (owner, Oct 9 2026; designed on the canvas, approved, built into site/index.html).**
     A plain interface published earlier without his asking was taken back the same night: never publish site/UI changes
     he has not approved. 2.1: a 30px menu button (the reader's initial once signed in) at the LEFT of the wordmark; the
