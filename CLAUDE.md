@@ -411,7 +411,9 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   opacity only** (Oct 9 2026, jitter on two Android phones): the headline box keeps its open layout, the headline and
   the picture are moved over the card's (`placeOverCard`: --tx/--ty, --pt scale covering the card's picture, --hw = the
   card headline's width so the lines break the same); never animate padding, width, height, top or left there (one
-  relayout per frame: 33-40 per animation before, 3-9 after).
+  relayout per frame: 33-40 per animation before, 3-9 after). The article's picture is laid out at its whole cover size
+  (`fitPic`) and gets its own transform (`--it`) so it is at exactly the card picture's zoom and crop at both ends; it
+  had been over-zoomed while closing and snapped back at the end (owner, Oct 10 2026).
 - **No internal notes for readers (owner, Oct 8 2026):** the article page no longer shows "Nothing in this
   story is confirmed by independent sources yet" (read as "this story is fake"; the colours already say which
   parts are supported) nor "Which outlets form different perspectives is not yet known" (internal state, not

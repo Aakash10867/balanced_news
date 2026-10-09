@@ -174,8 +174,13 @@
                 opacity: 0; display: none; transform-origin: 0 0; transform: var(--pt, none); }
   .hbox.has-pic .hpic { display: block; }
   .hbox.morph .hpic { opacity: 1; }
-  .hbox .hpic img { width: 100%; height: 100%; object-fit: cover; display: block;
-                    -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
+  /* the image is laid out at its whole cover size (fitPic) and moved by its own transform, so on the way into and out
+     of the card it is at exactly the card's zoom and crop: no zoom-in then snap (owner, Oct 10 2026) */
+  .hbox .hpic { -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
+  .hbox .hpic img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block;
+                    transform-origin: 50% 50%; transform: var(--it, none); }
+  #sheet.anim .hbox .hpic img { transition: transform 460ms var(--ease); will-change: transform; }
+  #sheet.open .hbox .hpic img { transform: none; }
   .hbox .hpic .hwash { position: absolute; inset: 0; pointer-events: none; opacity: 1;
                        background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
   .hbox .hpic .pic-credit { opacity: 0; }
@@ -348,7 +353,7 @@
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 
   /* trial_version_2.1 (owner, Oct 9 2026): the menu at the left of the wordmark; the menu, the language switch and the
@@ -1005,6 +1010,7 @@ function setSheetPicture(id) {
     (safeUrl(pic.href) ? `<a class="pic-credit" href="${esc(pic.href)}" target="_blank" rel="noopener noreferrer">${esc(T[lang].photo)}: ${esc(pic.by || "")}</a>`
                        : `<span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span>`) : "";
   const img = box.querySelector("img");
+  if (img) { if (img.complete) fitPic(); else img.addEventListener("load", fitPic, {once: true}); }
   if (img) img.addEventListener("error", () => { hbox.classList.remove("has-pic"); box.innerHTML = ""; }, {once: true});
 }
 // the article's sections as a rail under the top: the one being read is filled, a tap goes there
@@ -1086,6 +1092,15 @@ function headOffset(cardEl) {   // where the card's headline sits inside the car
 let lastOff = {x: 22, y: 24, w: 0, pic: null};
 // the article's headline and picture start (or end) exactly over the card's, moved there by transform only: the box
 // itself never changes size, so a phone only slides two finished layers (owner, Oct 9 2026: jitter on Android)
+// the article's picture laid out at its whole cover size inside the 200px box (centred, the box clips it), so the
+// image itself can be scaled to the card's crop; only set once per picture, never animated
+function fitPic() {
+  const img = $("hpic").querySelector("img"), W = hbox.getBoundingClientRect().width;
+  if (!img || !img.naturalWidth || !W) return null;
+  const iw = img.naturalWidth, ih = img.naturalHeight, s = Math.max(W / iw, 200 / ih), w = iw * s, h = ih * s;
+  Object.assign(img.style, {width: `${w}px`, height: `${h}px`, left: `${(W - w) / 2}px`, top: `${(200 - h) / 2}px`, objectFit: "fill"});
+  return {iw, ih, s, W};
+}
 function placeOverCard(r, off = lastOff) {
   const st = hbox.style, h1 = $("sheet-h");
   st.setProperty("--hw", off.w ? `${off.w}px` : "none");          // the same width, so the same line breaks
@@ -1100,7 +1115,13 @@ function placeOverCard(r, off = lastOff) {
     const k = Math.max(P.w / H.width, P.h / 200);                  // covers the card's picture, like object-fit
     const tx = P.left + (P.w - H.width * k) / 2 - H.left, ty = P.top - H.top;
     st.setProperty("--pt", `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${k.toFixed(4)})`);
-  }
+    // inside the moved box, the image at the card's own zoom (object-fit: cover of the card's picture), centred on it
+    const f = fitPic();
+    if (f) {
+      const m = Math.max(P.w / f.iw, P.h / f.ih) / (k * f.s), dy = P.h / (2 * k) - 100;
+      st.setProperty("--it", `translate(0px, ${dy.toFixed(1)}px) scale(${m.toFixed(4)})`);
+    } else st.setProperty("--it", "none");
+  } else st.setProperty("--it", "none");
 }
 async function openStory(id, fromCard, opts = {}) {
   if (closing) { clearTimeout(closing); closing = null; }
