@@ -281,3 +281,9 @@ def test_videos_must_share_two_words_with_a_headline():
     assert videos.relevant("कैंसर की दवाओं का ट्रेड मार्जिन 30% तक सीमित", heads)
     assert not videos.relevant("The Medicare Advantage Letter That Could RUIN Your Retirement", heads)
     assert not videos.relevant("Anne of Green Gables | Full English Audiobook", heads)
+
+
+def test_a_videos_language_is_read_from_its_title():
+    assert videos.title_lang("Delhi Braces For CJP Protest 2.0 Against CEC Gyanesh Kumar") == "en"
+    assert videos.title_lang("हिमाश्री बोरो के साथ ट्रेन में आखिर क्या हुआ?") == "hi"
+    assert videos.title_lang("Himashree Boro Case: Train Mein Kya Hua Tha?") == "hi"

@@ -513,6 +513,7 @@
   .tog { width: 46px; height: 28px; border-radius: 999px; border: 0; cursor: pointer; position: relative; background: #c9cbd3; transition: background 180ms ease; flex: none; }
   .tog i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: transform 180ms ease; }
   .tog[aria-checked="true"] { background: #2f8a5b; } .tog[aria-checked="true"] i { transform: translateX(18px); }
+  .acts button.waiting { opacity: .6; transition: opacity .2s; }
   .rbrief { margin: 6px 2px 0; font-size: 16px; line-height: 1.6; }
   .rbrief .rs { cursor: pointer; }
   .rbrief .rs:active { opacity: .6; }
@@ -1136,6 +1137,7 @@ async function openStory(id, fromCard, opts = {}) {
   const quick = await Promise.race([pending, new Promise(r => setTimeout(() => r(undefined), 120))]);
   if (openId !== id) return;
   fillSheet(quick || null, card);
+  prefetch(id);                                  // the audio and video cards open complete
   const r = fromCard && !opts.instant ? fromCard.getBoundingClientRect() : null;
   if (!opts.noHistory) {
     const u = `#/story/${encodeURIComponent(id)}`;
@@ -1873,19 +1875,44 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && (sheetKind
 
 /* audio: one new request a day per reader; audio already made is free (owner) */
 const istDayStart = () => { const ist = new Date(Date.now() + 5.5 * 3600e3); ist.setUTCHours(0, 0, 0, 0); return new Date(ist.getTime() - 5.5 * 3600e3).toISOString(); };
-async function openAudio() {
+/* the audio and video cards open complete (owner, Oct 10 2026: they opened, then the options or videos jumped in):
+   their data is fetched when the article opens, and a tap waits for it before the card slides up */
+const pre = {id: null, audio: null, videos: null};
+function audioData(id) {
+  return Promise.all([
+    api(`audio_files?select=lang&key=in.(${id}-en,${id}-hi)`),
+    rest(`audio_requests?select=id&requested_at=gte.${encodeURIComponent(istDayStart())}`),
+    rest(`audio_requests?select=lang&story_id=eq.${encodeURIComponent(id)}&status=eq.queued`)])
+    .then(([files, mineToday, mineHere]) => ({id, loaded: true, ready: files.map(f => f.lang), left: Math.max(0, 1 - mineToday.length), mine: mineHere.map(r => r.lang)}))
+    .catch(e => e.message === "login" ? {id, login: true} : {id, loaded: true, ready: [], left: 1, mine: []});
+}
+const vlang = v => /[\u0900-\u097f]/.test(v.title || "") || HINGLISH.test(v.title || "") ? "hi" : "en";
+const HINGLISH = /\b(kya|hai|hain|mein|kaise|kyun|kyon|nahi|nahin|aur|ki|ka|ke|ko|se|tha|thi|hua|hui|kab|kaun|bada|badi)\b.*\b(kya|hai|hain|mein|kaise|kyun|kyon|nahi|nahin|aur|ki|ka|ke|ko|se|tha|thi|hua|hui|kab|kaun|bada|badi)\b/i;
+function videoData(id) {
+  return api(`videos?select=items&story_id=eq.${encodeURIComponent(id)}`).then(rows => {
+    const items = ((rows[0] && rows[0].items) || []).map(v => ({...v, lang: vlang(v)}));
+    const hi = items.filter(v => v.lang === "hi"), en = items.filter(v => v.lang !== "hi"), out = [];
+    for (let k = 0; k < Math.max(hi.length, en.length); k++) { if (hi[k]) out.push(hi[k]); if (en[k]) out.push(en[k]); }
+    return out;
+  }).catch(() => []);
+}
+function prefetch(id) {
+  pre.id = id; pre.videos = videoData(id); pre.audio = me ? audioData(id) : null;
+}
+async function waitFor(btn, p) {
+  if (btn) btn.classList.add("waiting");
+  try { return await p; } finally { if (btn) btn.classList.remove("waiting"); }
+}
+async function openAudio(btn) {
   const id = openId;
   if (!id) return;
-  if (!me) { afterSignin = openAudio; authMode = "signup"; openSheet("signin"); return; }
-  audioState = {id, loaded: false}; chosenLang = null; openSheet("audio");
-  try {
-    const [files, mineToday, mineHere] = await Promise.all([
-      api(`audio_files?select=lang&key=in.(${id}-en,${id}-hi)`),
-      rest(`audio_requests?select=id&requested_at=gte.${encodeURIComponent(istDayStart())}`),
-      rest(`audio_requests?select=lang&story_id=eq.${encodeURIComponent(id)}&status=eq.queued`)]);
-    audioState = {id, loaded: true, ready: files.map(f => f.lang), left: Math.max(0, 1 - mineToday.length), mine: mineHere.map(r => r.lang)};
-  } catch (e) { audioState = {id, loaded: true, ready: [], left: 1, mine: []}; if (e.message === "login") { afterSignin = openAudio; openSheet("signin"); return; } }
-  if (sheetKind === "audio" && openId === id) renderSheet();
+  if (!me) { afterSignin = () => { prefetch(id); openAudio(); }; authMode = "signup"; openSheet("signin"); return; }
+  if (pre.id !== id || !pre.audio) { pre.id = id; pre.audio = audioData(id); }
+  const st = await waitFor(btn, pre.audio);
+  pre.audio = null;                      // asked again next time: a request may have been made since
+  if (openId !== id) return;
+  if (st.login) { afterSignin = openAudio; openSheet("signin"); return; }
+  audioState = st; chosenLang = null; openSheet("audio");
 }
 async function makeAudio() {
   const id = audioState.id, l = chosenLang || lang, perm = askPermission();   // asked inside the tap (Safari needs that)
@@ -1920,21 +1947,18 @@ async function subscribePush(permP) {
 }
 
 /* videos: YouTube's order, Hindi first, the two languages in turn (owner) */
-async function openVideos() {
+async function openVideos(btn) {
   const id = openId;
   if (!id) return;
-  audioState = {...(audioState || {}), videos: null};
+  if (pre.id !== id || !pre.videos) { pre.id = id; pre.videos = videoData(id); }
+  const out = await waitFor(btn, pre.videos);
+  if (openId !== id) return;
+  audioState = {...(audioState || {}), videos: out};
   openSheet("video");
-  let items = [];
-  try { const rows = await api(`videos?select=items&story_id=eq.${encodeURIComponent(id)}`); items = (rows[0] && rows[0].items) || []; } catch (e) { items = []; }
-  const hi = items.filter(v => v.lang === "hi"), en = items.filter(v => v.lang !== "hi"), out = [];
-  for (let k = 0; k < Math.max(hi.length, en.length); k++) { if (hi[k]) out.push(hi[k]); if (en[k]) out.push(en[k]); }
-  audioState.videos = out;
-  if (sheetKind === "video" && openId === id) renderSheet();
 }
 $("rise").addEventListener("click", e => {
   const b = e.target.closest(".acts button"); if (!b) return;
-  if (b.dataset.act === "audio") openAudio(); else openVideos();
+  if (b.dataset.act === "audio") openAudio(b); else openVideos(b);
 });
 
 /* the player: each sentence lit in its own colour while it is read (owner: highlighting only) */

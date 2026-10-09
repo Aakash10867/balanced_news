@@ -517,7 +517,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   - **Videos** (`videos.py`, desk): once per new article, two YouTube searches (English and Hindi headline), YouTube's own
     order (owner), max 2 per channel, uploaded after the story's first report, "Primary footage" badge, "not checked"
     note. A video is kept only if its title shares two root words with the English or Hindi headline (`videos.relevant`;
-    Oct 10 2026, first run: YouTube filled empty searches with audiobooks, Chinese dramas and Medicare ads). Needs the `YOUTUBE_API_KEY` secret (owner adds it after the design pass); without it nothing runs.
+    Oct 10 2026, first run: YouTube filled empty searches with audiobooks, Chinese dramas and Medicare ads). A video's
+    language is read from its TITLE (`videos.title_lang`, site `vlang`: Devanagari or two romanised Hindi words = Hindi),
+    not from the search that found it. The audio and video cards open complete: their data is fetched when the
+    article opens (`prefetch`) and a tap waits for it before the card slides up (owner, Oct 10 2026). Needs the `YOUTUBE_API_KEY` secret (owner adds it after the design pass); without it nothing runs.
   - **On the site: trial_version_2.1 (owner, Oct 9 2026; designed on the canvas, approved, built into site/index.html).**
     A plain interface published earlier without his asking was taken back the same night: never publish site/UI changes
     he has not approved. 2.1: a 30px menu button (the reader's initial once signed in) at the LEFT of the wordmark; the

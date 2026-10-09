@@ -40,6 +40,18 @@ PRIMARY = ("sansad tv", "pib india", "supreme court of india", "narendra modi", 
            "rajya sabha", "government of", "chief minister", "high court")
 
 
+HINGLISH = {"kya", "hai", "hain", "mein", "kaise", "kyun", "kyon", "nahi", "nahin", "aur", "ki", "ka", "ke", "ko", "se",
+            "tha", "thi", "hua", "hui", "kab", "kaun", "bada", "badi"}
+
+
+def title_lang(title: str) -> str:
+    """The video's language from its title, not from the search that found it (Oct 10 2026: an English India Today
+    video found by the Hindi search was shown as Hindi): Devanagari, or two romanised Hindi words, = Hindi."""
+    if re.search(r"[\u0900-\u097f]", title or ""):
+        return "hi"
+    return "hi" if len([w for w in re.findall(r"[a-z]+", (title or "").lower()) if w in HINGLISH]) >= 2 else "en"
+
+
 def is_primary(channel: str) -> bool:
     c = (channel or "").lower()
     return any(p in c for p in PRIMARY)
@@ -105,7 +117,8 @@ def _search(key: str, q: str, after: dt.datetime, lang: str, get=None) -> list[d
         thumbs = sn.get("thumbnails") or {}
         thumb = (thumbs.get("medium") or thumbs.get("high") or thumbs.get("default") or {}).get("url")
         out.append({"id": vid, "title": html.unescape(sn.get("title") or ""), "channel": html.unescape(sn.get("channelTitle") or ""),
-                    "channelId": sn.get("channelId"), "at": sn.get("publishedAt"), "thumb": thumb, "lang": lang,
+                    "channelId": sn.get("channelId"), "at": sn.get("publishedAt"), "thumb": thumb,
+                    "lang": title_lang(html.unescape(sn.get("title") or "")),
                     "primary": is_primary(sn.get("channelTitle") or "")})
     return out
 
