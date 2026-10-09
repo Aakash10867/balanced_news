@@ -226,11 +226,11 @@
               color: rgba(255,255,255,0.9); transition: background-color 220ms ease, color 220ms ease, transform 120ms ease; }
   .sb:active .face { transform: scale(0.96); }
   .sb.empty .face { color: rgba(255,255,255,0.45); }
-  .sb.back .face { background: rgba(255,255,255,0.16); color: #fff; }
+  .sb.isback .face { background: rgba(255,255,255,0.16); color: #fff; }
   .sb[aria-pressed="true"] .face { background: #fff; color: #1f2550; font-weight: 700; }
   .sb .lbl { display: block; line-height: 1; }
   .sb .chev { display: block; flex: none; width: 0; opacity: 0; overflow: hidden; transition: width 380ms var(--ease), opacity 260ms ease; }
-  .sb.back .chev { width: 10px; opacity: 1; }
+  .sb.isback .chev { width: 10px; opacity: 1; }
   .track { transition: opacity 170ms ease, transform 260ms var(--ease); }
   .track.swap { opacity: 0; transform: translateY(8px); }
   .state .empty-sec { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 290px; }
@@ -822,7 +822,7 @@ function layoutBar() {
     }
     b.style.left = pos[0] + "%"; b.style.width = pos[1] + "%";
     b.style.setProperty("--d", (show ? delay : 0) + "ms");
-    b.classList.toggle("hide", !show); b.classList.toggle("back", back);
+    b.classList.toggle("hide", !show); b.classList.toggle("isback", back);
     b.classList.toggle("empty", kind !== "all" && !back && count(key) === 0);
     b.setAttribute("aria-pressed", String(on)); b.tabIndex = show ? 0 : -1;
     if (show) b.removeAttribute("aria-hidden"); else b.setAttribute("aria-hidden", "true");
