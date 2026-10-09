@@ -240,7 +240,7 @@ def discover(store: Store, tavily=None, n_stories: int | None = None, until: flo
                 title=r["title"] or (page or {}).get("title") or "", author=(author or None) and author[:300],
                 published_at=r.get("published_at") or utcnow(), fetched_at=utcnow(), text=text,
                 text_source=source, agency=detect_agency(author, text), minhash=minhash(text),
-                extract_failures=0, found_by="search"))
+                extract_failures=0, found_by="search", image=(page or {}).get("image") or ""))
             added += 1
         stats["new_articles"] += added
         store.exec(update(stories).where(stories.c.id == s["id"]).values(last_searched_at=utcnow()))

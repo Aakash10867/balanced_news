@@ -88,6 +88,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     if ingest_news:
         ingest.sync_feeds(store)
         stats["ingested"] = ingest.ingest(store)
+        # outlets' share pictures (collected now, shown later): older articles in stories looked at once
+        stats["images"] = dict(ingest.IMAGE_STATS, filled=step("images", lambda: ingest.fill_images(store)))
     if search_news:
         # who else covered the stories we know? found articles are grouped like any other
         # the stories being prepared for the writer (ranked in earlier runs) are searched first
