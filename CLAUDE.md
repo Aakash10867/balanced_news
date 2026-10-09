@@ -369,7 +369,18 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   card as it is. Stored in `articles.image` (migration `20261009000100`; "" = looked, none; NULL = not looked):
   `ingest.page_image` / `entry_image` at reading, `discover` for search finds, `ingest.fill_images` looks once at up
   to 60 articles of the last 36 h in a story that have none yet (run stats `images`: with / without / filled).
-  The choice per story and the design come next, once the data shows how many articles carry one.
+  **Shown (owner, Oct 9 2026, canvas "Pictures A" and "Article · Calm + tiles + quotes + rail"):** `feed.pictures`
+  picks one per live article at every export (the lead's reports first, then the rest; a link on 3+ stories =
+  logo) and puts it on the cards (`img`: src, by, href). Home card: the picture across the top, sharp, then
+  blurred and washed to white where the headline begins, credit chip "Photo: <outlet>"; a story without one, or
+  whose picture fails to load, keeps today's card. Article: the picture at the top of the indigo headline box,
+  dissolving into it, credit linked to the outlet's article; the top stays (back · wordmark · language) with the
+  wordmark where and as big as on the home page in the home page's indigo gradient; under it a rail of the
+  article's sections (the one being read filled, a tap goes there) and a line in the same gradient that fills as
+  you read; the lead alone in a larger serif; each section its own card under a numbered heading; By the numbers
+  as tiles (the sentence's first figure big, the sentence under it, colours and source numbers kept); What they
+  say one card per paragraph with its speaker (`feed._speakers`: the name the reports give most often,
+  `narrative.who`, English page only). Display only: the closed article's text is unchanged.
 - **No internal notes for readers (owner, Oct 8 2026):** the article page no longer shows "Nothing in this
   story is confirmed by independent sources yet" (read as "this story is fake"; the colours already say which
   parts are supported) nor "Which outlets form different perspectives is not yet known" (internal state, not

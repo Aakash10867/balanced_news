@@ -2453,10 +2453,41 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
         assert feed.export(store, out) == 1
     finally:
         store.rows = real_rows
-    assert len(reads) == 1 and "payload_en" in reads[0]   # only the cheap list (sqlite: payloads for md5)
+    published_reads = [q for q in reads if "FROM published" in q]
+    assert len(published_reads) == 1 and "payload_en" in published_reads[0]   # only the cheap list (sqlite: payloads for md5)
+    assert not any("payload" in q for q in reads if "FROM published" not in q)  # pictures: links only
     assert json.loads((out / "en.json").read_text(encoding="utf-8"))["stories"][0]["id"] == row["story_id"]
     assert feed.bar_counts([[{"class": "single"}, {"class": "disputed", "parts": [
         {"class": "established"}, {"class": "disputed"}]}]]) == {"e": 1, "o": 1, "d": 1, "r": 0, "u": 0}
+
+
+def test_feed_card_picture_is_the_lead_reports_and_never_an_outlets_default(store, tmp_path):
+    """Pictures (owner, Oct 9 2026): the share picture of the report behind the lead, linked and credited; a picture
+    the same outlet puts on 3+ different stories is its logo and is never used."""
+    from nishpaksh import feed
+    from nishpaksh.db import articles, insert, published, utcnow
+    now = utcnow()
+    nar = {"paragraphs": [[{"text": "Lead.", "class": "single", "sources": [2]}], [{"text": "More.", "class": "single", "sources": [1]}]],
+           "section_keys": ["news", "happened"],
+           "sources": [{"n": 1, "outlet": "A", "url": "https://a.in/1"}, {"n": 2, "outlet": "B", "url": "https://b.in/1"}]}
+    store.exec(insert(published).values(story_id=500, updated_at=now, headline_en="H", headline_hi="ह",
+                                        payload_en={"narrative": nar}, payload_hi={"narrative": nar}))
+    for i, (url, outlet, img, sid) in enumerate([("https://a.in/1", "A", "https://a.in/p.jpg", 500),
+                                                 ("https://b.in/1", "B", "https://b.in/logo.png", 500),
+                                                 ("https://b.in/2", "B", "https://b.in/logo.png", 501),
+                                                 ("https://b.in/3", "B", "https://b.in/logo.png", 502)]):
+        store.exec(insert(articles).values(url=url, outlet=outlet, image=img, story_id=sid, published_at=now, fetched_at=now))
+    out = tmp_path / "feed"
+    feed.export(store, out)
+    c = json.loads((out / "en.json").read_text(encoding="utf-8"))["stories"][0]
+    assert c["img"] == {"src": "https://a.in/p.jpg", "by": "A", "href": "https://a.in/1"}   # B's is its logo
+    store.exec(insert(articles).values(url="https://b.in/9", outlet="B", image="https://b.in/real.jpg", story_id=500,
+                                       published_at=now, fetched_at=now))
+    from nishpaksh.db import update
+    store.exec(update(articles).where(articles.c.url == "https://b.in/1").values(image="https://b.in/lead.jpg"))
+    feed.export(store, out)
+    c = json.loads((out / "en.json").read_text(encoding="utf-8"))["stories"][0]
+    assert c["img"]["src"] == "https://b.in/lead.jpg" and c["img"]["by"] == "B"   # the lead's report first
 
 
 def test_heavy_columns_come_from_the_local_cache_when_unchanged(store, tmp_path, monkeypatch):
