@@ -356,7 +356,13 @@
      greeting fades and the language moves up beside the wordmark. The header's height changes ONCE; what moves on
      screen moves by transform and clip only (no per-frame layout: the card would jitter as its height changed). */
   header.top { position: relative; isolation: isolate; background: none; padding: 14px 16px; gap: 0; }
-  header.top .hbg { position: absolute; left: 0; right: 0; top: 0; height: 100%; border-radius: 22px; z-index: -1; pointer-events: none; }
+  /* the indigo: O (rounded, clips) > W (its bottom edge moves) > G (the gradient, held still). Only transforms move while the
+     header tidies (clip-path repainted the gradient every frame and it jittered on phones, Oct 10 2026); the gradient is
+     drawn over the full 98px header in both states, so nothing changes when the animation ends. */
+  header.top .hbg { position: absolute; left: 0; right: 0; top: 0; height: 100%; border-radius: 22px; overflow: hidden; z-index: -1; pointer-events: none; }
+  .hbw, .hbgr { position: absolute; left: 0; right: 0; top: 0; height: 100%; }
+  .hbw { overflow: hidden; border-radius: 0 0 22px 22px; }
+  .hbgr { height: 98px; background-size: 100% 98px; }
   .wmrow { position: relative; height: 30px; display: flex; align-items: center; justify-content: center; }
   .wmrow .wordmark { line-height: 30px; padding: 0 40px; border: 0; background: none; color: inherit; cursor: pointer; }
   .wmrow .mbtn { position: absolute; left: 0; top: 0; z-index: 1; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
@@ -366,8 +372,8 @@
   .hit { position: relative; } .hit::after { content: ""; position: absolute; inset: -7px; }
   .gspace { height: 40px; }
   header.top .greeting { position: absolute; left: 16px; right: 120px; top: 54px; line-height: 30px; height: 30px; white-space: nowrap;
-                         overflow: hidden; text-overflow: ellipsis; transition: opacity 280ms ease; }
-  .hpill { position: absolute; right: 16px; top: 54px; z-index: 1; transition: transform 520ms var(--ease); }
+                         overflow: hidden; text-overflow: ellipsis; transition: opacity 200ms ease; }
+  .hpill { position: absolute; right: 16px; top: 54px; z-index: 1; transition: transform 420ms cubic-bezier(.4,0,.2,1) 30ms; }
   header.tidy .gspace { height: 0; }
   header.tidy .greeting { opacity: 0; pointer-events: none; }
   header.tidy .hpill { transform: translateY(-40px); }
@@ -460,7 +466,7 @@
 <div id="intro" aria-hidden="true"><img src="mark.png" alt=""></div>
 <div id="app">
   <header class="top" id="top">
-    <div class="hbg brand" id="hbg" aria-hidden="true"></div>
+    <div class="hbg" id="hbg" aria-hidden="true"><div class="hbw" id="hbw"><div class="hbgr brand" id="hbgr"></div></div></div>
     <div class="wmrow">
       <button type="button" class="mbtn hit" id="mbtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false"></button>
       <button type="button" class="wordmark lift" id="wm" aria-label="Nishpaksh: go to the latest story">Nishpaksh</button>
@@ -1547,28 +1553,39 @@ function tidy() {
   const animate = !STILL.matches && !openId && cards.length;
   const h0 = top_.offsetHeight;
   const slot = animate ? track.querySelector(`.slot[data-i="${current}"]`) : null;
+  const card = slot && slot.querySelector("a.card"), hOld = card ? card.offsetHeight : 0;
   top_.classList.add("tidy");
-  const d = h0 - top_.offsetHeight;                    // one layout change, read at once
+  const d = h0 - top_.offsetHeight;                    // the one layout change, read at once
   if (cards.length) jumpTo(current);                   // the card stays snapped (its height grew by d)
-  if (!animate || !slot || d <= 0) return;
-  const card = slot.querySelector("a.card"), parts = card ? [...card.querySelectorAll(":scope > h2, :scope > .text, :scope > .pic")] : [];
-  const ease = "520ms cubic-bezier(.2,.8,.2,1)";
+  if (!animate || !card || d <= 0) return;
+  // everything below moves by transform only (owner, Oct 10 2026: clip-path repainted the card and the gradient every
+  // frame and both jittered). The header: its bottom edge (W) rises while the gradient (G) is held still; the card: a
+  // white layer behind it grows from its old height (scaled, from the bottom) while its content glides up with it.
+  const hbw = $("hbw"), hbgr = $("hbgr"), hNew = card.offsetHeight;
+  const parts = [...card.querySelectorAll(":scope > h2, :scope > .text, :scope > .pic")];
+  const back = document.createElement("div");
+  back.style.cssText = `position:absolute;left:0;right:0;top:0;height:${hNew}px;background:var(--card);border-radius:24px;` +
+    `box-shadow:0 4px 0 var(--edge);transform-origin:50% 100%;transform:scaleY(${hOld / hNew});will-change:transform;pointer-events:none`;
+  slot.style.position = "relative";
+  card.style.position = "relative"; card.style.zIndex = "1"; card.style.background = "transparent"; card.style.boxShadow = "none";
+  slot.appendChild(back);                              // last child: the deck's tilt takes the first child as the card
   hbg.style.height = `${h0}px`;
-  hbg.style.clipPath = "inset(0 0 0 0 round 22px)";
-  slot.style.clipPath = `inset(${d}px 0 0 0 round 24px 24px 0 0)`;
-  parts.forEach(p => { p.style.transform = `translateY(${d}px)`; });
+  for (const [el, y] of [[hbw, 0], [hbgr, 0], ...parts.map(p => [p, d])]) { el.style.willChange = "transform"; el.style.transform = `translateY(${y}px)`; }
   void top_.offsetWidth;
-  requestAnimationFrame(() => {
-    hbg.style.transition = `clip-path ${ease}`;
-    hbg.style.clipPath = `inset(0 0 ${d}px 0 round 22px)`;
-    slot.style.transition = `clip-path ${ease}`;
-    slot.style.clipPath = "inset(0 0 0 0 round 24px 24px 0 0)";
-    parts.forEach(p => { p.style.transition = `transform ${ease}`; p.style.transform = "none"; });
-  });
+  const ease = "420ms cubic-bezier(.4,0,.2,1)";
+  requestAnimationFrame(() => requestAnimationFrame(() => {   // after the frame that carries the layout change
+    for (const el of [hbw, hbgr, back, ...parts]) el.style.transition = `transform ${ease}`;
+    hbw.style.transform = `translateY(${-d}px)`;
+    hbgr.style.transform = `translateY(${d}px)`;
+    back.style.transform = "scaleY(1)";
+    parts.forEach(p => { p.style.transform = "translateY(0)"; });
+  }));
   setTimeout(() => {
-    for (const el of [hbg, slot, ...parts]) { el.style.transition = ""; el.style.clipPath = ""; el.style.transform = ""; }
-    hbg.style.height = "";
-  }, 620);
+    back.remove();
+    for (const el of [hbw, hbgr, ...parts]) { el.style.transition = ""; el.style.transform = ""; el.style.willChange = ""; }
+    for (const k of ["position", "zIndex", "background", "boxShadow"]) card.style[k] = "";
+    slot.style.position = ""; hbg.style.height = "";
+  }, 540);
 }
 track.addEventListener("scroll", () => { lastScroll = Date.now(); }, {passive: true});
 function countSwipe(prev) { if (prev !== current && ++swipes >= 2) tidy(); }
