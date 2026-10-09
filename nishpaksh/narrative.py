@@ -70,7 +70,10 @@ coherent story. The statements below are already sorted into sections; write eac
   explained   what a rule, term, post, finding or number means
   happened    what happened, in time order (the statements of the news are not repeated here)
   numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
-  say         what each person or body says: claims, allegations, positions, and the responses to them
+  say         what each person or body says: claims, allegations, positions, and the responses to them.
+              The statements come grouped by [speaker]: write each speaker's statements TOGETHER, in one
+              paragraph (the main claim first, then its details), then the next speaker; a response right
+              after what it answers. Name each speaker as given; never give one speaker's line to another
   related     other events the reports connect to this one, each with its own time and its own people;
               never blended into the story's event. Do not write "separately" or "in a separate case":
               the section's heading says it (unless a statement itself says so)
@@ -235,8 +238,69 @@ def _section_block(items: list[dict], sec: dict[int, str]) -> str:
         if not mine:
             continue
         lines.append(f"SECTION {key}:" if key != "news" else "SECTION news (THE NEWS: the lead is written from it):")
-        lines += [_statement_line(i) for i in mine]
+        if key == "say":
+            for name, group in _by_speaker(mine):
+                lines.append(f"  [speaker: {name}]" if name else "  [speaker not named]")
+                lines += [_statement_line(i) for i in group]
+        else:
+            lines += [_statement_line(i) for i in mine]
     return "\n".join(lines)
+
+
+def _item_speaker(i: dict) -> str | None:
+    return i.get("speaker") or None
+
+
+def _order_groups(units: list, key_of, partners_of) -> list:
+    """Units (statements or written sentences) grouped by speaker, speakers in order of first appearance; a group
+    answering or contradicting an earlier group comes right after it (owner, Oct 9 2026: one speaker's argument
+    is told together, a response next to what it answers)."""
+    groups: list[tuple[str | None, list]] = []
+    index: dict = {}
+    for u in units:
+        k = key_of(u)
+        if k is None:
+            groups.append((None, [u]))
+            continue
+        if k not in index:
+            index[k] = len(groups)
+            groups.append((k, []))
+        groups[index[k]][1].append(u)
+    ordered: list = []          # [key, units, ids, answers placed after it]
+    for k, units_ in groups:
+        ids = set().union(*(_unit_ids(u) for u in units_))
+        partners = set().union(*(partners_of(u) for u in units_)) - ids
+        host = next((e for e in reversed(ordered) if e[2] & partners), None)
+        entry = [k, units_, ids, 0]
+        if host is None:
+            ordered.append(entry)
+        else:
+            n = next(n for n, e in enumerate(ordered) if e is host)
+            ordered.insert(n + 1 + host[3], entry)
+            host[3] += 1
+    return [(e[0], e[1]) for e in ordered]
+
+
+def _unit_ids(u) -> set:
+    if isinstance(u, dict) and "ids" in u:
+        return set(u["ids"])
+    if isinstance(u, list):
+        return {i for s_ in u for i in s_["ids"]}
+    return {u["id"]} if isinstance(u, dict) and "id" in u else set()
+
+
+def _by_speaker(items: list[dict]) -> list[tuple[str | None, list[dict]]]:
+    """The statements of "What they say" in groups by speaker, for the writer."""
+    names: dict = {}
+    for i in items:
+        k = voice.speaker_key(_item_speaker(i))
+        if k:
+            names.setdefault(k, [])
+            if _item_speaker(i) not in names[k]:
+                names[k].append(_item_speaker(i))
+    out = _order_groups(items, lambda i: voice.speaker_key(_item_speaker(i)), _partners)
+    # one speaker named several ways ("the Centre" / "Solicitor General Tushar Mehta"): the writer sees them as one
+    return [(" = ".join(names[k]) if k else None, g) for k, g in out]
 
 
 
@@ -482,6 +546,19 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
             continue   # the paragraph hedge ("reports said"), not a speaker
         if not speakers:
             return _no("invented speaker")
+    # the speaker a sentence names is the speaker of its statements, never the one before it (Oct 9 2026, story
+    # 16197: the Centre's line as "..., the advocate alleged", the Supreme Court's as "..., she said"), and is
+    # named once ("Tushar Mehta argued that the Centre argued that ...")
+    if style:
+        sp_all = [by_id[i].get("speaker") for i in ids if by_id[i].get("speaker")]
+        pron_map = getattr(_TL, "pronouns", None) or {}
+        wrong = voice.wrong_speaker(text, sp_all, source_text, pron_map)
+        if wrong in ("he", "she") and wrong not in pron_map.values():
+            return _no("pronoun without evidence")
+        if wrong:
+            return _no("wrong speaker")
+        if voice.double_attribution(text, source_text):
+            return _no("speaker named twice")
     # the verb that names the act is the outlets' (owner, Oct 8 2026): never "accused", "denied",
     # "threatened" for what the statements only say someone said
     if style and voice.unsupported_acts(text, source_text):
@@ -1132,6 +1209,62 @@ def _cohere(router: Router, paragraphs: list, keys: list, by_id: dict, banned: s
     return out_p, out_k, done
 
 
+def _sent_key(sent: dict, by_id: dict) -> str | None:
+    for i in sent["ids"]:
+        k = voice.speaker_key((by_id.get(i) or {}).get("speaker"))
+        if k:
+            return k
+    return None
+
+
+def group_speakers(paragraphs: list, keys: list, by_id: dict) -> tuple[list, list]:
+    """One speaker's argument told together, by code (owner, Oct 9 2026, story 16197: "The Centre alleged ...
+    overreached the court's judgment" and "The Central government alleged ... less than six months" sat in two
+    paragraphs with other speakers between them and read as two different claims). In "What they say", when a
+    speaker's sentences are scattered, the section's sentences are regrouped: one paragraph per speaker, speakers
+    in order of first appearance, an answer right after what it answers. A sentence leaning on the one before
+    ("He added ...") or naming no speaker moves with it. Sentences are never changed; shape_paragraphs then
+    joins short paragraphs and cuts long ones."""
+    out_p: list = []
+    out_k: list = []
+    n = 0
+    while n < len(paragraphs):
+        if keys[n] != "say":
+            out_p.append(paragraphs[n])
+            out_k.append(keys[n])
+            n += 1
+            continue
+        m = n
+        while m < len(paragraphs) and keys[m] == "say":
+            m += 1
+        run = paragraphs[n:m]
+        chunks: list[list[dict]] = []
+        for sent in [x for p in run for x in p]:
+            k = _sent_key(sent, by_id)
+            if chunks and (k is None or LEANS_BACK.search(sent["text"]) or PRONOUN_START.match(sent["text"])):
+                chunks[-1].append(sent)
+            else:
+                chunks.append([sent])
+        order = [_sent_key(c[0], by_id) for c in chunks]
+        seen, scattered = [], False
+        for k in order:
+            if k is not None and k in seen and seen[-1] != k:
+                scattered = True
+            if k is not None:
+                seen.append(k)
+        if not scattered:
+            out_p += run
+            out_k += ["say"] * len(run)
+        else:
+            groups = _order_groups(chunks, lambda c: _sent_key(c[0], by_id),
+                                   lambda c: set().union(*(_partners(by_id[i]) for s_ in c for i in s_["ids"] if i in by_id)))
+            for _, cs in groups:
+                out_p.append([x for c in cs for x in c])
+                out_k.append("say")
+        n = m
+    return out_p, out_k
+
+
 SHORT, JOIN_MAX, LONG, CUT_MAX = 2, 4, 6, 5      # sentences
 
 
@@ -1395,6 +1528,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         k = keys.index("happened")
         paragraphs = [paragraphs[k]] + paragraphs[:k] + paragraphs[k + 1:]
         keys = ["news"] + keys[:k] + keys[k + 1:]
+    paragraphs, keys = group_speakers(paragraphs, keys, by_id)
     paragraphs, keys = shape_paragraphs(paragraphs, keys, by_id)
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])

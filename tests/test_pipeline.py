@@ -3117,3 +3117,58 @@ def test_reading_drops_a_person_the_report_does_not_name():
     assert ground(ex, src) == 2
     assert [i["id"] for i in ex["events"]] == ["e2", "e3", "e4", "e5", "e6"]
     assert ex["relations"] == [{"from": "e2", "to": "e3", "type": "before"}]
+
+
+def test_attribution_follows_the_statements_speaker_not_the_last_one():
+    """Story 16197 (Oct 9 2026): after Kapil Sibal, "The Centre alleged ..." became "..., the advocate alleged";
+    after a line naming Mishra, "The Supreme Court stated ..." became "..., she said"; story 13058: Scindia's
+    figures became "..., Modi said"."""
+    from nishpaksh.style import Refs, people, vary_attribution
+    from nishpaksh.voice import roles
+    sp = {1: "Kapil Sibal", 2: "Centre", 3: "petitioner", 4: "Supreme Court", 5: "Prime Minister Narendra Modi",
+          6: "Union Minister Jyotiraditya Scindia"}
+    P = [[{"text": "Senior advocate Kapil Sibal argued that the Centre is targeting Jharkhand.", "ids": [1]},
+          {"text": "The Centre alleged that the Jharkhand government violated Supreme Court directions.", "ids": [2]}],
+         [{"text": "Jharkhand appointed Tadasha Mishra as DGP one day before her retirement, the petitioner said.", "ids": [3]},
+          {"text": "She said that Mishra's appointment is in violation of the Prakash Singh judgment.", "ids": [4]}],
+         [{"text": "Prime Minister Narendra Modi said 5G reached every district.", "ids": [5]},
+          {"text": "He said one GB of data cost 268 rupees in 2014.", "ids": [6]}]]
+    text = " ".join(s["text"] for p in P for s in p)
+    names = people(text, list(sp.values()))
+    refs = Refs(names, {"Narendra Modi": "he", "Tadasha Mishra": "she"}, roles(text, names))
+    vary_attribution(P, refs, lambda s: [sp[i] for i in s["ids"]])
+    t = [s["text"] for p in P for s in p]
+    assert "advocate alleged" not in t[1] and "Centre" in t[1]
+    assert not t[3].startswith("She") and "Supreme Court" in t[3]
+    assert "Modi" not in t[5] and "he said" not in t[5].lower()
+
+
+def test_validator_refuses_a_wrong_or_doubled_speaker():
+    from nishpaksh import voice
+    assert voice.wrong_speaker("The Jharkhand government violated the directions, the advocate alleged.",
+                               ["Centre"], "The Centre alleged that the Jharkhand government violated", {}) == "advocate"
+    assert voice.wrong_speaker("The appointment is in violation of the judgment, she said.", ["Supreme Court"],
+                               "The Supreme Court stated that", {"Tadasha Mishra": "she"}) == "she"
+    assert voice.wrong_speaker("The Central government alleged that the rules permit it.", ["Centre"], "x", {}) is None
+    assert voice.wrong_speaker("The bench said the rule appeared to contradict the judgment.", ["Supreme Court"], "x", {}) is None
+    assert voice.wrong_speaker("The paper will come within a month, the minister said.", ["Ashwini Vaishnaw"], "x", {}) is None
+    assert voice.wrong_speaker("The rules are unfair, he said.", ["Kapil Sibal"], "x", {"Kapil Sibal": "he"}) is None
+    assert voice.double_attribution("Solicitor General Tushar Mehta argued that the Centre argued that the rules changed.",
+                                    "The Centre argued that the rules changed.")
+    assert not voice.double_attribution("Police said that the accused claimed that he was innocent.",
+                                        "Police said that the accused claimed that he was innocent.")
+
+
+def test_one_speakers_argument_is_told_together():
+    """Story 16197 (Oct 9 2026): the Centre's two lines sat in two paragraphs with other speakers between."""
+    from nishpaksh.narrative import group_speakers
+    by_id = {1: {"speaker": "Centre"}, 2: {"speaker": "Centre"}, 3: {"speaker": "petitioner"},
+             4: {"speaker": "Central government"}, 5: {"speaker": "Kapil Sibal"}, 6: {}}
+    for k, v in by_id.items():
+        v.update(id=k, text="x", verdict="unverified")
+    s = lambda i, t="A line.": {"text": t, "ids": [i]}
+    paras = [[s(5)], [s(1), s(3)], [s(4), s(6, "He added more."), s(2)]]
+    out, keys = group_speakers(paras, ["say"] * 3, by_id)
+    assert [[x["ids"][0] for x in p] for p in out] == [[5], [1, 2], [3, 4, 6]] or \
+        [[x["ids"][0] for x in p] for p in out] == [[5], [1, 4, 6, 2], [3]]
+    assert keys == ["say"] * len(out)

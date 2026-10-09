@@ -158,13 +158,33 @@ class Refs:
         return bool(full) and self.pron.get(full) == pronoun.lower()
 
 
-def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None) -> None:
+def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None, speakers_of=None) -> None:
     """In a run of sentences by one speaker, the second and later carry the attribution at the end
     ("..., he said." / "..., the MLA said." / "..., Kabir said."); "also stated" and "further stated" go.
     A "he" / "she" for someone the outlets do not call so becomes the surname (code never guesses a
     gender)."""
+    from .voice import speaker_key
     refs = refs or Refs({}, {}, {})
     current = None
+
+    def own(sent: dict, full: str | None) -> tuple[str | None, str | None]:
+        """(the person to refer to, the name of a body) for this sentence: its statements' speaker, never the
+        paragraph's last one (Oct 9 2026: Scindia's figures written as "..., Modi said", the Supreme Court's line
+        as "..., she said", because "He" / "The ..." was read as whoever spoke before)."""
+        sps = [x for x in (speakers_of(sent) if speakers_of else []) if x]
+        if not sps:
+            return full, None
+        keys = {speaker_key(x) for x in sps}
+        if full and speaker_key(full) in keys:
+            return full, None
+        person = next((refs.person(x) for x in sps if refs.person(x)), None)
+        if person and speaker_key(person) in keys:
+            return person, None
+        return None, (sps[0] if len(keys) == 1 else None)
+
+    def body_name(sp: str) -> str:
+        return sp if sp.lower().startswith("the ") else f"the {sp}"
+
     for para in paragraphs:
         for k in range(len(para)):
             if para[k].get("parts"):
@@ -174,8 +194,16 @@ def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None) -> 
             m = CHAIN.match(cur)
             if m and k > 0 and ATTRIB.search(para[k - 1]["text"]) and not ATTRIB.search(m.group("body")):
                 who = m.group("who")
-                full = current if who in ("He", "She", "They") or who.startswith("The ") else refs.person(who)
-                if full and (who in ("He", "She", "They") or who.startswith("The ") or full in (current, refs.person(para[k - 1]["text"]))):
+                # "The ..." is the current speaker only when it is that speaker's own role ("The MLA"); "The Centre",
+                # "The Supreme Court" are other speakers (Oct 9 2026, story 16197: "The Centre alleged ..." after
+                # Kapil Sibal became "..., the advocate alleged", "The Supreme Court stated ..." after a line naming
+                # Mishra became "..., she said")
+                own_role = bool(current) and who.lower() == (refs.roles.get(current) or "").lower()
+                pron = who in ("He", "She", "They")
+                full = current if pron or own_role else (None if who.startswith("The ") else refs.person(who))
+                if full and (pron or own_role) and speakers_of:
+                    full, _ = own(para[k], full)
+                if full and (pron or own_role or full in (current, refs.person(para[k - 1]["text"]))):
                     ref = refs.next(full)
                     verb = NEUTRAL.get(m.group("verb"), m.group("verb"))
                     body = m.group("body").rstrip(",;: ")
@@ -192,8 +220,10 @@ def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None) -> 
             # "he said" / "She added" for someone without the outlets' evidence: the surname
             t = para[k]["text"]
             for pm in reversed(list(PRON_ATTRIB.finditer(t))):
-                full = refs.person(t[:pm.start()]) or current
-                if full and not refs.allowed(full, pm.group(1)):
+                full, body = own(para[k], refs.person(t[:pm.start()]) or current)
+                if body:
+                    t = t[:pm.start()] + body_name(body) + t[pm.end():]     # a body is never "he" / "she"
+                elif full and not refs.allowed(full, pm.group(1)):
                     short = full.split()[-1]
                     t = t[:pm.start()] + short + t[pm.end():]
             para[k]["text"] = t[:1].upper() + t[1:]
@@ -216,4 +246,5 @@ def polish(payload: dict) -> None:
     names = people(text, speakers)
     refs = Refs(names, pronouns(items), roles(text, names))
     shorten_names(paras, speakers)
-    vary_attribution(paras, refs)
+    by_id = {i["id"]: i for i in items if "id" in i}
+    vary_attribution(paras, refs, lambda sent: [(by_id.get(i) or {}).get("speaker") for i in sent.get("ids") or []])

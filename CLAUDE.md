@@ -275,6 +275,20 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   "he" only with evidence), and "also stated"/"added" opening a paragraph becomes "said". Sentence-opening words
   ("While", "Meanwhile", days, months) are never part of a name (`style.LEAD`: "While Humayun Kabir" had stopped
   the surname from being used).
+- **One speaker's argument told together; the attribution is the statements' speaker (owner, Oct 9 2026, story
+  16197).** "The Centre alleged ... overreached the court's judgment" and "The Central government alleged ... less
+  than six months" sat in two paragraphs with other speakers between and read as two different claims; the Centre's
+  line was printed as "..., the advocate alleged" and the Supreme Court's as "..., she said" (style read "The ..."
+  and "He" as whoever spoke before; on the 30 latest articles also Scindia's figures as "Modi said", Rahul Gandhi's
+  lines as "Kharge said"). Now: (1) `voice.speaker_key`: one key per speaker (the Centre = the Central government =
+  the Solicitor / Attorney General; the Supreme Court = the bench = the CJI; a person by surname); (2) the writer gets
+  "What they say" grouped by speaker (`narrative._by_speaker`, an answer right after what it answers) and is told to
+  write each speaker's lines in one paragraph; (3) code regroups a "What they say" section whose speakers are
+  scattered (`narrative.group_speakers`, sentences unchanged, before `shape_paragraphs`); (4) the validator refuses
+  "wrong speaker" (`voice.wrong_speaker`: the name a sentence gives must be the statements' speaker, an alias, or
+  a role of that person; never a role for a body; he/she only for that speaker with evidence) and "speaker named
+  twice" (`voice.double_attribution`); (5) `style.vary_attribution` refers to each sentence's own statements'
+  speaker, and a body is never "he" / "she".
 - **Introductions:** every person and body at first mention with the fullest name and role the
   statements give (`narrative._people` lists them for the writer); extraction names people in full.
 - **Attribution like a newspaper:** name a speaker once, then the surname, the role, or "he"/"she" only

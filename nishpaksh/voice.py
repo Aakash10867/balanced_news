@@ -168,3 +168,101 @@ def problems(para: list[dict], speakers: list[str]) -> list[str]:
     if len(texts) >= LONG_PARAGRAPH:
         out.append(f"it is one block of {len(texts)} sentences on several subjects")
     return out
+
+
+# ------------------------------------------------------------------ one speaker, however named
+# (owner, Oct 9 2026, story 16197: "The Centre alleged ..." and "The Central government alleged ..." were one
+# argument written in two paragraphs with other speakers between them)
+ALIASES = {
+    "centre": ("centre", "center", "central government", "union government", "government of india", "union of india",
+               "solicitor general", "additional solicitor general", "attorney general", "centre's counsel"),
+    "supreme court": ("supreme court", "apex court", "top court", "chief justice of india", "cji", "bench"),
+}
+
+
+def speaker_key(name: str | None) -> str | None:
+    """One key per speaker: "the Centre" = "the Central government" = "Solicitor General Tushar Mehta" (who
+    argues for it); a person by surname ("Kapil Sibal" = "Sibal"); anything else as written, lower case."""
+    if not name or not name.strip():
+        return None
+    low = re.sub(r"^(?:the|a|an)\s+", "", name.strip().lower())
+    for key, names in ALIASES.items():
+        if any(low == a or low.startswith(a + " ") or low.endswith(" " + a) for a in names):
+            return key
+    words = [w for w in re.findall(r"[A-Z][\w'-]+", name) if w not in ("The",)]
+    if len(words) >= 2:
+        return words[-1].lower()
+    return low
+
+
+def speaker_words(name: str | None) -> set[str]:
+    """Words a sentence may use to name this speaker: its own words and those of its aliases."""
+    if not name:
+        return set()
+    out = {w.lower() for w in re.findall(r"[A-Za-z]{3,}", name)}
+    key = speaker_key(name)
+    for a in ALIASES.get(key, ()):
+        out |= {w for w in a.split() if len(w) >= 3}
+    return out - {"the", "and", "for", "senior", "india", "government", "court"} | (
+        {"court"} if key == "supreme court" or "court" in name.lower() else set()) | (
+        {"government"} if key == "centre" or "government" in name.lower() else set())
+
+
+# ------------------------------------------------------------------ who a sentence says is speaking
+SAY_VERB = r"(?:said|says|alleged|alleges|argued|argues|stated|states|claimed|claims|added|noted|submitted|contended|maintained|told)"
+TRAIL_WHO = re.compile(rf",\s+(?P<who>[\w.'’ -]{{2,60}}?)\s+(?:also\s+|further\s+)?{SAY_VERB}(?:\s+on\s+\w+)?\s*[.!?]?[\"”]?$")
+LEAD_WHO = re.compile(rf"^(?P<who>(?:[A-Z][\w.'’-]*)(?:\s+(?:[A-Z][\w.'’-]*|of|and|for|the|senior|chief|general|[a-z]+\'s)){{0,6}}?)"
+                      rf"\s+(?:also\s+|further\s+)?{SAY_VERB}\b")
+DOUBLE = re.compile(rf"(?i)\b{SAY_VERB}\s+that\s+(?:the\s+)?[\w.'’ -]{{1,50}}?\s+{SAY_VERB}\s+that\b")
+
+
+def attributed(sentence: str) -> list[str]:
+    """Who the sentence says is speaking: "X said that ..." / "..., X said." (lower case)."""
+    out = []
+    t = (sentence or "").strip()
+    for rx in (LEAD_WHO, TRAIL_WHO):
+        m = rx.search(t)
+        if m:
+            out.append(re.sub(r"^(?:the|a|an)\s+", "", m.group("who").strip().lower()))
+    return out
+
+
+ROLE_WORDS = ROLES_LOWER | {"counsel", "justice", "spokesperson", "governor", "magistrate", "prime", "chief", "union",
+                            "home", "finance", "deputy", "external", "affairs", "defence", "state", "district", "general",
+                            "solicitor", "attorney", "additional", "former", "opposition", "party", "congress", "bjp"}
+
+
+def wrong_speaker(sentence: str, speakers: list[str], source_text: str, pron: dict[str, str]) -> str | None:
+    """The name a sentence gives a speaker that is not the speaker of its statements (Oct 9 2026, story 16197:
+    the Centre's line written as "..., the advocate alleged", the Supreme Court's as "..., she said"); None when
+    the sentence names its speaker rightly or names none. A pronoun must be a speaker the outlets call so;
+    "it" / "they" are fine for a body."""
+    if not speakers:
+        return None
+    keys = {speaker_key(sp) for sp in speakers}
+    allowed = set().union(*(speaker_words(sp) for sp in speakers))
+    src = {w.lower() for w in re.findall(r"[A-Za-z]{3,}", source_text or "")}
+    for who in attributed(sentence):
+        if who in ("it", "they"):
+            continue
+        if who in ("he", "she"):
+            uses = (MALE if who == "he" else FEMALE).search(source_text or "")
+            if not uses and not any(g == who and speaker_key(full) in keys for full, g in pron.items()):
+                return who
+            continue
+        words = {w for w in re.findall(r"[a-z]{3,}", who)} - {"also", "senior", "the", "and", "for"}
+        if words and not (words & allowed) and not words <= src:
+            # "the judge", "the minister" for a person whose role the article gives; never for a body ("the
+            # advocate" for the Centre)
+            person = any(len(re.findall(r"\b[A-Z][\w.'-]+", sp)) >= 2 and speaker_key(sp) not in ALIASES
+                         for sp in speakers)
+            if person and words <= ROLE_WORDS:
+                continue
+            return who
+    return None
+
+
+def double_attribution(sentence: str, source_text: str) -> bool:
+    """ "X argued that the Centre argued that ...": a speaker named twice for one claim (story 16197), unless the
+    statements themselves are reported speech ("A said that B claimed ...")."""
+    return bool(DOUBLE.search(sentence or "")) and not DOUBLE.search(source_text or "")
