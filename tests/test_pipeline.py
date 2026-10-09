@@ -2771,3 +2771,32 @@ def test_fragments_are_joined_or_refused_story_13792():
         {"text": "Finance Minister Nirmala Sitharaman said there was no discussion regarding MDR in the GST Council "
                  "meeting, and Sitharaman said GST rates have not been changed.", "ids": [4, 5]}]], by, set(), [])
     assert rejected == 1 and failed[0]["reason"] == "repeats a name"
+
+
+def test_paragraphs_are_shaped_and_past_schedules_left_out_story_13792():
+    """Owner, Oct 9 2026 (story 13792): seven one-sentence paragraphs, one of 14 sentences; "The 57th GST
+    Council meeting is scheduled to take place ... on Thursday, October 8" written after the meeting."""
+    from nishpaksh.compose import drop_past_schedules
+    from nishpaksh.narrative import shape_paragraphs
+    by = {i: _item(i, f"Statement {i} about subject{i % 3}") for i in range(1, 40)}
+    s = lambda i, t=None: {"text": t or f"Subject{i % 3} fact number {i}.", "ids": [i]}  # noqa: E731
+    paras = [[s(1)], [s(2)], [s(3)], [s(4)], [s(5)], [s(6)], [s(7)]]
+    out, keys = shape_paragraphs(paras, ["news"] + ["explained"] * 6, by)
+    assert len(out[0]) == 1 and keys[0] == "news"                    # the lead stays as written
+    assert all(2 <= len(p) <= 4 for p in out[1:]) and sum(len(p) for p in out) == 7
+    long = [s(i) for i in range(10, 24)]
+    out, keys = shape_paragraphs([long], ["say"], by)
+    assert len(out) >= 3 and all(2 <= len(p) <= 5 for p in out) and sum(len(p) for p in out) == 14
+    # a sentence leaning on the one before never opens a paragraph
+    lean = [s(i) for i in range(10, 16)] + [s(16, "He added that subject1 fact 16 stands.")] + [s(i) for i in range(17, 20)]
+    out, _ = shape_paragraphs([lean], ["say"], by)
+    assert not any(p[0]["text"].startswith("He added") for p in out)
+    # scheduled for a day that has passed: left out; a decision that day: kept
+    now = dt.datetime(2026, 10, 9, 3, 49)
+    p = {"undated": [], "established": [], "context": [], "timeline": [],
+         "contested": [{"id": 1, "text": "The 57th GST Council meeting is scheduled to take place at Bharat Mandapam "
+                                         "in New Delhi on Thursday, October 8, 2026."},
+                       {"id": 2, "text": "The GST Council approved the removal of the power to make arrests."},
+                       {"id": 3, "text": "Counting of votes will take place on October 12."},
+                       {"id": 4, "text": "The bench is scheduled to hear the case."}]}           # no date: kept
+    assert drop_past_schedules(p, now) == 1 and [i["id"] for i in p["contested"]] == [2, 3, 4]

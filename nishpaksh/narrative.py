@@ -62,8 +62,9 @@ Structure: the article is written in SECTIONS, in this order, so that a reader w
 the story first learns why it matters today, then how it came about, and then follows it as one
 coherent story. The statements below are already sorted into sections; write each from its own:
   news        1-2 sentences: THE NEWS, the thing that makes this a story today, with who, where and
-              when, written from the statement in SECTION news (chosen for you: it must be cited in the
-              lead). Never the setting or background ("Donald Trump said 125 million people voted in
+              when, written from the statements in SECTION news (chosen for you): the first sentence
+              tells the first of them (it must be cited in the lead); if there is a second, it is what
+              happened today, told in the second sentence. Never the setting or background ("Donald Trump said 125 million people voted in
               India's election, mixing up India with Brazil", not "Brazil held an election on Sunday").
   background  how this came about: earlier events, each clearly with its own time
   explained   what a rule, term, post, finding or number means
@@ -1100,6 +1101,52 @@ def _cohere(router: Router, paragraphs: list, keys: list, by_id: dict, banned: s
     return out_p, out_k, done
 
 
+SHORT, JOIN_MAX, LONG, CUT_MAX = 2, 4, 6, 5      # sentences
+
+
+def _topic(sent: dict, by_id: dict) -> tuple[set, set]:
+    """(speakers named, subject words) of a sentence, to see where a paragraph changes subject."""
+    sp = {by_id[i]["speaker"] for i in sent["ids"] if by_id.get(i) and by_id[i].get("speaker")}
+    return sp, _subject_words(sent["text"])
+
+
+def shape_paragraphs(paragraphs: list, keys: list, by_id: dict) -> tuple[list, list]:
+    """Paragraphs of a readable length, by code (owner, Oct 9 2026, story 13792: "Explained" was seven
+    one-sentence paragraphs, "What they say" one block of 14). Within a section: neighbouring short
+    paragraphs (up to 2 sentences each) are joined, up to 4 sentences; a paragraph of more than 6 is cut into
+    paragraphs of 2 to 5, where the speaker or the subject changes, never before a sentence that leans on the
+    one before ("He added ..."). The lead (news) is left as written. Sentences are never changed."""
+    out_p: list = []
+    out_k: list = []
+    for para, key in zip(paragraphs, keys):
+        if (out_p and key == out_k[-1] and key != "news" and len(para) <= SHORT and len(out_p[-1]) <= SHORT
+                and len(out_p[-1]) + len(para) <= JOIN_MAX):
+            out_p[-1] = out_p[-1] + para
+            continue
+        if key != "news" and len(para) > LONG:
+            chunk: list = []
+            for sent in para:
+                if chunk:
+                    lean = bool(LEANS_BACK.search(sent["text"]))
+                    sp, words = _topic(sent, by_id)
+                    psp, pwords = _topic(chunk[-1], by_id)
+                    change = (sp != psp) or not (words & pwords)
+                    if not lean and ((len(chunk) >= SHORT and change) or len(chunk) >= CUT_MAX):
+                        out_p.append(chunk)
+                        out_k.append(key)
+                        chunk = []
+                chunk.append(sent)
+            if chunk and out_p and out_k[-1] == key and len(chunk) == 1 and len(out_p[-1]) < CUT_MAX:
+                out_p[-1] = out_p[-1] + chunk          # no one-sentence tail
+            elif chunk:
+                out_p.append(chunk)
+                out_k.append(key)
+            continue
+        out_p.append(list(para))
+        out_k.append(key)
+    return out_p, out_k
+
+
 def _call_writer(router: Router, prompt: str) -> tuple[list[tuple[str, list]], str | None, str | None]:
     """([(section, paragraph)], model, failure)."""
     try:
@@ -1216,6 +1263,11 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     news_id = next((x for x in payload.get("news") or [] if x in sec), None)
     if news_id is not None:
         sec[news_id] = "news"
+        # the lead carries the best-reported fact and, when it is another one, the fact of the day (owner,
+        # Oct 9 2026): both are written in the news section; the lead must cite the first
+        for x in (payload.get("lead") or [])[1:2]:
+            if x in sec:
+                sec[x] = "news"
 
     def lead_ok(paragraphs_, keys_) -> bool:
         if "news" not in keys_:
@@ -1312,6 +1364,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         k = keys.index("happened")
         paragraphs = [paragraphs[k]] + paragraphs[:k] + paragraphs[k + 1:]
         keys = ["news"] + keys[:k] + keys[k + 1:]
+    paragraphs, keys = shape_paragraphs(paragraphs, keys, by_id)
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     if rejected:

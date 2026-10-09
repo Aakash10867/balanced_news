@@ -12,6 +12,7 @@ headline (news.write_headline) is written from it after the article, then the Hi
 from __future__ import annotations
 
 import copy
+import datetime as dt
 import hashlib
 import json
 import logging
@@ -460,6 +461,53 @@ def link_updates(payload: dict, updates: dict) -> int:
     return n
 
 
+SCHEDULED = re.compile(r"(?i)\b(?:is|are)\s+(?:scheduled|set|slated|due|expected|likely)\s+to\b|\bwill\s+(?:be\s+held|"
+                       r"take\s+place|meet|hold|begin|start|be\s+convened|be\s+chaired|be\s+announced)\b|\bto\s+be\s+held\b")
+
+
+def drop_past_schedules(payload: dict, now: dt.datetime | None = None) -> int:
+    """A line saying something IS SCHEDULED or WILL happen, on a date that has passed, is left out (owner, Oct 9
+    2026, story 13792: "The 57th GST Council meeting is scheduled to take place ... on Thursday, October 8",
+    written after the meeting, from a report filed before it; the meeting's decisions are the story). A
+    same-day line is left out only when another line of the story reports a decisive act with the same names
+    (the thing happened). A line with no date is kept: code never guesses."""
+    from .frames import date_of
+    from .news import _start, act_score
+    from .relate import Profile
+    now = now or utcnow()
+    today = (now + dt.timedelta(hours=5, minutes=30)).date()
+    items = _all_items_of(payload) + list(payload.get("context") or [])
+    done = [i for i in items if not SCHEDULED.search(i.get("text") or "") and act_score(i.get("text") or "") > 0]
+
+    def when(i) -> dt.date | None:
+        d = _start(i)
+        if d:
+            return d.date()
+        y, m, dd = date_of(i.get("text")) or (None, None, None)
+        if m and dd:
+            try:
+                return dt.date(y or today.year, m, dd)
+            except ValueError:
+                return None
+        return None
+    gone = set()
+    for i in items:
+        if not SCHEDULED.search(i.get("text") or ""):
+            continue
+        d = when(i)
+        if d is None or d > today:
+            continue
+        if d < today or any(Profile(i["text"]).names & Profile(j["text"]).names for j in done):
+            gone.add(i["id"])
+    if gone:
+        for key in ("undated", "established", "contested", "context"):
+            payload[key] = [i for i in payload.get(key) or [] if i["id"] not in gone]
+        payload["timeline"] = [t for t in ([i for i in tier if i["id"] not in gone]
+                                           for tier in payload.get("timeline") or []) if t]
+        log.info("left out %d lines scheduling what has already happened", len(gone))
+    return len(gone)
+
+
 def fold_covered(payload: dict, covered: dict) -> int:
     """A line another line says in full, with more (relate.py), is not written on its own: its outlets
     are listed as sources of the detailed line, which keeps its own colour (it never borrows their
@@ -530,6 +578,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     # lead below, and if that fails too the finished article waits as a kept draft
     from .spelling import unify_article, unify_payload
     drop_outlet_self_talk(payload)
+    drop_past_schedules(payload)       # "is scheduled to" for what has already happened (owner, Oct 9 2026)
     from .belong import check as context_belongs
     context_belongs(store, router, story_id, payload)   # other news from the same page: dropped on two "other news"
     an_ = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
@@ -538,6 +587,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     from .news import pick_news
     payload["news"] = pick_news(ordered_items(payload))[:3]   # again: folding can remove a statement
+    from .news import lead_news
+    payload["lead"] = lead_news(ordered_items(payload))       # the news, and the fact of the day if another
     parents = [x["story_id"] for x in payload.get("parents") or []]
     if parents and not follow_up_ok(store, router, story_id, payload, parents):
         return _outcome(story_id, "not a follow-up yet")

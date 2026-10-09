@@ -76,12 +76,26 @@ def _outlets(i: dict) -> set[str]:
 
 
 def pick_news(items: list[dict]) -> list[int]:
+    return _pick(items)[0]
+
+
+def lead_news(items: list[dict]) -> list[int]:
+    """The facts the lead is written from: the news, and the fact of the day when it is a different one."""
+    out, today = _pick(items)
+    return out[:1] + ([today] if today is not None else [])
+
+
+def _pick(items: list[dict]) -> tuple[list[int], int | None]:
     """The ids of the news, best first (the first is THE news). Code only. Ranked:
-      recent     dated on the story's newest day or the day before; then undated; never told as the past
+      not old    never told as the past ("previously", an older year)
       act        a decisive act over process or setting
-      carried    2+ outlets tell this act: the statement's own outlets and those of statements telling the
-                 same act in other words (same decisive verb, a shared name or number, same day): one
-                 detention told three ways by three outlets is three outlets (Oct 8 2026, story 14729)
+      carried    how many outlets tell this act: the statement's own outlets (folded lines' included,
+                 compose.fold_covered runs first) and those of statements telling the same act in other words
+                 (same decisive verb, a shared name or number, same day): one detention told three ways by
+                 three outlets is three outlets (Oct 8 2026, story 14729). Before "recent" since Oct 9 2026
+                 (owner; story 13792: a vague one-outlet line dated today beat the arrest-power decision three
+                 outlets carried)
+      recent     dated on the story's newest day or the day before; then undated
       central    how many of the story's statements share its subject (2+ root words)
       concrete   names and numbers in it
     """
@@ -90,7 +104,7 @@ def pick_news(items: list[dict]) -> list[int]:
     core = [i for i in items if (i.get("role") or "core") == "core" and i.get("kind") in ("event", "claim")
             and i.get("verdict") != "false"]
     if not core:
-        return []
+        return [], None
     prof = {i["id"]: Profile(i["text"]) for i in core}
     verbs = {i["id"]: {_stem(m.lower()) for m in DECISIVE.findall(i["text"])} for i in core}
     dates = [d for d in (_start(i) for i in core) if d]
@@ -126,9 +140,25 @@ def pick_news(items: list[dict]) -> list[int]:
             recent = 0
         c = carried(i)
         p = prof[i["id"]]
-        return (recent > 0, act_score(i["text"]), recent, c >= 2, central(i), len(p.names) + len(p.nums), c,
+        return (recent > 0, act_score(i["text"]), c, recent, central(i), len(p.names) + len(p.nums),
                 i.get("n_articles") or 0, -i["id"])
-    return [i["id"] for i in sorted(core, key=key, reverse=True)]
+    ranked = sorted(core, key=key, reverse=True)
+    out = [i["id"] for i in ranked]
+    # the lead may carry two facts (owner, Oct 9 2026): the best-reported one, and, if that is not today's,
+    # the best fact dated on the story's newest day, unless it tells the same act in other words
+    first, today = ranked[0], None
+    if newest is not None and day(first) != newest:
+        def same_act(j) -> bool:
+            if not verbs[first["id"]] & verbs[j["id"]]:
+                return False
+            pf, pj = prof[first["id"]], prof[j["id"]]
+            return bool(pf.names & pj.names or pf.nums & pj.nums)
+        today = next((j for j in ranked[1:] if day(j) == newest and key(j)[0] and act_score(j["text"]) > 0
+                      and not same_act(j)), None)
+        if today is not None:
+            out.remove(today["id"])
+            out.insert(1, today["id"])
+    return out, (today["id"] if today is not None else None)
 
 
 # ------------------------------------------------------------------------------------------- headline

@@ -196,6 +196,18 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   sentence may carry facts of different colours in up to 3 parts (owner: "each sentence can have multiple
   colours"). Splitting stays: on 13970 one definition sat inside three different compound lines, which no fold
   can join. `CONSOLIDATE_VERSION` 11.
+- **Paragraphs of a readable length, by code (owner, Oct 9 2026, story 13792: seven one-sentence paragraphs,
+  one of 14).** `narrative.shape_paragraphs`, after the writer and the coherence rewrite: within a section,
+  neighbouring paragraphs of up to 2 sentences are joined (up to 4); a paragraph over 6 sentences is cut into
+  paragraphs of 2-5 where the speaker or subject changes, never before a sentence leaning on the one before;
+  the lead is left as written; sentences are never changed.
+- **What already happened is not written as scheduled (owner, Oct 9 2026, story 13792: "The 57th GST Council
+  meeting is scheduled to take place ... on Thursday, October 8", written after it).** `compose.drop_past_schedules`
+  before writing: a line saying something "is scheduled / set / expected to", "will be held / take place ...",
+  dated before today (IST), is left out; dated today, only when another line reports a decisive act with the same
+  names. A line with no date is kept (code never guesses).
+- **"Explained" keeps what reading labels explanation (owner, Oct 9 2026):** a decision filed there is not moved
+  ("better more than less").
 - **A sentence is a sentence (Oct 9 2026, story 13792: lead "An unnamed source said on Thursday."; "... on
   Thursday," then "And tax officers ...").** Pieces the writer returns apart are joined by code
   (`narrative._join_fragments`: a piece ending in a comma joins the next; a lower-case piece joins an unfinished
@@ -268,9 +280,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 - **The news, the lead and the headline: one structure (owner, Oct 8 2026; `news.py`).** The news is
   chosen ONCE by code (`news.pick_news`, no call): the story's own statements (not context, not FALSE),
   ranked: not old (an older year, "previously", "had announced" = the past) > a decisive act (deaths
-  first; verbs only: arrested, ordered, signed... over held, met, heard; "not" = -1) > dated on the
-  story's newest day or the day before > carried by 2+ outlets counting statements telling the same act in
-  other words > central (shares the story's subject) > names and numbers. Checked on the 30 latest
+  first; verbs only: arrested, ordered, signed... over held, met, heard; "not" = -1) > HOW MANY OUTLETS tell
+  it (a fact's outlets: its own, folded lines', and statements telling the same act in other words) > dated
+  on the story's newest day or the day before > central (shares the story's subject) > names and numbers.
+  Outlets before the date since Oct 9 2026 (owner; story 13792: a vague one-outlet line dated today beat the
+  arrest-power decision three outlets carried). The lead can carry TWO facts (`news.lead_news`, payload
+  `lead`): the best-reported one, and when that is not today's, the best decisive fact dated today (not the
+  same act in other words), told in the second sentence; the lead must cite the first. Checked on the 30 latest
   articles. The writer gets it as SECTION news; the lead must cite it (`narrative.lead_ok`, else the news
   fill rewrites the lead). The headline is written after the article (`news.write_headline`): one call
   gives three candidates; code rejects (>12 words, any "reportedly"/"reports say", bare name, loaded word,
