@@ -3074,3 +3074,24 @@ def test_the_desk_keeps_one_seat_for_domains_or_sport(store, monkeypatch):
     order[:] = gen[2:]
     st = desk.work(store, None, now=NOW + dt.timedelta(hours=1))
     assert st["published"] == gen[2:] and st["beat_seat"].startswith("empty")
+
+
+def test_a_line_every_report_gives_one_speaker_keeps_that_speaker(store):
+    """Story 13058 (Oct 9 2026): reading gave "Nana Patekar was an extraordinary artist" to Modi, and the
+    article printed it as a plain fact. An outlet named as the source is never a speaker."""
+    from nishpaksh import compose
+    from nishpaksh.db import update as upd
+    sid, cid = _origin_story(store, [("Outlet A", None, "Prime Minister Narendra Modi"),
+                                     ("Outlet B", None, "Prime Minister Narendra Modi")])
+    sid2, cid2 = _origin_story(store, [("Outlet A", None, "Outlet B"), ("Outlet B", None, "Outlet B")])
+    sid3, cid3 = _origin_story(store, [("Outlet A", None, "Prime Minister Narendra Modi"), ("Outlet B", None, None)])
+    for s in (sid, sid2, sid3):
+        store.exec(upd(stories).where(stories.c.id == s).values(qualifies=True))
+    def speaker(s, c):
+        p = compose.build_payload(store, None, s)
+        items = [i for k in ("undated", "established", "contested", "context") for i in p.get(k) or []]
+        items += [i for t in p.get("timeline") or [] for i in t]
+        return next(i for i in items if i["id"] == c).get("speaker")
+    assert speaker(sid, cid) == "Prime Minister Narendra Modi"
+    assert speaker(sid2, cid2) is None
+    assert speaker(sid3, cid3) is None

@@ -582,6 +582,11 @@ Hindi. At most 2 per clock hour.
 - Writer validator rejects Hindi in English text, and reported speech ("A said that B claimed X")
   turned into a fact or pinned on A.
 - `compose.tidy` removes "X (X)" duplicates.
+- Story 13058 (Oct 9 2026): "Nana Patekar was an extraordinary artist ..." (Modi's words, read as his by reading)
+  opened the article as a plain fact: a statement's speaker came only from the review model's list, which missed
+  81 of the 627 lines on the 40 latest articles that every report gives to someone. Now, when every report of a
+  line gives it to the same speaker (stance "attributes", one `attributed_to`), that is its speaker
+  (`compose._reading_speaker`); an outlet, "media" or "reports" never is.
 - Story 15429 (Oct 8 2026): the page models were overloaded mid-translation and the Hindi page went live
   half in English. The desk now finishes half-translated Hindi pages after writing
   (`compose.finish_translations`, selected in SQL by `payload_hi.translation_complete = false`, up to 3 per

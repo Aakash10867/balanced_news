@@ -102,6 +102,26 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             voices.add(v)
         return voices.pop() if len(voices) == 1 else None
 
+    outlet_names = {re.sub(r"^the ", "", (a["outlet"] or "").lower()).strip() for a in full_arts.values()}
+
+    def _reading_speaker(cid: int) -> str | None:
+        """Who says it, as reading recorded it: every report gives the line as one named speaker's words
+        (stance "attributes", the same attributed_to). Oct 9 2026, story 13058: "Nana Patekar was an
+        extraordinary artist ...", which reading gave to Modi, opened the article as a plain fact because only
+        the review's own speaker list was used. An outlet is never a speaker (no outlet names in the text)."""
+        rows_ = [r for r in members.get(cid, []) if r["stance"] in ("asserts", "attributes")]
+        if not rows_ or any(r["stance"] != "attributes" for r in rows_):
+            return None
+        who = {(r["attributed_to"] or "").strip() for r in rows_}
+        if len({w.lower() for w in who}) != 1:
+            return None
+        w = who.pop()
+        low = re.sub(r"^the ", "", w.lower())
+        if not w or low in ("article", "unknown", "unnamed", "none") or low in outlet_names \
+                or re.search(r"\b(media|reports?|newspaper|channel)\b", low):
+            return None
+        return w
+
     def item(cid: int) -> dict:
         c = canon[cid]
         s = support_summary(cid, members, agroup, gpersp)
@@ -136,7 +156,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "framing": {k: sorted(v) for k, v in sorted(framing.items())},
             "sources": sorted(srcs, key=lambda x: (x["perspective"], x["outlet"])),
             "check": check, "minor": s["n_articles"] <= 1,
-            "speaker": speakers.get(str(cid)) or _state_voice(cid),
+            "speaker": speakers.get(str(cid)) or _reading_speaker(cid) or _state_voice(cid),
             "role": _role(cid)[0], "related_event": _role(cid)[1] or None,
             "responds_to": [x for x in responds_to.get(cid, []) if members.get(x)],
             "responded_by": [x for x in responded_by.get(cid, []) if members.get(x)],
