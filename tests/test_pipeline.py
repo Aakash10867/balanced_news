@@ -3034,10 +3034,13 @@ def test_beat_stories_get_reserved_reading_places(store, monkeypatch):
     class Rater(FakeBackend):
         def generate(self, model, prompt, json_mode, grounded):
             import re as _re
+            rows = _re.findall(r"^(\d+)\. (.*)$", prompt, _re.M)
+            if "desk of a newspaper" in prompt:        # the desk question is its own call (Oct 9 2026)
+                return json.dumps({"results": [{"n": int(n), "desk": "sport" if "Cricket" in h else "none"}
+                                               for n, h in rows]}), [], 30
             if "each shown by the headlines" in prompt:
-                rows = _re.findall(r"^(\d+)\. (.*)$", prompt, _re.M)
-                return json.dumps({"results": [{"n": int(n), "score": 2 if "Cricket" in h else 5, "filler": False,
-                                                "beat": "sport" if "Cricket" in h else "none"} for n, h in rows]}), [], 30
+                return json.dumps({"results": [{"n": int(n), "score": 2 if "Cricket" in h else 5, "filler": False}
+                                               for n, h in rows]}), [], 30
             return super().generate(model, prompt, json_mode, grounded)
     P.rank_new(store, _router(store, Rater()))
     q = P.queue(store)

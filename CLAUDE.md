@@ -436,8 +436,12 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   else it is (Oct 2-9: only ~2-5 genuine stories a week per domain among 526 multi-outlet stories). Jobs and Tech
   became HR and Analytics (`categories.normalize` / site `normCat` map old keys; stored payloads unchanged).
   (2) **Reading queue:** of `prep_queue` (16), `prep_beat` (4) go to the best Domains/Sport stories; unused places
-  go back (`priority.queue`). A story is a beat story when the rating call's `beat` field says so (scheduling
-  only) or half its articles come from feeds tagged `beat: domains|sport` (`priority.is_beat`). (3) **Desk seats:**
+  go back (`priority.queue`). A story is a beat story when its desk question says so (`priority.beat_check`, its OWN
+  call per 20 headlines, worked examples, unsure = none, asked once, again when coverage grows by 2+; saved in
+  `analysis.beat`; scheduling only) or half its articles come from feeds tagged `beat: domains|sport`
+  (`priority.is_beat`). Oct 9 2026: asked inside the importance rating it answered "none" for all 36 stories rated
+  in its first 3 hours, among them Indian IT firms suspended from the US green card programme, the anti-cancer
+  drug margin cap and the Starlink row, so the beat seat stayed empty every run. (3) **Desk seats:**
   at most 3 an hour, 2 for any story (`desk_per_hour`), 1 only for Domains/Sport (`desk_beat_seat`), filled by a
   beat story first; with none ready it stays EMPTY (`desk.seats`; diagnostics `beat_seat`). (4) Specialist feeds
   (Moneycontrol, ET Markets, ESPNcricinfo ...) are ordinary feeds with `beat:`, added once embedding room is

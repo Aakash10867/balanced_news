@@ -52,16 +52,75 @@ filler = true for content that is not news reporting: horoscopes, lottery result
 reviews, celebrity gossip, recipes, explainers, quizzes, listicles, opinion or editorial pieces,
 live-blog shells, sponsored content.
 
-beat:
-  "domains" = business news: companies, markets, banking and finance, jobs and work, advertising and brands,
-              technology and data, supply chains and logistics
-  "sport"   = sport: matches, players, tournaments, sports bodies
-  "none"    = anything else (politics, crime, courts, world, health ...). A minister speaking about the economy
-              is "none" unless the news is a business decision.
-
-Reply with JSON only: {{"results": [{{"n": 1, "score": 4, "filler": false, "beat": "none"}}, ...]}}"""
+Reply with JSON only: {{"results": [{{"n": 1, "score": 4, "filler": false}}, ...]}}"""
 
 BEATS = ("domains", "sport")
+
+BEAT_PROMPT = """Below are news stories, each shown by the headlines different outlets gave it. For each story, which
+desk of a newspaper would cover it?
+
+"domains" - BUSINESS AND WORK: a company, an industry, markets and prices, banks and money, jobs, pay, hiring and
+            work visas, brands and advertising, technology companies and data, trade, supply chains. A government
+            decision counts when it changes things for companies, workers or prices.
+"sport"   - SPORT: matches, players, teams, tournaments, sports bodies.
+"none"    - anything else: politics, crime, courts, protests, accidents, world affairs, health, films.
+
+Examples:
+- "Trump administration suspends Indian IT firms from US green card programme" -> domains (companies, work visas)
+- "Starlink row: who is blocking Musk in India?" -> domains (a company's entry into a market)
+- "Government caps trade margins on anti-cancer drugs at 30%" -> domains (prices, an industry)
+- "Oil prices dip after Trump rules out strike on Iran" -> domains (markets)
+- "RBI raises repo rate by 25 basis points" -> domains
+- "India beat Australia by 6 wickets in the second ODI" -> sport
+- "BCCI names new selection committee" -> sport
+- "Cricketer's wife files dowry harassment case" -> none (a crime case, not sport)
+- "Finance Minister attacks Opposition in Lok Sabha" -> none (politics)
+- "Railways cancel trains ahead of Delhi protest" -> none (a protest)
+If unsure, answer "none".
+
+{stories}
+
+Reply with JSON only: {{"results": [{{"n": 1, "desk": "domains"}}, {{"n": 2, "desk": "none"}}, ...]}}"""
+BEAT_CALLS = 6          # per run; a story is asked once (again when its coverage grows by 2+)
+
+
+def beat_check(store: Store, router: Router | None, cands: dict[int, dict], an: dict[int, dict],
+               now: dt.datetime) -> int:
+    """Domains or Sport, as its OWN small question (Oct 9 2026: asked inside the importance rating, it answered
+    "none" for all 36 stories rated, among them "Trump suspends Indian IT firms from US green card programme").
+    Scheduling only: reserved reading places and the desk's seat; it colours and merges nothing, so asked once.
+    Saved in analysis.beat {desk, groups, at}."""
+    todo = [sid for sid, c in cands.items() if not c.get("beat_feed")
+            and (not (an.get(sid) or {}).get("beat") or c["groups"] >= (an[sid]["beat"].get("groups") or 0) + 2)]
+    if not todo or router is None:
+        return 0
+    todo.sort(key=lambda sid: -cands[sid]["groups"])
+    asked = 0
+    for start in range(0, min(len(todo), BATCH * BEAT_CALLS), BATCH):
+        chunk = todo[start:start + BATCH]
+        body = "\n".join(f"{n + 1}. " + " | ".join(cands[sid]["titles"]) for n, sid in enumerate(chunk))
+        try:
+            res = router.call("page", BEAT_PROMPT.format(stories=body), json_out=True, max_output_tokens=800)
+        except QuotaExhausted:
+            break
+        except Exception as e:  # noqa: BLE001
+            log.warning("priority: desk question failed: %s", str(e)[:200])
+            continue
+        for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
+            try:
+                n = int(item["n"]) - 1
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not 0 <= n < len(chunk):
+                continue
+            sid = chunk[n]
+            desk = str(item.get("desk") or "").strip().lower()
+            a = an.setdefault(sid, {})
+            a["beat"] = {"desk": desk if desk in BEATS else "none", "groups": cands[sid]["groups"],
+                         "at": now.isoformat(timespec="minutes")}
+            store.exec(update(stories).where(stories.c.id == sid).values(analysis=a))
+            asked += 1
+    return asked
 
 BATCH = 20
 
@@ -199,7 +258,8 @@ def _feed_beat(tags: list[str | None]) -> str | None:
 
 def is_beat(c: dict | None, a: dict | None) -> bool:
     """A Domains or Sport story: the rating said so, or its feeds do."""
-    return bool((c or {}).get("beat_feed")) or ((a or {}).get("priority") or {}).get("beat") in BEATS
+    return (bool((c or {}).get("beat_feed")) or ((a or {}).get("beat") or {}).get("desk") in BEATS
+            or ((a or {}).get("priority") or {}).get("beat") in BEATS)
 
 
 def rank_new(store: Store, router: Router | None, now: dt.datetime | None = None) -> int:
@@ -212,6 +272,7 @@ def rank_new(store: Store, router: Router | None, now: dt.datetime | None = None
         select(stories.c.id, stories.c.analysis).where(stories.c.id.in_(sorted(cands))))}
     world_check(store, router, cands, an, now)
     cands = {sid: c for sid, c in cands.items() if _relevant(c, an.get(sid))}
+    beat_check(store, router, cands, an, now)
     todo = [sid for sid, c in cands.items()
             if not (an.get(sid) or {}).get("priority")
             or c["groups"] >= (an[sid]["priority"].get("groups") or 0) + 2]
