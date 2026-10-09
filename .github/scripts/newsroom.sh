@@ -50,7 +50,7 @@ log_event() {   # event status counts stamp size
   fi
 }
 CMD="${1:-}"
-trap 'log_event "$CMD" failed "line $LINENO"' ERR
+trap 'log_event "$CMD" failed "line $LINENO: $BASH_COMMAND"' ERR
 fail() { echo "$1"; trap - ERR; log_event "$CMD" refused "$1"; exit 1; }
 
 need_key() {
@@ -180,7 +180,12 @@ seed() {   # $1 = Supabase database URL
   # on 6543 (transaction mode)
   src="${src/:6543\//:5432\/}"
   for t in "${TABLES[@]}"; do tabs+=(-t "public.$t"); done
-  pg pg_dump --no-owner --no-acl -Fc -Z 6 "${tabs[@]}" -f $W/seed.dump "$src"
+  local where; where="$(sed -E 's#^[a-z+]+://[^@]*@##; s#\?.*$##' <<<"$src")"   # host:port/db, no credentials
+  echo "copying from $where"
+  if ! pg pg_dump --no-owner --no-acl -Fc -Z 6 "${tabs[@]}" -f $W/seed.dump "$src" 2> "$DIR/seed.err"; then
+    cat "$DIR/seed.err"
+    fail "pg_dump from $where failed: $(tail -c 600 "$DIR/seed.err" | tr '\n' ' ')"
+  fi
   load_dump seed.dump
   rm -f "$DIR/seed.dump"
   date -u +%s > "$DIR/restored"
