@@ -59,7 +59,7 @@ def main() -> None:
 
     # the context checks are a test: not held back by the day's pacing (a paced night run answered nothing)
     router = Router(load_yaml("models.yaml")["tiers"], [GeminiBackend(k) for k in gemini_api_keys()], prod,
-                    paced=False if a.mode in ("context", "split") else None)
+                    paced=False)   # a test on stored stories: not held back by the day's pacing
     router.resolve()
     from .. import compose
     from ..consolidate import consolidate_story
@@ -112,6 +112,10 @@ def main() -> None:
             log.info("%s", json.dumps(entry)[:800])
             continue
         try:
+            # as in preparation (run.analyse): compound statements split, then matched, then reviewed
+            from .. import match, split
+            entry["split"] = split.split_story(local, router, sid)
+            match.match_story(local, router, sid)
             entry["consolidate"] = consolidate_story(local, router, sid)
             # a published article is never rewritten; on this scratch copy it is written afresh
             local.exec(delete(published).where(published.c.story_id == sid))
@@ -123,7 +127,10 @@ def main() -> None:
                 published=ok, headline=pe.get("headline"), importance=pe.get("importance"), rank=pe.get("rank"),
                 parents=pe.get("parents"), background=[b["text"] for b in pe.get("background") or []],
                 model=nar.get("model"), rejected=nar.get("rejected"), reasons=nar.get("reject_reasons"),
-                essay=" ".join(x["text"] for para in nar.get("paragraphs") or [] for x in para)[:2500])
+                lead=pe.get("lead"), covered=len(((local.one(select(stories.c.analysis).where(stories.c.id == sid))
+                                                  or {}).get("analysis") or {}).get("covered") or {}),
+                paragraphs=[[x["text"] for x in para] for para in nar.get("paragraphs") or []],
+                section_keys=nar.get("section_keys"))
         except Exception as e:  # noqa: BLE001
             log.exception("story %s failed", sid)
             entry["error"] = repr(e)[:500]
