@@ -75,6 +75,14 @@ def _outlets(i: dict) -> set[str]:
     return {s.get("outlet") for s in i.get("sources") or [] if s.get("outlet")} or {f"#{i['id']}"}
 
 
+def _same_act(pi, pj) -> bool:
+    """Two lines with the same decisive verb tell the same act in other words when they share a number, or a
+    name AND most of the smaller line's words. A shared name alone was too loose (Oct 9 2026, story 13792: every
+    "the GST Council approved ..." line borrowed every other's outlets, all tied, and a vague one-outlet line led)."""
+    small = min(len(pi.roots), len(pj.roots)) or 1
+    return bool(pi.nums & pj.nums) or bool(pi.names & pj.names and len(pi.roots & pj.roots) >= 0.5 * small)
+
+
 def pick_news(items: list[dict]) -> list[int]:
     return _pick(items)[0]
 
@@ -121,8 +129,7 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
                 continue
             if day(i) and day(j) and day(i) != day(j):
                 continue
-            pi, pj = prof[i["id"]], prof[j["id"]]
-            if pi.names & pj.names or pi.nums & pj.nums:
+            if _same_act(prof[i["id"]], prof[j["id"]]):
                 out |= _outlets(j)
         return len(out)
 
@@ -149,10 +156,7 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
     first, today = ranked[0], None
     if newest is not None and day(first) != newest:
         def same_act(j) -> bool:
-            if not verbs[first["id"]] & verbs[j["id"]]:
-                return False
-            pf, pj = prof[first["id"]], prof[j["id"]]
-            return bool(pf.names & pj.names or pf.nums & pj.nums)
+            return bool(verbs[first["id"]] & verbs[j["id"]]) and _same_act(prof[first["id"]], prof[j["id"]])
         today = next((j for j in ranked[1:] if day(j) == newest and key(j)[0] and act_score(j["text"]) > 0
                       and not same_act(j)), None)
         if today is not None:

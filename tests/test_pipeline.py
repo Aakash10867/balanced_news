@@ -2838,3 +2838,20 @@ def test_sections_are_checked_by_code_and_filled_for_live_articles(store):
     assert {k: v for k, v in after["payload_en"].items() if k != "category"} == old_en
     assert after["payload_hi"]["category"] == after["payload_en"]["category"]
     assert C.fill_live(store, router) == []                  # asked once
+
+
+def test_lead_is_the_best_reported_fact_story_13792():
+    """Owner, Oct 9 2026: the most-reported fact leads; a different fact of the day may follow it. A shared name
+    is not "the same act": every "the GST Council approved ..." line had borrowed every other's outlets."""
+    from nishpaksh.news import lead_news
+
+    def it(i, t, outs, start=None):
+        return {"id": i, "text": t, "kind": "event", "role": "core", "verdict": "unverified",
+                "sources": [{"outlet": o, "url": f"{o}{i}"} for o in outs], "time": {"start": start} if start else None}
+    items = [it(1, "The 57th GST Council meeting approved a set of measures aimed at simplifying compliance and "
+                   "speeding up refunds.", ["Mint"], "2026-10-08T12:00"),
+             it(2, "The GST Council approved the removal of the power of GST tax officials to make arrests.",
+                ["Mint", "ET", "Hindu"]),
+             it(3, "The GST Council approved a set of changes to GST rules.", ["NDTV"])]
+    lead = lead_news(items)
+    assert lead[0] == 2 and lead[1:] in ([], [1])
