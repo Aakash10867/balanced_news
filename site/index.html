@@ -513,6 +513,9 @@
   .tog { width: 46px; height: 28px; border-radius: 999px; border: 0; cursor: pointer; position: relative; background: #c9cbd3; transition: background 180ms ease; flex: none; }
   .tog i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: transform 180ms ease; }
   .tog[aria-checked="true"] { background: #2f8a5b; } .tog[aria-checked="true"] i { transform: translateX(18px); }
+  .rbrief { margin: 6px 2px 0; font-size: 16px; line-height: 1.6; }
+  .rbrief .rs { cursor: pointer; }
+  .rbrief .rs:active { opacity: .6; }
   .ritem { display: block; width: 100%; padding: 14px 0; border: 0; border-top: 1px solid #eeeef1; background: none; text-align: start; color: var(--ink); cursor: pointer; }
   .ritem .h { font-family: var(--head); font-size: 19px; font-weight: 600; line-height: 1.25; }
   .ritem p { margin: 6px 0 0; font-size: 15px; line-height: 1.55; }
@@ -1990,17 +1993,17 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", noNotes: "Noth
   followIntro: "We tell you every time an article comes out in what you follow. Tap the circle for all of it, the arrow to choose inside.",
   sectionsL: "Sections", placesL: "Places and names", states: "States", words: "Words and names", allOf: l => `All of ${l}`, all: "All",
   of: (a, b) => `${a} of ${b}`, wordsIntro: "We tell you when an article names it.", wordPh: "A word or a name, e.g. Supreme Court", followBtn: "Follow",
-  recapAt: "Today's recap is made at", recapTime: "11:00 pm", recapIn: x => `in ${x}`, recapAbout: "Every article of the day, its headline and opening lines, in English and Hindi, with audio.",
+  recapAt: "Today's recap is made at", recapTime: "11:00 pm", recapIn: x => `in ${x}`, recapAbout: "The day's news in brief, section by section, in English and Hindi. Tap a line to read its article.",
   recapMaking: "Today's recap is being made. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
-  articles: n => `${n} articles today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following"});
+  articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following"});
 Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
   followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
   sectionsL: "खंड", placesL: "जगहें और नाम", states: "राज्य", words: "शब्द और नाम", allOf: l => `पूरा ${l}`, all: "सब",
   of: (a, b) => `${b} में से ${a}`, wordsIntro: "जिस लेख में यह नाम आए, हम बताएंगे।", wordPh: "कोई शब्द या नाम, जैसे Supreme Court", followBtn: "फ़ॉलो",
-  recapAt: "आज का सार बनेगा", recapTime: "रात 11:00 बजे", recapIn: x => `${x} में`, recapAbout: "दिन का हर लेख, उसका शीर्षक और शुरुआती पंक्तियां, हिंदी और अंग्रेज़ी में, ऑडियो के साथ।",
+  recapAt: "आज का सार बनेगा", recapTime: "रात 11:00 बजे", recapIn: x => `${x} में`, recapAbout: "दिन की ख़बरें संक्षेप में, खंड के अनुसार, हिंदी और अंग्रेज़ी में। लेख पढ़ने के लिए किसी पंक्ति पर टैप करें।",
   recapMaking: "आज का सार बन रहा है। कुछ ही मिनटों में यहां होगा।", notifyMe: "तैयार होने पर मुझे बताएं", listenRecap: "सुनें",
-  articles: n => `आज ${n} लेख`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें"});
+  articles: n => `आज की ${n} ख़बरें`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें"});
 const STATES = [["andhra-pradesh", "Andhra Pradesh", "आंध्र प्रदेश"], ["arunachal-pradesh", "Arunachal Pradesh", "अरुणाचल प्रदेश"], ["assam", "Assam", "असम"], ["bihar", "Bihar", "बिहार"], ["chhattisgarh", "Chhattisgarh", "छत्तीसगढ़"], ["goa", "Goa", "गोवा"], ["gujarat", "Gujarat", "गुजरात"], ["haryana", "Haryana", "हरियाणा"], ["himachal-pradesh", "Himachal Pradesh", "हिमाचल प्रदेश"], ["jharkhand", "Jharkhand", "झारखंड"], ["karnataka", "Karnataka", "कर्नाटक"], ["kerala", "Kerala", "केरल"], ["madhya-pradesh", "Madhya Pradesh", "मध्य प्रदेश"], ["maharashtra", "Maharashtra", "महाराष्ट्र"], ["manipur", "Manipur", "मणिपुर"], ["meghalaya", "Meghalaya", "मेघालय"], ["mizoram", "Mizoram", "मिज़ोरम"], ["nagaland", "Nagaland", "नगालैंड"], ["odisha", "Odisha", "ओडिशा"], ["punjab", "Punjab", "पंजाब"], ["rajasthan", "Rajasthan", "राजस्थान"], ["sikkim", "Sikkim", "सिक्किम"], ["tamil-nadu", "Tamil Nadu", "तमिलनाडु"], ["telangana", "Telangana", "तेलंगाना"], ["tripura", "Tripura", "त्रिपुरा"], ["uttar-pradesh", "Uttar Pradesh", "उत्तर प्रदेश"], ["uttarakhand", "Uttarakhand", "उत्तराखंड"], ["west-bengal", "West Bengal", "पश्चिम बंगाल"], ["andaman-nicobar", "Andaman and Nicobar Islands", "अंडमान और निकोबार"], ["chandigarh", "Chandigarh", "चंडीगढ़"], ["dadra-daman-diu", "Dadra and Nagar Haveli and Daman and Diu", "दादरा और नगर हवेली और दमन और दीव"], ["delhi", "Delhi", "दिल्ली"], ["jammu-kashmir", "Jammu and Kashmir", "जम्मू-कश्मीर"], ["ladakh", "Ladakh", "लद्दाख"], ["lakshadweep", "Lakshadweep", "लक्षद्वीप"], ["puducherry", "Puducherry", "पुडुचेरी"]];
 const stateLabel = k => { const s = STATES.find(x => x[0] === k); return s ? s[lang === "hi" ? 2 : 1] : k; };
 
@@ -2158,19 +2161,18 @@ const istDay = () => istNow().toISOString().slice(0, 10);
 async function loadRecap() {
   recapData = null;
   const day = istDay(), mins = istNow().getUTCHours() * 60 + istNow().getUTCMinutes();
-  let row = null, audio = [];
+  let row = null;
   if (mins >= 23 * 60) {
     try { row = (await api(`recaps?select=day,payload_en,payload_hi&day=eq.${day}`))[0] || null; } catch (e) { row = null; }
-    try { audio = (await api(`audio_files?select=lang&key=in.(recap-${day}-en,recap-${day}-hi)`)).map(a => a.lang); } catch (e) { audio = []; }
   }
   if (me) await loadFollows();
-  recapData = {day, mins, row, audio};
+  recapData = {day, mins, row};
   if (sheetKind === "recap") renderSheet();
 }
 function recapHtml() {
   const t = T[lang];
   if (!recapData) return `<div class="bbody"><p class="bnote">…</p></div>`;
-  const {mins, row, audio, day} = recapData, on = isF("recap", "daily");
+  const {mins, row, day} = recapData, on = isF("recap", "daily");
   const left = (23 * 60 - mins + 1440) % 1440;
   const toggle = `<div class="rnotify">${ICON.bellg}<span style="flex:1;font-size:16px">${esc(t.notifyMe)}</span>
     <button type="button" class="tog" role="switch" aria-checked="${on}" data-recapnotify="1" aria-label="${esc(t.notifyMe)}"><i></i></button></div>`;
@@ -2180,15 +2182,18 @@ function recapHtml() {
   if (!row) return `<div class="bbody"><div class="rclock brand"><div style="font-size:16px;line-height:1.5">${esc(t.recapMaking)}</div></div>${toggle}</div>`;
   const p = (lang === "hi" && row.payload_hi) || row.payload_en || {}, items = p.stories || [];
   const date = new Date(`${day}T12:00:00Z`).toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", {weekday: "long", day: "numeric", month: "long"});
+  // the day's brief (owner, Oct 10 2026): section by section, one short sentence per story in the colour of the
+  // lead it comes from; a tap on a sentence opens its article. Older recaps (headline + lead) still show as a list.
+  const body = p.sections ? p.sections.map(sc => `<div class="flabel" style="margin-top:16px">${esc(sc.label)}</div>
+      <p class="rbrief">${sc.sents.map(x => `<span class="rs" role="button" tabindex="0" data-rstory="${esc(x.id)}">${sentenceHtml(x)}</span>`).join("")}</p>`).join("")
+    : items.map(it => `<button type="button" class="ritem" data-rstory="${esc(it.id)}"><div class="h">${esc(it.h)}</div><p>${(it.lead || []).map(sentenceHtml).join("")}</p></button>`).join("");
   return `<div class="bbody" style="flex:1;min-height:0;gap:0">
-    <div style="display:flex;align-items:center;gap:12px;margin:4px 0 6px"><div style="flex:1"><div class="bnote" style="font-size:14px">${esc(date)}</div><div style="font-weight:600">${esc(t.articles(items.length))}</div></div>
-      ${audio.includes(lang) ? `<button type="button" class="bgo brand" data-rplay="recap-${day}-${lang}" style="height:44px;padding:0 16px;border-radius:999px;font-size:15px;display:flex;align-items:center;gap:8px">${ICON.play}${esc(t.listenRecap)}</button>` : ""}</div>
-    ${toggle}
-    ${items.map(it => `<button type="button" class="ritem" data-rstory="${esc(it.id)}"><div class="h">${esc(it.h)}</div><p>${(it.lead || []).map(sentenceHtml).join("")}</p></button>`).join("")}</div>`;
+    <div style="margin:4px 0 6px"><div class="bnote" style="font-size:14px">${esc(date)}</div><div style="font-weight:600">${esc(t.articles(items.length))}</div></div>
+    ${toggle}${body}</div>`;
 }
 
 bsheet.addEventListener("click", async e => {
-  const b = e.target.closest("button"); if (!b || !sheetKind) return;
+  const b = e.target.closest("button, .rs"); if (!b || !sheetKind) return;
   if (sheetKind === "follow" && (b.dataset.fsub || b.dataset.fall || b.dataset.fone || b.dataset.fword)) { e.stopImmediatePropagation(); followClick(b); return; }
   if (b.dataset.fback) { e.stopImmediatePropagation(); followSub = null; renderSheet(); return; }
   if (b.dataset.nplay) { e.stopImmediatePropagation(); const k = b.dataset.nplay; closeSheet(); playAudio(k); return; }
@@ -2207,7 +2212,6 @@ bsheet.addEventListener("click", async e => {
     catch (err) { toast(T[lang].error); }
     return;
   }
-  if (b.dataset.rplay) { e.stopImmediatePropagation(); const k = b.dataset.rplay; playAudio(k); return; }
   if (b.dataset.rstory) {
     e.stopImmediatePropagation();
     const id = b.dataset.rstory; closeSheet();

@@ -498,8 +498,17 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     Delhi" alone is not Delhi); people/bodies (`people.py`, code only, titles stripped); a single story (a follow-up
     published = notified); the daily recap. EVERY match is notified: no cap, no quiet hours (owner). `notify.py` runs at
     the end of every desk run (queue, then push), one row per reader+kind+ref, which is also the site's inbox.
-  - **Daily recap** (`notify.make_recap`, desk run from 23:00 IST): every article since the last recap, headline + its lead
-    AS WRITTEN (code only, no new prose), both languages, `#/recap/<day>` on the site, audio made automatically.
+  - **Daily brief** (owner, Oct 10 2026, option B; `recap.py`, called by `notify.make_recap` on the desk run from 23:00
+    IST): the day's stories section by section (Politics, Justice, Business, World, Life, then "Also today"), ONE short
+    sentence per story (its main section only; a thread told twice in the day once, by its newest), most outlets first.
+    One page-tier call per section rewrites the stories' LEADS as brief sentences; code checks each against its lead
+    (`recap.problem`: numbers incl. number words, names or their initials, "not", the speaker kept, "allegedly" kept, no
+    hedge or cause word, no act verb the lead lacks, <= 40 words) and a refused or missing one is the lead's own first
+    sentence. NO new colouring (owner: "just use the colour of the sentences used"): a brief sentence takes the weakest
+    colour of the lead sentences it uses. Hindi: the brief's sentences through the translation cache
+    (`compose.translate_strings`), else the Hindi lead's first sentence. No audio (owner, Oct 10 2026). Payload
+    `{kind: "brief", sections: [{key, label, sents: [{t, c, id, p?}]}], stories}`; the site's Daily recap card shows it
+    (a tap on a sentence opens its article; older recaps as a list).
   - **Audio on request** (`audio.py`, workflow `audio.yml`, started by the desk when something waits; GitHub schedule every
     3 h as backup): language chosen by the reader; 1 new request per reader per IST day, audio already made is free; every
     "tts" model on every key (10/day each); headline + article as written + section headings; one voice; the site lights

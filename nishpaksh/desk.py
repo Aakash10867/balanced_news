@@ -186,7 +186,7 @@ def main() -> None:
     from .categories import fill_places
     for name, step in (("placed", lambda: fill_places(store, router)),
                        ("videos", lambda: videos.fetch_new(store)),
-                       ("notify", lambda: notify.run(store))):
+                       ("notify", lambda: notify.run(store, router=router))):
         try:
             stats[name] = step()
         except Exception as e:  # noqa: BLE001

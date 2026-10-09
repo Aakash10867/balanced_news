@@ -315,8 +315,22 @@ def _collect_strings(payload: dict) -> list[str]:
     return [s for s in dict.fromkeys(out) if s]
 
 
+def translate_strings(store: Store, router: Router | None, strings: list[str]) -> dict[str, str]:
+    """{English: Hindi} for the strings translated (cached or now); the rest are missing."""
+    cache = _translate(store, router, strings)
+    return {s: cache[_key(s)] for s in strings if _key(s) in cache}
+
+
 def translate_payload(store: Store, router: Router | None, payload: dict) -> dict:
     strings = _collect_strings(payload)
+    cache = _translate(store, router, strings)
+
+    def tr(s):
+        return cache.get(_key(s), s) if s else s
+    return _apply(payload, strings, cache, tr)
+
+
+def _translate(store: Store, router: Router | None, strings: list[str]) -> dict:
     cache = store.translation_get([_key(s) for s in strings])
     missing = [s for s in strings if _key(s) not in cache]
     if missing and router is not None:
@@ -338,10 +352,10 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
                     got[_key(chunk[int(k)])] = v.strip()
             store.translation_put(got)
             cache.update(got)
+    return cache
 
-    def tr(s):
-        return cache.get(_key(s), s) if s else s
 
+def _apply(payload: dict, strings: list[str], cache: dict, tr) -> dict:
     hi = copy.deepcopy(payload)
     hi["headline"] = tr(hi["headline"])
     for sec in ("undated", "established", "contested"):

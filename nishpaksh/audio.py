@@ -2,8 +2,8 @@
 
 A reader asks for an article's audio in English or Hindi (the site calls `public.request_audio`: one new request
 per reader per IST day; an audio already made is free for everyone). This job makes the queued ones with Gemini's
-text-to-speech models (every model with "tts" in its name on each key, 10 a day each on the free tier), then the
-day's recap in both languages, and tells each reader who asked (notify.py).
+text-to-speech models (every model with "tts" in its name on each key, 10 a day each on the free tier).
+Readers who asked are told when it is ready (notify.py). The day's brief has no audio (owner, Oct 10 2026).
 
 What is read: the headline, then the article as written, a section heading read where a section starts. Nothing is
 added or reworded. Audio cannot carry the sentence colours, so the site highlights each sentence in its colour as
@@ -230,8 +230,7 @@ def make(units: list[dict], lang: str, voices: Voices) -> tuple[bytes, list[dict
 
 # -- the job ----------------------------------------------------------------------------------------------------
 def todo(store: Store) -> list[dict]:
-    """What to make, oldest request first: requested articles (each story and language once), then recaps of the
-    last two days without audio."""
+    """What to make, oldest request first: requested articles (each story and language once)."""
     have = {r["key"] for r in store.rows(select(audio_files.c.key))}
     out, seen = [], set()
     for r in store.rows(select(audio_requests.c.story_id, audio_requests.c.lang).where(audio_requests.c.status == "queued")
@@ -241,13 +240,7 @@ def todo(store: Store) -> list[dict]:
             continue
         seen.add(key)
         out.append({"key": key, "story_id": r["story_id"], "lang": r["lang"], "done": key in have})
-    since = (utcnow() - dt.timedelta(days=2)).date().isoformat()
-    for r in store.rows(select(recaps.c.day).where(recaps.c.day >= since).order_by(recaps.c.day.desc())):
-        day = str(r["day"])[:10]
-        for lang in ("en", "hi"):
-            key = f"recap-{day}-{lang}"
-            if key not in have:
-                out.append({"key": key, "recap": day, "lang": lang, "done": False})
+    # the day's brief has no audio (owner, Oct 10 2026)
     return out
 
 

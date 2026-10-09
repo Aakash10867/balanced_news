@@ -43,10 +43,10 @@ RECAP_HOUR_IST = 23                         # the desk run at 23:15 IST makes th
 
 WORDS = {
     "en": {"followup": "Update to a story you follow", "established": "established", "outlets": "outlets",
-           "recap": "Today on Nishpaksh", "recap_body": lambda n: f"{n} articles today: the recap is ready",
+           "recap": "The day in brief", "recap_body": lambda n: f"{n} stories today, section by section",
            "audio": "Your audio is ready", "place": "", "entity": ""},
     "hi": {"followup": "जिस ख़बर को आप फ़ॉलो करते हैं, उसमें नया", "established": "स्थापित", "outlets": "स्रोत",
-           "recap": "आज निष्पक्ष पर", "recap_body": lambda n: f"आज {n} लेख: दिन का सार तैयार है",
+           "recap": "आज का सार", "recap_body": lambda n: f"आज की {n} ख़बरें, खंड के अनुसार",
            "audio": "आपका ऑडियो तैयार है", "place": "", "entity": ""},
 }
 
@@ -226,25 +226,12 @@ def queue_articles(store: Store, now: dt.datetime | None = None) -> int:
 
 
 # -- the daily recap ------------------------------------------------------------------------------------------
-def _lead(payload: dict) -> list[dict]:
-    paras = ((payload or {}).get("narrative") or {}).get("paragraphs") or []
-    out = []
-    for s in (paras[0] if paras else [])[:2]:
-        item = {"t": s.get("text") or "", "c": s.get("class") or "unverified"}
-        parts = s.get("parts") or []
-        if len(parts) > 1:
-            item["p"] = [{"t": x.get("text") or "", "c": x.get("class") or "unverified"} for x in parts]
-        out.append(item)
-    return out
-
-
-def make_recap(store: Store, now: dt.datetime | None = None, force: bool = False) -> str | None:
-    """The day's recap (owner, Oct 9 2026): every article published since the last recap, its headline and its
-    lead as written (code only: no new prose, so the writer's rules stand), in both languages. Made by the first
-    desk run from 23:00 IST (or, if that run was missed, by one before 06:00 IST for the day before). Returns the
-    IST day it made, or None."""
-    from .feed import bar_counts
-    from .categories import normalize
+def make_recap(store: Store, now: dt.datetime | None = None, force: bool = False, router=None) -> str | None:
+    """The day's brief (owner, Oct 10 2026, `recap.py`): every article published since the last recap, told in one
+    short sentence each, section by section, coloured as the lead sentences it comes from; both languages; no
+    audio. Made by the first desk run from 23:00 IST (or, if that run was missed, by one before 06:00 IST for the
+    day before). Returns the IST day it made, or None."""
+    from .recap import build
     now = now or utcnow()
     ist = now + IST
     if ist.hour >= RECAP_HOUR_IST:
@@ -269,22 +256,16 @@ def make_recap(store: Store, now: dt.datetime | None = None, force: bool = False
     if not rows:
         return None
     out = {}
-    for lang in ("en", "hi"):
-        items = []
-        for r in rows:
-            pe = r["payload_en"] or {}
-            p = (r["payload_hi"] if lang == "hi" else None) or pe
-            items.append({"id": r["story_id"], "at": _naive(r["updated_at"]).isoformat(timespec="seconds"),
-                          "h": (r["headline_hi"] if lang == "hi" else None) or r["headline_en"],
-                          "lead": _lead(p), "cat": normalize(pe.get("category")),
-                          "bar": bar_counts((pe.get("narrative") or {}).get("paragraphs"))})
-        out[lang] = {"day": key, "stories": items}
+    out["en"], out["hi"], stats = build(store, router, rows, key)
+    if not out["en"]["sections"]:
+        return None
+    log.info("brief %s: %s", key, stats)
     store.exec(insert(recaps).values(day=key, cutoff=now, made_at=now, payload_en=out["en"], payload_hi=out["hi"]))
     readers = [str(r["reader"]) for r in store.rows(select(follows.c.reader).where(follows.c.kind == "recap"))]
     langs = _reader_langs(store, readers)
     for reader in readers:
         lang = langs.get(reader, "en")
-        add_notification(store, reader, "recap", key, WORDS[lang]["recap"], WORDS[lang]["recap_body"](len(rows)),
+        add_notification(store, reader, "recap", key, WORDS[lang]["recap"], WORDS[lang]["recap_body"](len(out["en"]["stories"])),
                          f"{SITE}{'?lang=hi' if lang == 'hi' else ''}#/recap/{key}")
     log.info("recap %s: %d articles, %d readers told", key, len(rows), len(readers))
     return key
@@ -370,11 +351,11 @@ def _webpush(private_key: str):
     return push
 
 
-def run(store: Store, now: dt.datetime | None = None) -> dict:
+def run(store: Store, now: dt.datetime | None = None, router=None) -> dict:
     now = now or utcnow()
     out = {"queued": queue_articles(store, now)}
     try:
-        out["recap"] = make_recap(store, now)
+        out["recap"] = make_recap(store, now, router=router)
     except Exception as e:  # noqa: BLE001 - the recap never stops notifications
         log.warning("recap failed: %s", e)
         out["recap"] = f"failed: {e}"

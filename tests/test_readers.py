@@ -96,7 +96,9 @@ def test_the_daily_recap_is_made_once_late_in_the_ist_day(tmp_path):
     r = s.one(select(recaps))
     assert [x["id"] for x in r["payload_en"]["stories"]] == [300, 301]
     assert r["payload_hi"]["stories"][0]["h"] == "एक"
-    assert r["payload_en"]["stories"][0]["lead"][0] == {"t": "First lead.", "c": "established"}
+    # no model: each story is told by its lead's first sentence, in its colour
+    sec = r["payload_en"]["sections"][0]
+    assert sec["key"] == "more" and sec["sents"][0] == {"t": "First lead.", "c": "established", "id": 300}
     n = s.one(select(notifications))
     assert n["kind"] == "recap" and n["url"].endswith("#/recap/2026-10-09")
 
@@ -221,3 +223,53 @@ def test_a_followed_word_matches_anywhere_in_the_article_in_either_language():
             {"reader": "c", "kind": "entity", "key": "kos"}, {"reader": "d", "kind": "entity", "key": "kosi river"}]
     who = notify.reasons(en, rows, text)
     assert set(who) == {"a", "b", "d"}            # whole words only: "kos" is not "Kosi"
+
+
+class FakeBrief:
+    """The page model: briefs one section, and translates."""
+    def __init__(self, brief):
+        self.brief = brief
+        self.prompts = []
+
+    def call(self, tier, prompt, **k):
+        from types import SimpleNamespace
+        self.prompts.append(prompt)
+        if "brief of the day" in prompt:
+            return SimpleNamespace(data={"brief": self.brief})
+        return SimpleNamespace(data={"0": "हिंदी वाक्य।"})
+
+
+def test_the_brief_is_checked_by_code_and_keeps_the_leads_colours(tmp_path):
+    from nishpaksh import recap
+    s = _store(tmp_path)
+    at = dt.datetime(2026, 10, 9, 10, 0)
+    biz = {"primary": ["business"]}
+    rows = []
+    for sid, sents in ((400, [("The Reserve Bank of India kept the repo rate unchanged at 5.5 per cent on Wednesday, "
+                               "Governor Sanjay Malhotra said.", "established"), ("Markets rose 1.2 per cent.", "single")]),
+                       (401, [("Police arrested two men in Pune, officials said.", "developing")])):
+        _publish(s, sid, at, _payload(f"H{sid}", sents, cat=biz))
+    rows = s.rows(select(published))
+    fake = FakeBrief([{"id": "a400", "text": "The Reserve Bank of India kept the repo rate at 5.5 per cent and markets rose 1.2 per cent, Governor Sanjay Malhotra said."},
+                      {"id": "a401", "text": "Police arrested three men in Pune."}])     # 3 is not in the lead
+    en, hi, stats = recap.build(s, fake, rows, "2026-10-09")
+    sec = en["sections"][0]
+    assert sec["key"] == "business" and stats["written"] == 1 and stats["refused"] == 1
+    a, b = sec["sents"]
+    assert a["t"].startswith("The Reserve Bank") and a["c"] == "single"     # uses the second sentence: weakest colour
+    assert b == {"t": "Police arrested two men in Pune, officials said.", "c": "developing", "id": 401}   # the lead
+    assert hi["sections"][0]["sents"][0]["t"] == "हिंदी वाक्य।"
+
+
+def test_brief_problems():
+    from nishpaksh.recap import problem
+    src = "Police allegedly beat the man, his family said, but officials did not comment."
+    assert problem("Police allegedly beat the man, his family said, but officials did not comment.", src) is None
+    assert problem("Police beat the man, his family said, but officials did not comment.", src) == "'allegedly' lost"
+    assert problem("Police allegedly beat the man, but officials did not comment.", src) == "the speaker was left out"
+    assert problem("Police arrested three men.", "Police arrested two men.") == "a number the lead does not have"
+    assert problem("Police allegedly beat the man, his family said.", src) == "'not' lost or added"
+    assert problem("The minister accused the police.", "The minister spoke about the police.").startswith("verb")
+    assert problem("Reportedly, the bridge fell.", "The bridge fell.").startswith("hedge")
+    assert problem("Modi met Trump.", "The PM met the US President.").startswith("a name")
+    assert problem("The RBI held rates.", "The Reserve Bank of India held rates.") is None
