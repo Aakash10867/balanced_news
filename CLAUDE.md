@@ -478,10 +478,9 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   notifications, audio_requests, audio_files, recaps, videos, saved, notify_state, account_events; RLS = a reader's own
   rows; `request_audio()` RPC; Web Push key in Vault (`vapid_private_key`, read by `public.vapid_private_key()`, pipeline
   role only; public key in `site/features.js` and `notify.py`).
-  - **Accounts:** edge function `supabase/functions/account` (verify_jwt off, checks tokens itself): a NAME gives a login id
-    ("aakash-4821") + password; skip = a guest on that device (random password kept by the browser), which can claim a
-    name later. Users made with the admin API (internal emails `<uuid>@readers.nishpaksh.invalid`), so no Auth settings
-    were changed. Optional real email only for a forgotten password: reset mails need custom SMTP in Supabase (not set).
+  - **Accounts:** edge function `supabase/functions/account` (verify_jwt off, checks tokens itself): sign up with name, email
+    and password, log in with email and password (2.1; login ids and guests dropped); users made with the admin API, email
+    confirmed, so no Auth settings changed. No password reset yet (needs custom SMTP).
   - **Follows are for notifications only** (owner): sections at any level, primary or secondary both count ("any");
     states (`places.py`: the section call names states, code keeps one only if the article names it or a city of it; "New
     Delhi" alone is not Delhi); people/bodies (`people.py`, code only, titles stripped); a single story (a follow-up
@@ -497,13 +496,21 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   - **Videos** (`videos.py`, desk): once per new article, two YouTube searches (English and Hindi headline), YouTube's own
     order (owner), max 2 per channel, uploaded after the story's first report, "Primary footage" badge, "not checked"
     note. Needs the `YOUTUBE_API_KEY` secret (owner adds it after the design pass); without it nothing runs.
-  - **Nothing of this is on the site (owner, Oct 9 2026).** A plain interface (site/features.js and hooks in
-    index.html) was published in 5fa89ec without his asking and he had it taken back the same night: the site is exactly
-    as before. The owner designs the reader interface himself; never publish site/UI changes he has not asked for.
-    Planned client-side: sorting, filters, search, read later, share card over live cards only; cards already carry `w`
-    (words), `pl` (states), `pp` (people), `au` (audio languages), `vd` (videos). Skipped by the owner: "what changed
-    since you last read", corrections log, outlet pages, perspective sorts. Not features (left for a pipeline
-    discussion): search grounding for sources, transcripts as evidence, Embedding 2.
+  - **On the site: trial_version_2.1 (owner, Oct 9 2026; designed on the canvas, approved, built into site/index.html).**
+    A plain interface published earlier without his asking was taken back the same night: never publish site/UI changes
+    he has not approved. 2.1: a 30px menu button (the reader's initial once signed in) at the LEFT of the wordmark; the
+    language switch and the article's back button and switch the same 30px (touch area 7px wider, `.hit`). After 7 s or
+    two swipes the greeting fades and the language switch moves up beside the wordmark (`tidy()`): the header's height
+    changes ONCE; the indigo (`#hbg`) is clipped up and the current card's top edge (clip on its slot) and content
+    (transform) glide. Never animate the header's or the cards' height (scroll-snap makes the card jitter). Menu: Sign in
+    / name + email, Sort (client-side, not remembered), Following / Read later / Daily recap / Search ("Coming soon"),
+    Log out. Sign in card: name, email, password (log in: email, password); the session stays on the device (`np-me`,
+    refresh token) until log out. Article: the colour bar flies from the card to under the headline (`flyBar`), then the
+    colour names and the audio and video buttons. Audio card: sign in first; Hindi | English; 1 new audio a day; make or
+    play; a player strip lights each sentence (`.sent.lit`). Video card: YouTube's order, Hindi first in turn, links out
+    (needs YOUTUBE_API_KEY). Not built (owner designs later): follows UI, inbox, read later, recap page, search, share card.
+    Skipped by the owner: "what changed since you last read", corrections log, outlet pages, perspective sorts. Not
+    features (pipeline discussion later): search grounding for sources, transcripts as evidence, Embedding 2.
 
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
