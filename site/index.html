@@ -200,12 +200,13 @@
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
   .tile { background: #fff; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 3px 0 var(--edge); display: flex; flex-direction: column; gap: 6px; }
   .tile.wide { grid-column: 1 / -1; }
+  .tile.lone { grid-column: 1 / -1; flex-direction: row; align-items: baseline; gap: 14px; }
+  .tile.lone b { flex: none; max-width: 45%; }
   .tile b { font-family: var(--head); font-size: 26px; font-weight: 700; line-height: 1.05; color: #1f2550; overflow-wrap: anywhere; }
   .tile div { font-size: 14px; line-height: 1.45; }
   .quote .who { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #46549a; margin-bottom: 6px; }
-  .quote p { position: relative; padding-left: 28px; margin: 0 0 8px; font-size: 16.5px; line-height: 1.6; }
+  .quote p { margin: 0 0 10px; font-size: 17px; line-height: 1.65; }
   .quote p:last-child { margin-bottom: 0; }
-  .quote p::before { content: "\201C"; position: absolute; left: 0; top: -6px; font-family: "Newsreader", Georgia, serif; font-size: 44px; line-height: 1; color: #46549a; }
   /* pictures on the cards (owner, Oct 9 2026, canvas "Pictures A"): sharp at the top, softly blurred and washed to
      white where the headline begins; a card without a picture is as before */
   .card.has-pic { padding-top: 0; }
@@ -677,7 +678,7 @@ function ranges(nums) {
   return out;
 }
 // the first figure in a "By the numbers" sentence becomes the tile's big number (the sentence stays under it)
-const FIGURE = /(?:[$₹€£]\s?\d[\d,.]*(?:\s?(?:lakh|crore|million|billion|trillion|bn|mn|cr|लाख|करोड़))?|(?:Rs\.?|INR|USD)\s?\d[\d,.]*(?:\s?(?:lakh|crore|million|billion))?|\d[\d,.]*\s?(?:%|per\s?cent|percent|lakh|crore|million|billion|trillion|dollars|rupees|लाख|करोड़|प्रतिशत|फीसदी|डॉलर|रुपये|रुपए)|\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)/i;
+const FIGURE = /(?<![\w.])(?:(?:[$₹€£]|Rs\.?\s?|INR\s?|USD\s?)\d[\d,]*(?:\.\d+)?(?:\s?(?:lakh|crore|million|billion|trillion|bn|mn|cr|लाख|करोड़))?|\d[\d,]*(?:\.\d+)?\s?(?:%|per\s?cent|percent|lakh|crore|million|billion|trillion|dollars|rupees|लाख|करोड़|प्रतिशत|फीसदी|डॉलर|रुपये|रुपए)|\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?!(?:19|20)\d\d\b)\d{2,}(?:\.\d+)?)(?![\w-])/i;
 function essayHtml(nar, t) {
   const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
   const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
@@ -705,8 +706,11 @@ function essayHtml(nar, t) {
     no += 1;
     const head = `<div class="sechead" data-sec="${esc(g.key)}"><span>${String(no).padStart(2, "0")}</span><h3>${esc(t.sections[g.key] || "")}</h3></div>`;
     if (g.key === "numbers") {
-      const tiles = ps.flat().map(x => {
-        const m = (x.text || "").match(FIGURE);
+      const items = ps.flat(), withFig = items.map(x => (x.text || "").match(FIGURE));
+      const lastFig = withFig.reduce((a, m, i) => m ? i : a, -1), nFig = withFig.filter(Boolean).length;
+      const tiles = items.map((x, i) => {
+        const m = withFig[i];
+        if (m && nFig % 2 === 1 && i === lastFig) return `<div class="tile lone"><b>${esc(m[0].trim().replace(/[.,]+$/, ""))}</b><div>${sent(x)}</div></div>`;
         return m ? `<div class="tile"><b>${esc(m[0].trim().replace(/[.,]+$/, ""))}</b><div>${sent(x)}</div></div>`
                  : `<div class="tile wide"><div>${sent(x)}</div></div>`;
       }).join("");
@@ -768,7 +772,7 @@ function articleHtml(row) {
   const thread = (title, list) => list && list.length ? `<div class="sec">${esc(title)}</div><div class="paper"><ul class="thread">${list.map(x =>
       `<li><a href="#/story/${encodeURIComponent(x.story_id)}" data-story="${esc(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul></div>` : "";
   return `<div class="key">${keyHtml(t, nar)}</div>
-    <div class="paper essay">${essayHtml(nar, t)}</div>
+    ${essayHtml(nar, t)}
     ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
     ${thread(t.earlier, p.parents)}${thread(t.next, p.children)}
     ${sources ? `<div class="sec">${esc(t.sourcesTitle)}</div><div class="paper"><ol class="sources">${sources}</ol></div>` : ""}
