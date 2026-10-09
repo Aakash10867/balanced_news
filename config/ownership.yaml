@@ -208,6 +208,10 @@ groups:
     outlets: [Khaleej Times]
     domains: [khaleejtimes.com]
     region: world
+  Okaz Organization for Press and Publication:
+    outlets: [Saudi Gazette, Okaz]
+    domains: [saudigazette.com.sa, okaz.com.sa]
+    region: world
   Saudi Research and Media Group:
     outlets: [Arab News]
     domains: [arabnews.com]
