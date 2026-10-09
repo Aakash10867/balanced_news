@@ -137,6 +137,8 @@ def main() -> None:
     stats = work(store, router, until=t0 + a.minutes * 60)
     from .compose import finish_translations
     stats["translated"] = finish_translations(store, router)    # half-translated Hindi pages (story 15429)
+    from .categories import fill_live
+    stats["sectioned"] = fill_live(store, router)                # live articles from before sections (Oct 9 2026)
     stats.update(seconds=round(time.time() - t0), trigger=os.environ.get("RUN_TRIGGER", "manual"),
                  tier_calls={k: dict(v) for k, v in sorted(router.tier_log.items())},
                  dropped=sorted(router.dropped), skipping=sorted(skipping))

@@ -236,6 +236,8 @@ class FakeBackend:
         if "loaded or emotive word or phrase from a Hindi news report" in prompt:
             items = re.findall(r"^(\d+)\. (.*)$", prompt, flags=re.M)
             return json.dumps({"items": [{"n": int(n), "en": f"concept-{n}"} for n, _ in items]}), [], 50
+        if "Put this Indian news article in the sections" in prompt:
+            return json.dumps({"sections": ["life/accidents", "justice/police", "nonsense/x"]}), [], 30
         if "Write THREE different headlines" in prompt:
             news = re.search(r"^THE NEWS: (.*)$", prompt, flags=re.M).group(1)
             return json.dumps({"headlines": ["Section of Kesarganj flyover reportedly collapses",

@@ -219,6 +219,10 @@ def test_end_to_end(store):
 
     assert en["headline"].startswith("Section of Kesarganj")
     assert hi["headline"].startswith("[हिं]") and hi["translation_complete"]
+    # the site's sections (owner, Oct 9 2026): the model's picks checked by code (an unknown key dropped),
+    # the same keys on the Hindi page
+    assert en["category"] == {"primary": ["life", "justice"], "secondary": ["accidents", "police"]}
+    assert hi["category"] == en["category"]
 
     # another run with nothing new: nothing is reprocessed or rewritten
     text = [x["text"] for para in en["narrative"]["paragraphs"] for x in para]
@@ -2434,6 +2438,8 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
         (c,) = data["stories"]
         assert c["id"] == row["story_id"] and c["h"] and c["paras"] and c["paras"][0][0]["t"]
         assert sum(c["bar"].values()) == len(feed._sentence_classes(row["payload_en"]["narrative"]["paragraphs"]))
+        assert c["cat"]["primary"] == ["life", "justice"]
+        assert data["sections"]["primary"]["life"] == ("Life" if lang == "en" else "जीवन")
     page = json.loads((out / "story" / f"{row['story_id']}.json").read_text(encoding="utf-8"))
     nar = page["payload_en"]["narrative"]
     assert nar["paragraphs"] == row["payload_en"]["narrative"]["paragraphs"] and nar["sources"]
@@ -2800,3 +2806,35 @@ def test_paragraphs_are_shaped_and_past_schedules_left_out_story_13792():
                        {"id": 3, "text": "Counting of votes will take place on October 12."},
                        {"id": 4, "text": "The bench is scheduled to hear the case."}]}           # no date: kept
     assert drop_past_schedules(p, now) == 1 and [i["id"] for i in p["contested"]] == [2, 3, 4]
+
+
+def test_sections_are_checked_by_code_and_filled_for_live_articles(store):
+    """The site's sections (owner, Oct 9 2026): five primary, five secondary under each. Code keeps only listed
+    keys, at most two of each; a secondary brings its primary; a secondary under the wrong primary is dropped.
+    Live articles from before sections get theirs on a desk run; only the section is added."""
+    from nishpaksh import categories as C
+    from nishpaksh.config import load_yaml
+    assert len(C.SECTIONS) == 5 and all(len(v) == 5 for v in C.SECTIONS.values())
+    assert C.parse(["justice/courts", "politics/elections"]) == {"primary": ["justice", "politics"],
+                                                                "secondary": ["courts", "elections"]}
+    assert C.parse(["Life"]) == {"primary": ["life"], "secondary": []}               # unsure: the primary alone
+    assert C.parse(["defence"]) == {"primary": ["world"], "secondary": ["defence"]}   # its primary is known
+    assert C.parse(["business/courts", "World / Indians abroad"]) == {"primary": ["world"],
+                                                                     "secondary": ["indians-abroad"]}
+    assert C.parse(["life/health", "justice/crime", "business/money"])["primary"] == ["life", "justice"]
+    assert C.parse(["sports"]) is None and C.parse(None) is None
+    assert C.labels("hi")["secondary"]["sport-films"] == "खेल और फ़िल्में"
+
+    _seed(store)
+    _run_twice(store)
+    row = store.rows(select(published))[0]
+    old_en = {k: v for k, v in row["payload_en"].items() if k != "category"}
+    store.exec(update(published).where(published.c.story_id == row["story_id"]).values(
+        payload_en=old_en, payload_hi={k: v for k, v in row["payload_hi"].items() if k != "category"}))
+    router = Router(load_yaml("models.yaml")["tiers"], FakeBackend(), store)
+    assert C.fill_live(store, router) == [row["story_id"]]
+    after = store.one(select(published).where(published.c.story_id == row["story_id"]))
+    assert after["payload_en"]["category"]["primary"] == ["life", "justice"]
+    assert {k: v for k, v in after["payload_en"].items() if k != "category"} == old_en
+    assert after["payload_hi"]["category"] == after["payload_en"]["category"]
+    assert C.fill_live(store, router) == []                  # asked once

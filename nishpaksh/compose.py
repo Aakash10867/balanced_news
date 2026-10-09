@@ -635,6 +635,10 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     unify_article(payload)                  # and in what the writer and the headline model wrote
     from .style import polish
     polish(payload)                         # surnames after the first mention; varied "he said" (by code)
+    from .categories import for_payload
+    cat = for_payload(router, payload)     # the site's sections; never holds the article back
+    if cat is not None:                     # not asked (quota): categories.fill_live asks on a later run
+        payload["category"] = cat
     now = utcnow()
     payload["written_at"] = now.isoformat(timespec="seconds")
     hi = translate_payload(store, router, payload)

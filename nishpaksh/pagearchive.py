@@ -117,7 +117,7 @@ def export_due(store: Store, root: str | pathlib.Path, now: dt.datetime | None =
             lines.setdefault(written[:7], []).append(json.dumps(
                 {"story_id": r["story_id"], "written_at": written, "headline_en": r["headline_en"],
                  "headline_hi": r["headline_hi"], "thread": pe.get("thread") or r["story_id"],
-                 "summary": _summary(pe)}, ensure_ascii=False))
+                 "summary": _summary(pe), "category": pe.get("category") or {}}, ensure_ascii=False))
         done.append(r["story_id"])
     for month, ls in lines.items():
         idx = root / "index" / f"{month}.jsonl"

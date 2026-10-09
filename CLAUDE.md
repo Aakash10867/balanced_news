@@ -327,6 +327,18 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (slim pages) to the `feed` branch after every desk and pipeline run (`.github/scripts/publish_feed.sh`,
   one commit force-pushed, `continue-on-error`); the site reads them from raw.githubusercontent.com and falls
   back to Supabase, then the archive branch. Service worker keeps the page and last news offline.
+- **Site sections (owner, Oct 9 2026; `categories.py`).** Five primary sections, five secondary under each, chosen
+  with the owner from ~490 rated stories (politics ~30%, crime/courts ~25%, world ~11%, accidents/weather ~8%,
+  business ~7%, health/education ~7%, defence ~5%, films ~3%, sport ~1%: sport is too thin for its own section):
+  Politics (Elections, Parties, Government, Parliament, Protests) · Justice (Crime, Police, Courts, Corruption,
+  Terror) · Business (Economy, Companies, Jobs, Your money, Tech) · World (Diplomacy, Indians abroad, Conflicts,
+  Defence, Abroad) · Life (Health, Education, Accidents, Environment, Sport & films). Owner: short, catchy names;
+  at most five of each (the site's bottom bar). An article gets up to 2 primary and 2 secondary
+  (`payload.category`, keys, first = main; same in Hindi; labels in `categories.labels`, in en.json/hi.json
+  `sections`, cards `cat`). One page call at publication (headline, lead, top statements; asked once: a section
+  colours and merges nothing); code keeps only listed keys, a secondary brings its primary, unsure = primary
+  alone; no answer never holds an article back. Live articles from before sections get theirs on desk runs
+  (`fill_live`, 5 per run, only the section is added). Site display: to be designed with the owner.
 - **No internal notes for readers (owner, Oct 8 2026):** the article page no longer shows "Nothing in this
   story is confirmed by independent sources yet" (read as "this story is fake"; the colours already say which
   parts are supported) nor "Which outlets form different perspectives is not yet known" (internal state, not

@@ -26,6 +26,7 @@ import pathlib
 from .config import database_url
 from sqlalchemy import Text, cast, func
 
+from .categories import labels
 from .db import Store, published, select, utcnow
 
 log = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ def _item(i: dict) -> dict:
 
 
 PAGE_KEYS = ("story_id", "headline", "counts", "has_established", "qualified_by", "perspective_mode",
-             "perspectives", "framing", "suicide", "thread", "parents", "children", "written_at")
+             "perspectives", "framing", "suicide", "thread", "parents", "children", "written_at", "category")
 
 
 def slim_payload(p: dict | None) -> dict | None:
@@ -114,7 +115,8 @@ def card(row: dict, lang: str) -> dict | None:
             "thread": pe.get("thread") or row["story_id"], "ongoing": bool(pe.get("parents")),
             "h": head, "paras": _card_text(paras),
             "bar": bar_counts((pe.get("narrative") or {}).get("paragraphs")),
-            "n": (pe.get("counts") or {}).get("independent_sources") or 0}
+            "n": (pe.get("counts") or {}).get("independent_sources") or 0,
+            "cat": pe.get("category") or {}}     # the site's sections, keys (labels in en.json / hi.json)
 
 
 MANIFEST = "manifest.json"
@@ -179,7 +181,7 @@ def export(store: Store, root: str | pathlib.Path) -> int:
     order = [str(r["story_id"]) for r in rows if str(r["story_id"]) in manifest]
     for lang in ("en", "hi"):
         cards = [manifest[sid][lang] for sid in order if manifest[sid].get(lang)]
-        (root / f"{lang}.json").write_text(json.dumps({"generated_at": now, "stories": cards},
+        (root / f"{lang}.json").write_text(json.dumps({"generated_at": now, "sections": labels(lang), "stories": cards},
                                                       ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (root / MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (root / "README.md").write_text(
