@@ -614,16 +614,19 @@ let painted = new Set(), paintQueued = false;
 function paintDepth() {
   paintQueued = false;
   const slots = track.children, h = slotHeight(), top = track.scrollTop, k = Math.floor(top / h), now = new Set();
+  // the tilt goes on the card INSIDE the slot: the slot is what the browser snaps to, and a tilting snap target
+  // moved under the snap and stopped swiping down midway (Oct 9 2026)
   if (!STILL.matches) for (let i = Math.max(0, k - 1); i <= Math.min(slots.length - 1, k + 2); i++) {
-    const el = slots[i], o = Math.max(-1, Math.min(1, (el.offsetTop - top) / h)), a = Math.abs(o);
+    const slot = slots[i], el = slot.firstElementChild, o = Math.max(-1, Math.min(1, (slot.offsetTop - top) / h)), a = Math.abs(o);
+    if (!el) continue;
     if (a < 0.002 || a > 0.999) continue;
     el.style.transformOrigin = o < 0 ? "center bottom" : "center top";
     el.style.transform = `perspective(1000px) translateZ(${(-120 * a).toFixed(1)}px) rotateX(${(o * -10).toFixed(2)}deg) scale(${(1 - 0.06 * a).toFixed(4)})`;
     el.style.opacity = (1 - 0.35 * a).toFixed(3);
-    if (!painted.has(el)) el.style.willChange = "transform, opacity";
+    if (!painted.has(el)) { el.style.willChange = "transform, opacity"; el.style.transition = "none"; }   // the card's tap transition would lag the tilt
     now.add(el);
   }
-  for (const el of painted) if (!now.has(el)) { el.style.transform = ""; el.style.opacity = ""; el.style.willChange = ""; }
+  for (const el of painted) if (!now.has(el)) { el.style.transform = ""; el.style.opacity = ""; el.style.willChange = ""; el.style.transition = ""; }
   painted = now;
 }
 track.addEventListener("scroll", () => {
