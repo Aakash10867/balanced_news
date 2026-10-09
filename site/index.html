@@ -337,7 +337,7 @@ const T = {
     sections: {happened: "What happened", numbers: "By the numbers", say: "What they say", background: "Background",
                related: "Related events", explained: "Explained", next: "What next"},
     bar: (c) => `${c.e} established, ${c.o} one outlet only, ${c.d} disputed, ${c.r} shown false, ${c.u} not yet cross-checked`,
-    all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`,
+    all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`, secUp: (l, p) => `Back from ${l} to ${p}`,
     secEmpty: (l) => `Nothing in ${l} yet.`, secBody: "Articles get their sections when they are published, so this one will fill up as new stories come in.",
     showAll: "Show all news", share: "Share", copied: "Link copied", latest: "Go to the latest story",
   },
@@ -358,7 +358,7 @@ const T = {
     sections: {happened: "क्या हुआ", numbers: "आँकड़ों में", say: "किसने क्या कहा", background: "पृष्ठभूमि",
                related: "जुड़ी घटनाएँ", explained: "समझिए", next: "आगे क्या"},
     bar: (c) => `${c.e} स्थापित, ${c.o} केवल एक स्रोत, ${c.d} मतभेद, ${c.r} असत्य, ${c.u} अभी पुष्टि नहीं`,
-    all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`,
+    all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`, secUp: (l, p) => `${l} से ${p} पर लौटें`,
     secEmpty: (l) => `${l} में अभी कोई ख़बर नहीं।`, secBody: "हर लेख को छपते समय उसका खंड मिलता है, इसलिए नई ख़बरों के साथ यह खंड भरता जाएगा।",
     showAll: "सारी ख़बरें देखें", share: "शेयर करें", copied: "लिंक कॉपी हो गया", latest: "सबसे ताज़ा ख़बर पर जाएँ",
   },
@@ -367,7 +367,7 @@ const KEYCOLOR = {established: "var(--est)", developing: "var(--unv)", unverifie
 const VERDICT = {corroborated: "established", confirmed: "established", established: "established", developing: "developing",
                  disputed: "disputed", false: "false", single: "single", unverified: "unverified", pending: "unverified"};
 // the sections' names (nishpaksh/categories.py labels); the feed's en.json / hi.json carry the same
-const SECTIONS = {"en": {"primary": {"politics": "Politics", "justice": "Justice", "business": "Business", "world": "World", "life": "Life"}, "secondary": {"elections": "Elections", "parties": "Parties", "government": "Government", "parliament": "Parliament", "protests": "Protests", "crime": "Crime", "police": "Police", "courts": "Courts", "corruption": "Corruption", "terror": "Terror", "economy": "Economy", "companies": "Companies", "jobs": "Jobs", "money": "Your money", "tech": "Tech", "diplomacy": "Diplomacy", "indians-abroad": "Indians abroad", "conflicts": "Conflicts", "defence": "Defence", "abroad": "Abroad", "health": "Health", "education": "Education", "accidents": "Accidents", "environment": "Environment", "sport-films": "Sport & films"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "jobs", "money", "tech"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}}, "hi": {"primary": {"politics": "राजनीति", "justice": "न्याय", "business": "बिज़नेस", "world": "दुनिया", "life": "जीवन"}, "secondary": {"elections": "चुनाव", "parties": "दल", "government": "सरकार", "parliament": "संसद", "protests": "प्रदर्शन", "crime": "अपराध", "police": "पुलिस", "courts": "अदालत", "corruption": "भ्रष्टाचार", "terror": "आतंक", "economy": "अर्थव्यवस्था", "companies": "कंपनियां", "jobs": "नौकरियां", "money": "आपका पैसा", "tech": "टेक", "diplomacy": "कूटनीति", "indians-abroad": "विदेश में भारतीय", "conflicts": "संघर्ष", "defence": "रक्षा", "abroad": "विदेश", "health": "सेहत", "education": "शिक्षा", "accidents": "हादसे", "environment": "पर्यावरण", "sport-films": "खेल और फ़िल्में"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "jobs", "money", "tech"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}}};
+const SECTIONS = {"en": {"primary": {"politics": "Politics", "justice": "Justice", "business": "Business", "world": "World", "life": "Life"}, "secondary": {"elections": "Elections", "parties": "Parties", "government": "Government", "parliament": "Parliament", "protests": "Protests", "crime": "Crime", "police": "Police", "courts": "Courts", "corruption": "Corruption", "terror": "Terror", "economy": "Economy", "companies": "Companies", "markets": "Markets", "money": "Your money", "domains": "Domains", "diplomacy": "Diplomacy", "indians-abroad": "Indians abroad", "conflicts": "Conflicts", "defence": "Defence", "abroad": "Abroad", "health": "Health", "education": "Education", "accidents": "Accidents", "environment": "Environment", "sport-films": "Sport & films"}, "tertiary": {"hr": "HR", "finance": "Finance", "marketing": "Marketing", "analytics": "Analytics", "operations": "Operations"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}, "hi": {"primary": {"politics": "राजनीति", "justice": "न्याय", "business": "बिज़नेस", "world": "दुनिया", "life": "जीवन"}, "secondary": {"elections": "चुनाव", "parties": "दल", "government": "सरकार", "parliament": "संसद", "protests": "प्रदर्शन", "crime": "अपराध", "police": "पुलिस", "courts": "अदालत", "corruption": "भ्रष्टाचार", "terror": "आतंक", "economy": "अर्थव्यवस्था", "companies": "कंपनियां", "markets": "बाज़ार", "money": "आपका पैसा", "domains": "क्षेत्र", "diplomacy": "कूटनीति", "indians-abroad": "विदेश में भारतीय", "conflicts": "संघर्ष", "defence": "रक्षा", "abroad": "विदेश", "health": "सेहत", "education": "शिक्षा", "accidents": "हादसे", "environment": "पर्यावरण", "sport-films": "खेल और फ़िल्में"}, "tertiary": {"hr": "एचआर", "finance": "फ़ाइनेंस", "marketing": "मार्केटिंग", "analytics": "एनालिटिक्स", "operations": "ऑपरेशंस"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}};
 const BARKEY = {established: "e", corroborated: "e", confirmed: "e", single: "o", disputed: "d", false: "r", unverified: "u", pending: "u", developing: "u"};
 
 /* ---------- small helpers ---------- */
@@ -441,7 +441,7 @@ async function loadCards(l) {
   try {
     const d = await getJSON(`${FEED_URL}/${l}.json`, {cache: "no-cache"}, 5000);
     if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
-    if (d && d.sections && d.sections.tree) SECTIONS[l] = d.sections;
+    if (d && d.sections && d.sections.tree3) SECTIONS[l] = d.sections;   // a feed from before Domains: the built-in names
   } catch (e) { /* the feed is missing or slow: read the database */ }
   if (!stories) {
     const rows = await api("published?select=story_id,updated_at,headline_en,headline_hi," +
@@ -450,12 +450,13 @@ async function loadCards(l) {
     stories = rows.filter(r => r.pe && r.pe.length).map(r => ({
       id: r.story_id, at: r.updated_at, thread: r.thread || r.story_id, ongoing: !!(r.parents && r.parents.length),
       h: (l === "hi" && r.headline_hi) || r.headline_en, paras: cardText(l === "hi" && r.ph && r.ph.length ? r.ph : r.pe),
-      bar: barCounts(r.pe), n: (r.counts || {}).independent_sources || 0, cat: r.cat || {}}));
+      bar: barCounts(r.pe), n: (r.counts || {}).independent_sources || 0, cat: normCat(r.cat)}));
   }
   // one card per thread: its latest development, newest first (owner, Oct 6 2026)
   const byThread = new Map();
   for (const s of stories) {
     const k = s.thread || s.id, cur = byThread.get(k);
+    s.cat = normCat(s.cat);
     if (!cur) byThread.set(k, {...s, size: 1});
     else { cur.size += 1; if (new Date(s.at) > new Date(cur.at)) byThread.set(k, {...s, size: cur.size}); }
   }
@@ -782,13 +783,29 @@ $("rise").addEventListener("click", e => {
 
 /* ---------- sections: the bottom bar (owner, Oct 9 2026) ---------- */
 const sections = $("sections"), sbar = $("sbar");
-let pool = [], level = null, sec = null, fKey = "all", swapTimer = null, barLang = null;
+// a third level (owner, Oct 9 2026): Business > Domains > HR, Finance ... A secondary with sections of its own
+// opens them the way a primary opens its own: it slides to the left end as the back button (‹ Domains) and its
+// five sections take the other places. `sub` is that open secondary, `ter` the chosen section in it.
+let pool = [], level = null, sec = null, sub = null, ter = null, fKey = "all", swapTimer = null, barLang = null;
 function secLabels() { return SECTIONS[lang] || SECTIONS.en; }
-function secLabel(k) { const s = secLabels(); return (s.primary || {})[k] || (s.secondary || {})[k] || ""; }
+function tree3() { return secLabels().tree3 || {}; }
+function secLabel(k) { const s = secLabels(); return (s.primary || {})[k] || (s.secondary || {})[k] || (s.tertiary || {})[k] || ""; }
+// keys live articles still carry (Jobs and Tech became Domains > HR and Analytics; categories.normalize)
+const OLD_KEYS = {jobs: ["business", "domains", "hr"], tech: ["business", "domains", "analytics"]};
+function normCat(cat) {
+  cat = cat || {};
+  const p = [...(cat.primary || [])], s = [...(cat.secondary || [])], t = [...(cat.tertiary || [])];
+  for (const [old, [a, b, c]] of Object.entries(OLD_KEYS)) {
+    const i = s.indexOf(old);
+    if (i < 0) continue;
+    s[i] = b; if (!p.includes(a)) p.push(a); if (!t.includes(c)) t.push(c);
+  }
+  return {primary: p, secondary: [...new Set(s)], tertiary: t};
+}
 function inSection(c, k) {
   if (k === "all") return true;
   const cat = c.cat || {};
-  return (cat.primary || []).includes(k) || (cat.secondary || []).includes(k);
+  return (cat.primary || []).includes(k) || (cat.secondary || []).includes(k) || (cat.tertiary || []).includes(k);
 }
 function sectionCards() { return pool.filter(c => inSection(c, fKey)).slice(0, MAX_CARDS); }
 const CHEV = `<svg class="chev" height="12" viewBox="0 0 10 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2L2 7l5 5"/></svg>`;
@@ -800,6 +817,7 @@ function buildBar() {   // the buttons, once per language; layoutBar() moves the
   let h = btn("all", "all");
   for (const p of Object.keys(s.tree)) h += btn("primary", p);
   for (const p of Object.keys(s.tree)) for (const k of s.tree[p]) h += btn("sec", k, p);
+  for (const d of Object.keys(s.tree3 || {})) for (const k of s.tree3[d]) h += btn("ter", k, d);
   h += `<button type="button" class="sb-latest" id="sb-latest" tabindex="-1" aria-label="${esc(T[lang].latest)}"></button>`;
   sbar.innerHTML = h;
   $("sb-latest").addEventListener("click", toLatest);
@@ -818,10 +836,13 @@ function textWidth(txt, fs) {
 function layoutBar() {
   const s = secLabels(), prims = Object.keys(s.tree), W = sbar.clientWidth || 360, CH = 13, MINPAD = 8;
   if (!prims.length) return;
-  const rows = [[T[lang].all, ...prims.map(secLabel)]];
+  const deep = Object.keys(tree3()), rows = [[T[lang].all, ...prims.map(secLabel)]];
   for (const p of prims) rows.push([secLabel(p), ...s.tree[p].map(secLabel)]);
+  for (const d of deep) rows.push([secLabel(d), ...tree3()[d].map(secLabel)]);
   // away from the latest: the chosen button gets room for its arrow (the font size never changes for it)
-  const away = isAway(), selRow = level ? prims.indexOf(level) + 1 : 0, selJ = level && sec ? s.tree[level].indexOf(sec) + 1 : 0;
+  const away = isAway();
+  const selRow = sub ? 1 + prims.length + deep.indexOf(sub) : level ? prims.indexOf(level) + 1 : 0;
+  const selJ = sub ? (ter ? tree3()[sub].indexOf(ter) + 1 : 0) : level && sec ? s.tree[level].indexOf(sec) + 1 : 0;
   const widths = (row, i, fs, room) => row.map((l, j) => textWidth(l, fs) + (i > 0 && j === 0 ? CH : 0) + (room && away && i === selRow && j === selJ ? 16 : 0));
   let fs = lang === "hi" ? 13.5 : 12.5;
   rows.forEach((row, i) => { const t = widths(row, i, fs).reduce((a, b) => a + b, 0); if (t + 6 * MINPAD > W) fs = Math.min(fs, fs * (W - 6 * MINPAD) / t); });
@@ -832,8 +853,9 @@ function layoutBar() {
     let c = 0;
     return ws.map(w => { const r = [c / W * 100, (w + pad) / W * 100]; c += w + pad; return r; });
   };
-  const lay0 = place(rows[0], 0), layP = {};
+  const lay0 = place(rows[0], 0), layP = {}, layD = {};
   prims.forEach((p, i) => { layP[p] = place(rows[i + 1], i + 1); });
+  deep.forEach((d, i) => { const r = 1 + prims.length + i; layD[d] = place(rows[r], r); });
   const count = k => pool.filter(c => inSection(c, k)).length;
   let chosen = lay0[0];
   for (const b of sbar.querySelectorAll("button.sb")) {
@@ -842,11 +864,15 @@ function layoutBar() {
     if (kind === "all") { pos = lay0[0]; show = level === null; on = show; delay = 140; }
     else if (kind === "primary") {
       const i = prims.indexOf(key), open = level === key;
-      pos = open ? layP[key][0] : lay0[i + 1]; show = level === null || open; back = open; on = open && !sec;
-      delay = level === null ? 170 + i * 30 : 0;
+      pos = open ? layP[key][0] : lay0[i + 1]; show = level === null || (open && !sub); back = open; on = open && !sec;
+      delay = level === null ? 170 + i * 30 : sub ? 0 : 140;
+    } else if (kind === "sec") {
+      const p = b.dataset.parent, j = s.tree[p].indexOf(key), open = sub === key;
+      pos = open ? layD[key][0] : layP[p][j + 1]; show = level === p && (!sub || open); back = open;
+      on = sec === key && !ter; delay = open ? 0 : 130 + j * 40;
     } else {
-      const p = b.dataset.parent, j = s.tree[p].indexOf(key);
-      pos = layP[p][j + 1]; show = level === p; on = sec === key; delay = 130 + j * 40;
+      const d = b.dataset.parent, j = tree3()[d].indexOf(key);
+      pos = layD[d][j + 1]; show = sub === d; on = ter === key; delay = 130 + j * 40;
     }
     b.style.left = pos[0] + "%"; b.style.width = pos[1] + "%";
     b.style.setProperty("--d", (show ? delay : 0) + "ms");
@@ -854,7 +880,9 @@ function layoutBar() {
     b.classList.toggle("empty", kind !== "all" && !back && count(key) === 0);
     b.setAttribute("aria-pressed", String(on)); b.tabIndex = show ? 0 : -1;
     if (show) b.removeAttribute("aria-hidden"); else b.setAttribute("aria-hidden", "true");
-    if (back) b.setAttribute("aria-label", T[lang].secBack(secLabel(key))); else b.removeAttribute("aria-label");
+    if (back) b.setAttribute("aria-label", kind === "sec" ? T[lang].secUp(secLabel(key), secLabel(b.dataset.parent))
+                                                          : T[lang].secBack(secLabel(key)));
+    else b.removeAttribute("aria-label");
     b.classList.toggle("sb-away", on && away);
     if (on) chosen = pos;
   }
@@ -887,10 +915,10 @@ function toLatest() {
 }
 $("wm").addEventListener("click", toLatest);
 // the bar moves at once; the cards fade out, change to the section's, start at its newest, and fade in
-function goSection(l, s) {
-  level = l; sec = s;
+function goSection(l, s, t) {
+  level = l; sec = s; ter = t || null; sub = s && tree3()[s] ? s : null;
   layoutBar();
-  const key = sec || level || "all";
+  const key = ter || sec || level || "all";
   if (key === fKey) return;
   fKey = key;
   clearTimeout(swapTimer);
@@ -907,7 +935,9 @@ sbar.addEventListener("click", e => {
   const kind = b.dataset.kind, key = b.dataset.key;
   if (kind === "all") goSection(null, null);
   else if (kind === "primary") goSection(level === key ? null : key, null);
-  else goSection(b.dataset.parent, sec === key ? null : key);
+  else if (kind === "sec" && sub === key) goSection(level, null);          // ‹ Domains: back to Business
+  else if (kind === "sec") goSection(b.dataset.parent, sec === key ? null : key);
+  else goSection(level, sub, ter === key ? null : key);                     // a domain; tapped again: all of Domains
 });
 new ResizeObserver(() => layoutBar()).observe(sbar);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutBar());

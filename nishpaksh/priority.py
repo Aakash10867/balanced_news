@@ -15,6 +15,12 @@ World outlets (owner, Oct 9 2026): Indian coverage decides relevance. A story wi
 (Rule 1) is a candidate only when 3+ independent world outlets carry it AND it affects people beyond
 one country (Rule 3): one fixed question, asked twice with the stories in reverse order; two "yes"
 needed, "unsure" = no. Kept in `analysis.world`, asked again when coverage grows by 2+.
+
+Domains and Sport (owner, Oct 9 2026): one rigorous route for every section, with reserved places so these
+stories are read at all (they rate low "for an ordinary Indian reader"). A story is a beat story when the
+rating call says so (its "beat" field: scheduling only, it colours and merges nothing) or when half its
+articles come from feeds tagged `beat:` in feeds.yaml. Of the `prep_queue` places, `prep_beat` go to the best
+beat stories; places they do not use go back to the rest. The desk keeps one seat an hour for them (desk.py).
 """
 from __future__ import annotations
 
@@ -46,7 +52,16 @@ filler = true for content that is not news reporting: horoscopes, lottery result
 reviews, celebrity gossip, recipes, explainers, quizzes, listicles, opinion or editorial pieces,
 live-blog shells, sponsored content.
 
-Reply with JSON only: {{"results": [{{"n": 1, "score": 4, "filler": false}}, ...]}}"""
+beat:
+  "domains" = business news: companies, markets, banking and finance, jobs and work, advertising and brands,
+              technology and data, supply chains and logistics
+  "sport"   = sport: matches, players, tournaments, sports bodies
+  "none"    = anything else (politics, crime, courts, world, health ...). A minister speaking about the economy
+              is "none" unless the news is a business decision.
+
+Reply with JSON only: {{"results": [{{"n": 1, "score": 4, "filler": false, "beat": "none"}}, ...]}}"""
+
+BEATS = ("domains", "sport")
 
 BATCH = 20
 
@@ -85,9 +100,10 @@ def _candidates(store: Store, now: dt.datetime) -> dict[int, dict]:
         articles.c.fetched_at >= since,
         and_(articles.c.fetched_at.is_(None), or_(articles.c.published_at >= since, articles.c.published_at.is_(None))))))
     from .ownership import region_of
+    beat_of_feed = beat_feeds(store)
     rows = store.rows(select(articles.c.id, articles.c.story_id, articles.c.outlet, articles.c.url, articles.c.agency,
                              articles.c.wire_group, articles.c.title, articles.c.lang, articles.c.published_at,
-                             articles.c.fetched_at)
+                             articles.c.fetched_at, articles.c.feed_id)
                       .where(articles.c.story_id.in_(fresh)))
     closed = frozen_ids(store)
     by: dict[int, list[dict]] = {}
@@ -104,7 +120,8 @@ def _candidates(store: Store, now: dt.datetime) -> dict[int, dict]:
             out[sid] = {"groups": groups, "langs": len({a["lang"] for a in arts}),
                         "titles": list(dict.fromkeys(a["title"] for a in arts if a["title"]))[:3],
                         # Rule 1: an Indian outlet (PIB included) covers it
-                        "indian": any(region_of(a["outlet"], a["url"], a["lang"]) == "india" for a in arts)}
+                        "indian": any(region_of(a["outlet"], a["url"], a["lang"]) == "india" for a in arts),
+                        "beat_feed": _feed_beat([beat_of_feed.get(a["feed_id"]) for a in arts])}
     return out
 
 
@@ -163,6 +180,28 @@ def _relevant(c: dict, a: dict | None) -> bool:
     return c["indian"] or bool(((a or {}).get("world") or {}).get("global"))
 
 
+def beat_feeds(store: Store) -> dict[int, str]:
+    """{feed id: beat} for the feeds tagged `beat:` in feeds.yaml (matched by URL)."""
+    from .config import load_yaml
+    from .db import feeds
+    tagged = {f["url"]: f["beat"] for f in load_yaml("feeds.yaml").get("feeds") or [] if f.get("beat") in BEATS}
+    if not tagged:
+        return {}
+    return {r["id"]: tagged[r["url"]] for r in store.rows(select(feeds.c.id, feeds.c.url)) if r["url"] in tagged}
+
+
+def _feed_beat(tags: list[str | None]) -> str | None:
+    """The beat of half or more of a story's articles, else None."""
+    from collections import Counter
+    top = Counter(t for t in tags if t).most_common(1)
+    return top[0][0] if top and top[0][1] * 2 >= len(tags) else None
+
+
+def is_beat(c: dict | None, a: dict | None) -> bool:
+    """A Domains or Sport story: the rating said so, or its feeds do."""
+    return bool((c or {}).get("beat_feed")) or ((a or {}).get("priority") or {}).get("beat") in BEATS
+
+
 def rank_new(store: Store, router: Router | None, now: dt.datetime | None = None) -> int:
     """Rate the candidates that have no rating, or whose coverage grew by 2+ sources since."""
     now = now or utcnow()
@@ -197,8 +236,11 @@ def rank_new(store: Store, router: Router | None, now: dt.datetime | None = None
                 continue
             sid = chunk[n]
             a = an.get(sid) or {}
+            beat = str(item.get("beat") or "").strip().lower()
             a["priority"] = {"score": min(5, max(1, score)), "filler": item.get("filler") is True,
-                             "groups": cands[sid]["groups"], "at": now.isoformat(timespec="minutes")}
+                             "groups": cands[sid]["groups"], "at": now.isoformat(timespec="minutes"),
+                             # scheduling only (reserved places and the desk's seat): the feeds' beat wins
+                             "beat": cands[sid]["beat_feed"] or (beat if beat in BEATS else None)}
             store.exec(update(stories).where(stories.c.id == sid).values(analysis=a))
             rated += 1
     log.info("priority: %d stories rated", rated)
@@ -223,4 +265,8 @@ def queue(store: Store, now: dt.datetime | None = None, size: int | None = None)
               if (an.get(sid, {}).get("priority") or {}).get("score") and not an[sid]["priority"].get("filler")
               and _relevant(c, an.get(sid))]
     ranked.sort(reverse=True)
-    return [sid for _, _, sid in ranked[:size]]
+    # reserved places for Domains and Sport stories, the best of them; unused places go back to the rest
+    beat = [sid for _, _, sid in ranked if is_beat(cands[sid], an.get(sid))][:min(SETTINGS.prep_beat, size)]
+    rest = [sid for _, _, sid in ranked if sid not in beat][:size - len(beat)]
+    keep = set(beat) | set(rest)
+    return [sid for _, _, sid in ranked if sid in keep]

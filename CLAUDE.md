@@ -338,7 +338,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   with the owner from ~490 rated stories (politics ~30%, crime/courts ~25%, world ~11%, accidents/weather ~8%,
   business ~7%, health/education ~7%, defence ~5%, films ~3%, sport ~1%: sport is too thin for its own section):
   Politics (Elections, Parties, Government, Parliament, Protests) · Justice (Crime, Police, Courts, Corruption,
-  Terror) · Business (Economy, Companies, Jobs, Your money, Tech) · World (Diplomacy, Indians abroad, Conflicts,
+  Terror) · Business (Economy, Companies, Markets, Your money, Domains > HR, Finance, Marketing, Analytics,
+  Operations; Oct 9 2026, see "Domains and Sport") · World (Diplomacy, Indians abroad, Conflicts,
   Defence, Abroad) · Life (Health, Education, Accidents, Environment, Sport & films). Owner: short, catchy names;
   at most five of each (the site's bottom bar). An article gets up to 2 primary and 2 secondary
   (`payload.category`, keys, first = main; same in Hindi; labels in `categories.labels`, in en.json/hi.json
@@ -374,6 +375,24 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   run stats `heavy_cache` (hit / fetched). Article choice reads text lengths, then the text of the chosen articles only;
   priority reads only stories with a fresh report; the feed re-reads only articles whose payload md5 changed
   (`manifest.json` on the feed branch). Keep new heavy reads behind `heavy.columns`/`heavy.fill`.
+- **Domains and Sport: one rigorous route, reserved places (owner, Oct 9 2026).** A cheaper "brief" lane for business
+  and sport (single source, no embeddings) was designed and REJECTED by the owner: one standard everywhere, same
+  depth, same perspectives. Instead: (1) **Business = Economy · Companies · Markets · Your money · Domains**, and
+  Domains has a THIRD level, **HR · Finance · Marketing · Analytics · Operations** (`categories.TERTIARY`;
+  `payload.category.tertiary`; up to 2 of each level; "business/domains/hr" in the one section call). A domain is a
+  LENS over the news, not a pile of news: a story is HR if it changes something for people at work, whatever
+  else it is (Oct 2-9: only ~2-5 genuine stories a week per domain among 526 multi-outlet stories). Jobs and Tech
+  became HR and Analytics (`categories.normalize` / site `normCat` map old keys; stored payloads unchanged).
+  (2) **Reading queue:** of `prep_queue` (16), `prep_beat` (4) go to the best Domains/Sport stories; unused places
+  go back (`priority.queue`). A story is a beat story when the rating call's `beat` field says so (scheduling
+  only) or half its articles come from feeds tagged `beat: domains|sport` (`priority.is_beat`). (3) **Desk seats:**
+  at most 3 an hour, 2 for any story (`desk_per_hour`), 1 only for Domains/Sport (`desk_beat_seat`), filled by a
+  beat story first; with none ready it stays EMPTY (`desk.seats`; diagnostics `beat_seat`). (4) Specialist feeds
+  (Moneycontrol, ET Markets, ESPNcricinfo ...) are ordinary feeds with `beat:`, added once embedding room is
+  measured; section feeds, not everything-feeds. **Site:** a secondary with sections of its own opens them the way
+  a primary does: Domains slides to the left as the back button (‹ Domains) and its five take the other places;
+  a domain filters, tapped again = all of Domains; ‹ Domains = back to Business (`sub`, `ter` in index.html).
+  Trade-press exclusives (one outlet) are not published: the same rule a niche political story faces.
 - **Outlets outside India (owner, Oct 9 2026; `worldgate.py`, `priority.py`, `config/ownership.yaml`).** Two jobs:
   India's stories seen from outside (independent origins, real cross-border disputes) and world stories of global
   impact. Indian coverage decides relevance: (1) a world outlet's article joins stories Indian outlets cover;

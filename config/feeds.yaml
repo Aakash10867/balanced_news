@@ -8,6 +8,9 @@
 # role: news     -> ordinary reporting
 # role: official -> government/court sources; ingested like news, but their own
 #                   statements count as "official_statement" evidence, never as truth.
+# beat: domains | sport -> a specialist feed (owner, Oct 9 2026): same rules as every feed; a story whose
+#                   articles come half or more from such feeds gets the reserved reading places and the
+#                   desk's Domains/Sport seat (priority.py, desk.py).
 
 feeds:
   # ---------- English ----------

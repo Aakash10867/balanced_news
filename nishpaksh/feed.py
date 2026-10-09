@@ -26,7 +26,7 @@ import pathlib
 from .config import database_url
 from sqlalchemy import Text, cast, func
 
-from .categories import labels
+from .categories import labels, normalize
 from .db import Store, published, select, utcnow
 
 log = logging.getLogger(__name__)
@@ -116,7 +116,7 @@ def card(row: dict, lang: str) -> dict | None:
             "h": head, "paras": _card_text(paras),
             "bar": bar_counts((pe.get("narrative") or {}).get("paragraphs")),
             "n": (pe.get("counts") or {}).get("independent_sources") or 0,
-            "cat": pe.get("category") or {}}     # the site's sections, keys (labels in en.json / hi.json)
+            "cat": normalize(pe.get("category"))}   # the site's sections, keys (labels in en.json / hi.json)
 
 
 MANIFEST = "manifest.json"

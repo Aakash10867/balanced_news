@@ -12,8 +12,13 @@ merge nothing). Code checks the answer: only listed keys, a secondary brings its
 two of each, a primary alone when the model is unsure of the secondary. No answer = no section: the
 article is published anyway, it is never held back for this.
 
-Stored as `payload.category = {"primary": [...], "secondary": [...]}` (keys, first = main), the same in
-the Hindi payload; the labels in both languages are here (LABELS) and in the feed (feed.py).
+Stored as `payload.category = {"primary": [...], "secondary": [...], "tertiary": [...]}` (keys, first =
+main; tertiary only when there is one), the same in the Hindi payload; the labels in both languages are here
+and in the feed (feed.py).
+
+Business, Oct 9 2026 (owner, option A): Economy · Companies · Markets · Your money · Domains, and under
+Domains five lenses: HR · Finance · Marketing · Analytics · Operations. Jobs and Tech became HR and Analytics
+(`normalize` maps the keys live articles still carry). Up to two of each level.
 """
 from __future__ import annotations
 
@@ -42,10 +47,10 @@ SECTIONS: dict[str, dict[str, tuple[str, str, str]]] = {
     },
     "business": {
         "economy": ("Economy", "अर्थव्यवस्था", "RBI, GST, budget, trade, growth, economic policy"),
-        "companies": ("Companies", "कंपनियां", "firms, markets, deals, regulators acting on a company"),
-        "jobs": ("Jobs", "नौकरियां", "hiring, recruitment exams and drives, layoffs, workers"),
+        "companies": ("Companies", "कंपनियां", "firms: results, deals, mergers, IPOs, launches, a company's leaders, regulators acting on a company"),
+        "markets": ("Markets", "बाज़ार", "stock markets, Sensex and Nifty, share prices, listings, gold, oil and currency prices"),
         "money": ("Your money", "आपका पैसा", "prices, EMIs, taxes on people, fares, fees, what things cost a household"),
-        "tech": ("Tech", "टेक", "technology, telecom, the internet, AI, apps, space industry"),
+        "domains": ("Domains", "क्षेत्र", "news for people working in a field; give one of its domains below"),
     },
     "world": {
         "diplomacy": ("Diplomacy", "कूटनीति", "India's talks, visits, statements and agreements with other countries or the UN"),
@@ -62,6 +67,21 @@ SECTIONS: dict[str, dict[str, tuple[str, str, str]]] = {
         "sport-films": ("Sport & films", "खेल और फ़िल्में", "sport, cinema, TV, music, actors and players"),
     },
 }
+# Third level (owner, Oct 9 2026): a domain is a LENS over the news, not a separate pile of news. A story
+# belongs to HR if it changes something for people at work, whoever reported it and whatever else it is.
+TERTIARY: dict[str, dict[str, tuple[str, str, str]]] = {
+    "domains": {
+        "hr": ("HR", "एचआर", "work and workers: hiring, recruitment drives and exams, layoffs, pay, labour law, PF and benefits, work visas, workplace rules"),
+        "finance": ("Finance", "फ़ाइनेंस", "banks, lending, insurance, investing, payments and UPI, financial regulators (RBI, SEBI, IRDAI) and their rules"),
+        "marketing": ("Marketing", "मार्केटिंग", "advertising, brands, ad rules, endorsements, consumer campaigns, media business"),
+        "analytics": ("Analytics", "एनालिटिक्स", "data, AI, technology, telecom, the internet, apps, cyber security, data protection, space industry"),
+        "operations": ("Operations", "ऑपरेशंस", "supply chains, logistics, manufacturing, shipping and ports, airline and rail operations, procurement, power supply"),
+    },
+}
+PARENT3 = {t: s for s, subs in TERTIARY.items() for t in subs}
+# keys of earlier sections, as live articles still carry them (Oct 9 2026: Jobs and Tech became domains)
+OLD_KEYS = {"jobs": ("business", "domains", "hr"), "tech": ("business", "domains", "analytics")}
+
 PRIMARY_LABELS = {"politics": ("Politics", "राजनीति"), "justice": ("Justice", "न्याय"),
                   "business": ("Business", "बिज़नेस"), "world": ("World", "दुनिया"), "life": ("Life", "जीवन")}
 PARENT = {s: p for p, subs in SECTIONS.items() for s in subs}
@@ -69,28 +89,54 @@ MAX_EACH = 2
 
 
 def labels(lang: str = "en") -> dict:
-    """{"primary": {key: label}, "secondary": {key: label}, "tree": {primary: [secondary, ...]}} for the site."""
+    """{"primary": {key: label}, "secondary": {key: label}, "tertiary": {key: label},
+    "tree": {primary: [secondary, ...]}, "tree3": {secondary: [tertiary, ...]}} for the site."""
     k = 1 if lang == "hi" else 0
     return {"primary": {p: PRIMARY_LABELS[p][k] for p in SECTIONS},
             "secondary": {s: SECTIONS[PARENT[s]][s][k] for s in PARENT},
-            "tree": {p: list(subs) for p, subs in SECTIONS.items()}}
+            "tertiary": {t: TERTIARY[PARENT3[t]][t][k] for t in PARENT3},
+            "tree": {p: list(subs) for p, subs in SECTIONS.items()},
+            "tree3": {s: list(subs) for s, subs in TERTIARY.items()}}
 
 
 def _menu() -> str:
     out = []
     for p, subs in SECTIONS.items():
         out.append(f"{p}  ({PRIMARY_LABELS[p][0]})")
-        out += [f"  {p}/{s}: {d}" for s, (_, _, d) in subs.items()]
+        for s, (_, _, d) in subs.items():
+            if s in TERTIARY:
+                out += [f"  {p}/{s}/{t}: {dt}" for t, (_, _, dt) in TERTIARY[s].items()]
+            else:
+                out.append(f"  {p}/{s}: {d}")
     return "\n".join(out)
+
+
+def normalize(cat: dict | None) -> dict:
+    """A stored section record in today's keys: earlier keys (jobs, tech) become their domains."""
+    cat = dict(cat or {})
+    prim, sec, ter = list(cat.get("primary") or []), list(cat.get("secondary") or []), list(cat.get("tertiary") or [])
+    for old, (p, s, t) in OLD_KEYS.items():
+        if old in sec:
+            sec[sec.index(old)] = s
+            for lst, v in ((prim, p), (ter, t)):
+                if v not in lst:
+                    lst.append(v)
+    sec = list(dict.fromkeys(sec))
+    if not cat and not prim:
+        return {}
+    return {"primary": prim, "secondary": sec, **({"tertiary": ter} if ter else {})}
 
 
 PROMPT = """Put this Indian news article in the sections of a news site.
 
-Sections (primary, then its secondary sections):
+Sections (primary, then its secondary sections; the domains, a third level, are lenses for people working in
+that field):
 {menu}
 
-Pick 1 to 3 sections, the main one first, as "primary/secondary" (for example "justice/courts").
-Pick a second or third only if the article is really about that too, not because a word appears.
+Pick 1 to 4 sections, the main one first, as "primary/secondary" (for example "justice/courts") or, for a
+domain, "business/domains/hr".
+Pick another only if the article is really about that too, not because a word appears. A domain is added to
+a story of any section when the news changes something for people working in that field.
 If you are unsure which secondary section fits, give the primary alone (for example "life").
 Judge by what the NEWS is (the headline), not by who is in it.
 
@@ -101,7 +147,13 @@ Examples:
 - "Actor Nana Patekar dies at 75" -> ["life/sport-films"]
 - "Defence Ministry signs Rs 661 crore BrahMos deal" -> ["world/defence"]  (defence, not business)
 - "23 Indian crew rescued from burning tanker in Black Sea" -> ["world/indians-abroad", "world/conflicts"]
-- "RBI raises repo rate to 5.50 per cent" -> ["business/economy", "business/money"]
+- "RBI raises repo rate to 5.50 per cent" -> ["business/economy", "business/money", "business/domains/finance"]
+- "Chennai nurses protest for pay equity and permanent jobs" -> ["politics/protests", "business/domains/hr"]
+- "TCS to cut 12,000 jobs" -> ["business/companies", "business/domains/hr"]
+- "Supreme Court bars pharma firms from gifting doctors" -> ["justice/courts", "business/domains/marketing"]
+- "Sensex falls 900 points as oil jumps" -> ["business/markets"]
+- "Red Sea attacks force shipping lines to reroute, freight rates double" -> ["world/conflicts", "business/domains/operations"]
+- "Government notifies data protection rules" -> ["politics/government", "business/domains/analytics"]
 - "Four students die cleaning a water tank in Vrindavan" -> ["life/accidents"]
 - "CBI raids Punjab CM's office over graft claims" -> ["justice/corruption", "politics/government"]
 - "Two arrested in Assam for passing secrets to Pakistan" -> ["justice/terror"]
@@ -120,26 +172,40 @@ def _key(x: str) -> str:
 
 
 def parse(picks) -> dict | None:
-    """The model's picks, checked by code: only listed keys; a secondary brings its primary; at most two of
-    each, in the model's order; a pick of a secondary under the wrong primary keeps neither guess."""
+    """The model's picks, checked by code: only listed keys; a tertiary brings its secondary and primary, a
+    secondary its primary; at most two of each level, in the model's order; a pick under the wrong parent keeps
+    no guess. A secondary that has domains ("domains") counts only with one of them."""
     if isinstance(picks, str):
         picks = [picks]
     primary: list[str] = []
     secondary: list[str] = []
+    tertiary: list[str] = []
     for raw in picks or []:
-        p, _, s = str(raw or "").partition("/")
-        p, s = _key(p).strip("-"), _key(s).strip("-")
-        if not s and p in PARENT:          # a secondary given alone: its primary is known
+        parts = [_key(x).strip("-") for x in str(raw or "").split("/")]
+        p, s, t = (parts + ["", "", ""])[:3]
+        if not s and p in PARENT3:         # a domain given alone: its parents are known
+            p, s, t = PARENT[PARENT3[p]], PARENT3[p], p
+        elif not s and p in PARENT:        # a secondary given alone: its primary is known
             p, s = PARENT[p], p
-        if p not in SECTIONS or (s and s not in SECTIONS[p]):
+        elif not t and s in PARENT3:       # "business/hr"
+            s, t = PARENT3[s], s
+        if p not in SECTIONS or (s and s not in SECTIONS[p]) or (t and (s not in TERTIARY or t not in TERTIARY[s])):
             continue
+        if s in TERTIARY and not t:
+            s = ""                          # "a domain" without saying which: the primary alone
         if p not in primary:
             if len(primary) >= MAX_EACH:
                 continue
             primary.append(p)
-        if s and s not in secondary and len(secondary) < MAX_EACH:
+        if s and s not in secondary:
+            if len(secondary) >= MAX_EACH:
+                continue
             secondary.append(s)
-    return {"primary": primary, "secondary": secondary} if primary else None
+        if t and t not in tertiary and len(tertiary) < MAX_EACH:
+            tertiary.append(t)
+    if not primary:
+        return None
+    return {"primary": primary, "secondary": secondary, **({"tertiary": tertiary} if tertiary else {})}
 
 
 def classify(router: Router | None, headline: str, lead: str, facts: list[str]) -> dict | None:
@@ -151,7 +217,7 @@ def classify(router: Router | None, headline: str, lead: str, facts: list[str]) 
                            facts="\n".join(f"- {f}" for f in facts[:5]) or "- (none)")
     for _ in range(2):                     # a second call only when the first gave nothing usable
         try:
-            res = router.call("page", prompt, json_out=True, max_output_tokens=120)
+            res = router.call("page", prompt, json_out=True, max_output_tokens=160)
         except (QuotaExhausted, Exception) as e:  # noqa: BLE001
             log.info("no sections: %s", e)
             return None

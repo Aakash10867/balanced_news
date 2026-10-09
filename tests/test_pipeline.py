@@ -2959,3 +2959,72 @@ def test_a_story_no_indian_outlet_covers_needs_global_impact(store):
     an = store.one(select(stories.c.analysis).where(stories.c.id == unsure))["analysis"]
     assert an["world"]["global"] is False
     assert china not in q   # three state outlets are one voice: not three independent outlets
+
+
+# ---------------------------------------------------------------- Domains and Sport (owner, Oct 9 2026)
+
+def test_sections_have_domains_as_a_third_level():
+    from nishpaksh.categories import labels, normalize, parse
+    assert parse(["politics/protests", "business/domains/hr"]) == {
+        "primary": ["politics", "business"], "secondary": ["protests", "domains"], "tertiary": ["hr"]}
+    assert parse(["operations"]) == {"primary": ["business"], "secondary": ["domains"], "tertiary": ["operations"]}
+    assert parse(["business/domains"]) == {"primary": ["business"], "secondary": []}   # which domain? the primary alone
+    assert parse(["business/domains/sport"]) is None
+    # live articles keep their place: Jobs and Tech are now HR and Analytics
+    assert normalize({"primary": ["business"], "secondary": ["tech"]}) == {
+        "primary": ["business"], "secondary": ["domains"], "tertiary": ["analytics"]}
+    lab = labels("en")
+    assert lab["tree"]["business"] == ["economy", "companies", "markets", "money", "domains"]
+    assert lab["tree3"]["domains"] == ["hr", "finance", "marketing", "analytics", "operations"]
+
+
+def test_beat_stories_get_reserved_reading_places(store, monkeypatch):
+    """4 of the 16 places go to the best Domains/Sport stories; places they do not use go back."""
+    import nishpaksh.priority as P
+    monkeypatch.setattr(P, "SETTINGS", dataclasses.replace(P.SETTINGS, prep_queue=3, prep_beat=1))
+    gen = [_story_with_sources(store, f"Parliament story {k}", 3) for k in range(3)]
+    sport = _story_with_sources(store, "Cricket final result", 3)
+
+    class Rater(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            import re as _re
+            if "each shown by the headlines" in prompt:
+                rows = _re.findall(r"^(\d+)\. (.*)$", prompt, _re.M)
+                return json.dumps({"results": [{"n": int(n), "score": 2 if "Cricket" in h else 5, "filler": False,
+                                                "beat": "sport" if "Cricket" in h else "none"} for n, h in rows]}), [], 30
+            return super().generate(model, prompt, json_mode, grounded)
+    P.rank_new(store, _router(store, Rater()))
+    q = P.queue(store)
+    assert sport in q and len(q) == 3 and len(set(q) & set(gen)) == 2
+    monkeypatch.setattr(P, "SETTINGS", dataclasses.replace(P.SETTINGS, prep_queue=3, prep_beat=1))
+    store.exec(update(stories).where(stories.c.id == sport).values(analysis={}))
+    assert set(P.queue(store)) == set(gen)             # no beat story rated: its place goes back
+
+
+def test_the_desk_keeps_one_seat_for_domains_or_sport(store, monkeypatch):
+    """Two seats for any story, one only for a Domains/Sport story; empty when none is ready."""
+    from nishpaksh import desk
+    import nishpaksh.compose as C
+    gen = [_story_with_sources(store, f"General {k}", 3) for k in range(4)]
+    sport = _story_with_sources(store, "Hockey semi-final", 3)
+    for sid in gen + [sport]:
+        store.exec(update(stories).where(stories.c.id == sid).values(
+            analysis={"priority": {"score": 5 if sid != sport else 2, "beat": "sport" if sid == sport else None}}))
+    order = gen + [sport]
+    monkeypatch.setattr(desk, "ready", lambda store, now=None: list(order))
+    done = []
+
+    def fake_publish(store_, router, sid):
+        done.append(sid)
+        store_.exec(insert(published).values(story_id=sid, version=1, updated_at=NOW, headline_en="h", payload_en={}))
+        return True
+    monkeypatch.setattr(C, "publish_story", fake_publish)
+    import nishpaksh.consolidate as K, nishpaksh.verify as V
+    monkeypatch.setattr(K, "consolidate_story", lambda *a, **k: None)
+    monkeypatch.setattr(V, "base_verdicts", lambda *a, **k: None)
+    st = desk.work(store, None, now=NOW)
+    assert done == gen[:2] + [sport] and st["beat_seat"] == [sport]
+    # next hour, nothing of a beat ready: two general articles and the seat stays empty
+    order[:] = gen[2:]
+    st = desk.work(store, None, now=NOW + dt.timedelta(hours=1))
+    assert st["published"] == gen[2:] and st["beat_seat"].startswith("empty")
