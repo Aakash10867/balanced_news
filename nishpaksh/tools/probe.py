@@ -255,6 +255,84 @@ def probe_fetch(store: Store, extra_urls: list[str]) -> dict:
             "sample_text": (sample or {}).get("raw_content", "")[:600]}
 
 
+# feeds (Oct 9 2026) --------------------------------------------------------------------------
+# Candidate addresses for feeds that never worked or came back empty, and other ways to read pages we
+# cannot (NDTV: every page blocked, read as headline and blurb only). For each: items, items from the
+# last 48 h, and how much text our reader gets from the newest item's page.
+FEED_CANDIDATES = {
+    "The Indian Express (world)": ["https://indianexpress.com/section/world/feed/", "https://indianexpress.com/section/world/feed",
+                                   "https://indianexpress.com/section/international/feed/"],
+    "Dhaka Tribune": ["https://www.dhakatribune.com/feed", "https://www.dhakatribune.com/feed/", "https://www.dhakatribune.com/rss.xml"],
+    "The Business Standard (BD)": ["https://www.tbsnews.net/rss.xml"],
+    "The Himalayan Times": ["https://thehimalayantimes.com/feed", "https://thehimalayantimes.com/rssFeed/15",
+                            "https://thehimalayantimes.com/rss"],
+    "Republica (Nepal)": ["https://myrepublica.nagariknetwork.com/rss", "https://myrepublica.nagariknetwork.com/feed"],
+    "Daily Mirror Sri Lanka": ["https://www.dailymirror.lk/RSS_Feeds/breaking-news", "https://www.dailymirror.lk/rss/breaking_news/108",
+                               "https://www.dailymirror.lk/RSS_Feeds/breaking-news/108"],
+    "Newsfirst (Sri Lanka)": ["https://english.newsfirst.lk/feed", "https://www.newsfirst.lk/feed/"],
+    "Khaleej Times": ["https://www.khaleejtimes.com/rss", "https://www.khaleejtimes.com/stories.rss",
+                      "https://www.khaleejtimes.com/api/v1/collections/top-section.rss"],
+    "Arab News": ["https://www.arabnews.com/rss.xml", "https://www.arabnews.com/cat/1/rss.xml",
+                  "https://www.arabnews.com/taxonomy/term/1/feed"],
+    "Saudi Gazette": ["https://saudigazette.com.sa/rssFeed/74"],
+    "APP": ["https://www.app.com.pk/feed/", "https://www.app.com.pk/national/feed/", "https://www.app.com.pk/global/feed/"],
+    "Radio Pakistan": ["https://www.radio.gov.pk/rss"],
+    "The Daily Star": ["https://www.thedailystar.net/frontpage/rss.xml", "https://www.thedailystar.net/rss.xml",
+                       "https://www.thedailystar.net/news/bangladesh/rss.xml"],
+    "TOLOnews": ["https://tolonews.com/rss.xml", "https://tolonews.com/rss", "https://tolonews.com/feed"],
+    "Global Times": ["https://www.globaltimes.cn/rss/outbrain.xml", "https://www.globaltimes.cn/rss/china.xml"],
+    "Xinhua": ["https://english.news.cn/rss/worldrss.xml", "http://www.xinhuanet.com/english/rss/worldrss.xml"],
+    "China Daily": ["https://www.chinadaily.com.cn/rss/world_rss.xml", "https://www.chinadaily.com.cn/rss/china_rss.xml"],
+}
+
+
+def probe_feeds(store: Store) -> dict:
+    import datetime as dt
+    from ..ingest import _get, fetch_article, fetch_feed
+    now = dt.datetime.utcnow()
+    out: dict = {}
+    for name, urls in FEED_CANDIDATES.items():
+        res = []
+        for u in urls:
+            r = {"url": u}
+            try:
+                entries = fetch_feed({"url": u})
+                r["items"] = len(entries)
+                fresh = [e for e in entries if e["published_at"] and now - e["published_at"] < dt.timedelta(hours=48)]
+                r["fresh_48h"] = len(fresh)
+                newest = max((e["published_at"] for e in entries if e["published_at"]), default=None)
+                r["newest"] = newest.isoformat(timespec="minutes") if newest else None
+                if entries:
+                    page = fetch_article(entries[0]["url"])
+                    r["page_chars"] = len((page or {}).get("text") or "")
+            except Exception as e:  # noqa: BLE001
+                r["error"] = str(e)[:160]
+                try:
+                    r["status"] = _get(u, timeout=15).status_code
+                except Exception as e2:  # noqa: BLE001
+                    r["status"] = str(e2)[:80]
+            res.append(r)
+            time.sleep(1)
+        out[name] = res
+    # NDTV: are its AMP pages readable where its pages are not?
+    urls = [r.url for r in _q(store, sql("select url from articles where url like 'https://www.ndtv.com/%' "
+                                         "and text_source = 'summary' order by id desc limit 4"))]
+    nd = []
+    for u in urls:
+        row = {"url": u}
+        for tag, v in (("page", u), ("amp1", u.rstrip("/") + "/amp/1"), ("ampq", u + "?amp=1")):
+            try:
+                page = fetch_article(v)
+                row[tag] = len((page or {}).get("text") or "")
+                if tag != "page":
+                    row[tag + "_status"] = _get(v, timeout=15).status_code
+            except Exception as e:  # noqa: BLE001
+                row[tag] = str(e)[:80]
+        nd.append(row)
+    out["NDTV pages"] = nd
+    return out
+
+
 # search ------------------------------------------------------------------------------------
 def _gnews(query: str, lang: str) -> list[dict]:
     import feedparser
@@ -359,6 +437,8 @@ def main() -> None:
                 rep, extra = probe_search(store)
             elif part == "fetch":
                 rep = probe_fetch(store, extra)
+            elif part == "feeds":
+                rep = probe_feeds(store)
             else:
                 continue
         except Exception as e:  # noqa: BLE001
