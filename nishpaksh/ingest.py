@@ -213,9 +213,15 @@ def fill_images(store: Store, limit: int = 120) -> int:
     last 36 h in a story, newest first. A page that has none, or blocks us, is marked "" and left."""
     from .db import published
     live = select(published.c.story_id)
-    rows = store.rows(select(articles.c.id, articles.c.url).where(
-        articles.c.image.is_(None), articles.c.story_id.in_(live))
-        .order_by(articles.c.published_at.desc()).limit(limit))
+    # a few per story, round the stories, so one story of 289 reports does not take the whole run
+    per: dict[int, list] = {}
+    for r in store.rows(select(articles.c.id, articles.c.url, articles.c.story_id).where(
+            articles.c.image.is_(None), articles.c.story_id.in_(live)).order_by(articles.c.published_at.desc())):
+        per.setdefault(r["story_id"], []).append(r)
+    rows = []
+    for k in range(3):
+        rows += [v[k] for v in per.values() if len(v) > k]
+    rows = rows[:limit]
     if len(rows) < limit:
         since = utcnow() - dt.timedelta(hours=36)
         have = {r["id"] for r in rows}
