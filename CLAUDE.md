@@ -184,6 +184,24 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   asked even when one side is negated, and the twice-asked same question decides; its examples hold the trap
   ("Police arrested him" / "did not arrest him" -> different; "rate cuts are off the table" / "no option for
   rate cuts" -> same). Numbers must still agree. Code alone still never merges a negated and a plain line.
+- **Write facts, cite outlets (owner, Oct 9 2026).** "It's fine if we leave out lines from outlets if they have
+  already been covered from other outlets and just give their number." The article tells each FACT once:
+  completeness (`essay_ok`, 85%) counts facts, not statements. A line whose fact another line already tells is
+  FOLDED (`analysis.covered` -> `compose.fold_covered`): not written, its outlets' numbers go on the telling
+  line's sentence, which keeps its OWN colour (never raised by them). Folding needs ONE model "yes" (same fact,
+  or the line says everything the other does: the first answer of the existing twice-asked questions, recorded
+  as "f..." in `same_checks`) plus code: every number and name of the folded line is in the telling line
+  (`consolidate.tells`); the telling line is the better supported, then the longer. Merging statements (which
+  changes colours) still needs two "yes". Two sides of a dispute and an old/new figure are never folded. A
+  sentence may carry facts of different colours in up to 3 parts (owner: "each sentence can have multiple
+  colours"). Splitting stays: on 13970 one definition sat inside three different compound lines, which no fold
+  can join. `CONSOLIDATE_VERSION` 11.
+- **A sentence is a sentence (Oct 9 2026, story 13792: lead "An unnamed source said on Thursday."; "... on
+  Thursday," then "And tax officers ...").** Pieces the writer returns apart are joined by code
+  (`narrative._join_fragments`: a piece ending in a comma joins the next; a lower-case piece joins an unfinished
+  one; different statements = coloured parts); a lower-case slip after a full stop is capitalised; anything that
+  still does not start and end like a sentence is refused ("not a full sentence") and the fill pass rewrites it.
+  A speaker's surname twice in one sentence is a repeated name ("Sitharaman said ..., and Sitharaman said").
 - **A sentence in coloured parts (owner, Oct 7 2026).** A sentence joining statements of different
   statuses is written in at most two "parts" (three since Oct 8 2026, see "One fact per statement"; main fact first, split at a comma or "and"), each citing
   only its own statements; the site colours each part, the source numbers follow the sentence. Code
@@ -218,7 +236,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   explained+next) that left statements out or has failed sentences gets its own small writer call,
   kept only if the article then carries at least as much (Flash-Lite given all 40 statements wrote 10
   sentences; a few at a time it uses them). `essay_ok` needs 85% of ALL statements (owner: the middle
-  way). `narrative.section_keys` (one per paragraph) drives the headings on the site, English and
+  way; since Oct 9 2026 folded lines are not counted: facts, not statements). `narrative.section_keys` (one per paragraph) drives the headings on the site, English and
   Hindi. Leftovers stay in `narrative.not_in_essay`. **A short article is finished, not thrown away (owner, Oct 7 2026):** each try runs up to two fill rounds; a draft still under 85% is kept in `stories.analysis.writer_draft` (sections + model) and the next try resumes it with fills only (no new draft call, up to three fill rounds); new statements count as missing and are filled in; statements merged since the draft are followed through one report behind each (`writer_draft.anchors`, `compose._remap_draft`), so their sentences are kept; the draft is removed when the article publishes. (`recolour`/`needs_rewrite` unused: articles are
   closed.)
 - **Who speaks is code's job (owner, Oct 8 2026, story 13107; `voice.py`).** "Humayun Kabir added that ... Humayun

@@ -2738,3 +2738,36 @@ def test_perspectives_keep_every_other_stages_work_story_16000(store):
     perspectives.analyze_story(store, sid)
     after = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
     assert {k: after.get(k) for k in work} == work
+
+
+def test_fragments_are_joined_or_refused_story_13792():
+    """Oct 9 2026, story 13792: the lead was "An unnamed source said on Thursday." (its content returned as a separate
+    piece and lost), and "... to make arrests on Thursday," was followed by "And tax officers will no longer ...".
+    Pieces are joined back (coloured parts when they cite different statements); a fragment left alone is refused;
+    a speaker's surname twice in one sentence is a repeated name."""
+    from nishpaksh.narrative import _check_paragraphs, _join_fragments
+    by = {1: _item(1, "The 57th GST Council meeting approved a set of measures aimed at simplifying compliance",
+                   speaker="an unnamed source"),
+          2: _item(2, "The GST Council approved the removal of the power of GST tax officials to make arrests on Thursday"),
+          3: _item(3, "Tax officers will no longer have the power to arrest taxpayers under the existing GST system"),
+          4: _item(4, "There was no discussion regarding MDR in the GST Council meeting", speaker="Nirmala Sitharaman"),
+          5: _item(5, "GST rates have not been changed", speaker="Nirmala Sitharaman")}
+    lead = [{"text": "The 57th GST Council meeting approved a set of measures aimed at simplifying compliance,", "ids": [1]},
+            {"text": "an unnamed source said on Thursday.", "ids": [1]}]
+    joined = _join_fragments(lead)
+    assert len(joined) == 1 and joined[0]["text"].endswith("an unnamed source said on Thursday.") and "parts" not in joined[0]
+    two = _join_fragments([{"text": "The GST Council approved the removal of the power of GST tax officials to make "
+                                     "arrests on Thursday,", "ids": [2]},
+                           {"text": "and tax officers will no longer have the power to arrest taxpayers under the "
+                                    "existing GST system.", "ids": [3]}])
+    assert len(two) == 1 and [p["ids"] for p in two[0]["parts"]] == [[2], [3]]
+    # a fragment with nothing to join is refused, never published
+    paras, failed, rejected = _check_paragraphs([[{"text": "And is held in New Delhi on Thursday", "ids": [2]}]], by, set(), [])
+    assert rejected == 1 and failed[0]["reason"] == "not a full sentence"
+    # a lower-case slip after a finished sentence is only capitalised
+    assert _join_fragments([{"text": "Done.", "ids": [2]}, {"text": "police said so.", "ids": [3]}])[1]["text"] == "Police said so."
+    # the speaker's surname twice in one sentence
+    paras, failed, rejected = _check_paragraphs([[
+        {"text": "Finance Minister Nirmala Sitharaman said there was no discussion regarding MDR in the GST Council "
+                 "meeting, and Sitharaman said GST rates have not been changed.", "ids": [4, 5]}]], by, set(), [])
+    assert rejected == 1 and failed[0]["reason"] == "repeats a name"

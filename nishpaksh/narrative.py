@@ -429,6 +429,11 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
         return _no("no valid ids")
     if len(text) > 700:
         return _no("too long")
+    # a sentence starts like one and ends like one (Oct 9 2026, story 13792: the lead was "An unnamed source
+    # said on Thursday.", and "... on Thursday," was followed by "And tax officers ..."): pieces the writer
+    # returned apart are joined first (_join_fragments); what is still a fragment is refused
+    if not FULL_START.match(text) or not FULL_END.search(text):
+        return _no("not a full sentence")
     low = text.lower()
     if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned):
         return _no("loaded word")
@@ -489,6 +494,12 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
         names = [re.sub(r"^(The|A|An)\s+", "", n) for n in re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+", text)]
         if any(names.count(n) > 1 for n in names):
             return _no("repeats a name")
+        # a speaker's surname twice is the same fault (Oct 9 2026, story 13792: "Sitharaman said ..., and
+        # Sitharaman said ...")
+        for sp in {by_id[i].get("speaker") for i in ids if by_id[i].get("speaker")}:
+            last = sp.split()[-1]
+            if len(last) >= 3 and last[0].isupper() and len(re.findall(rf"\b{re.escape(last)}\b", text)) > 1:
+                return _no("repeats a name")
     # statements joined in one sentence must share a subject (a name, place, number or key word);
     # two businesses and two findings glued together because both were unconfirmed read as one fact
     if style and len(ids) > 1 and not _connected([by_id[i] for i in ids]):
@@ -711,6 +722,50 @@ def _pronoun_ok(text: str, ids: list[int], by_id: dict, near: str) -> bool:
     return True
 
 
+FULL_START = re.compile(r"^[\"“'‘(]?[A-Z0-9\u0900-\u097f]")
+FULL_END = re.compile(r"[.!?][\"”'’)]*$")
+FRAGMENT_END = re.compile(r"[,;:–—-]\s*$")
+CONNECTIVE = re.compile(r"(?i)^(and|but|or|while|whereas|which|who|whom|whose|as well as|with|although|though)\b")
+
+
+def _pieces(sent: dict) -> list[dict]:
+    if isinstance(sent.get("parts"), list) and sent["parts"]:
+        return [{"text": str(p.get("text") or "").strip(), "ids": list(p.get("ids") or [])} for p in sent["parts"]
+                if isinstance(p, dict)]
+    return [{"text": str(sent.get("text") or "").strip(), "ids": list(sent.get("ids") or [])}]
+
+
+def _join_fragments(para: list) -> list:
+    """Pieces the writer returned as separate sentences are put back together: a sentence ending in a comma
+    (or a dash, a semicolon) joins the next one, and a "sentence" starting in lower case joins the one before.
+    Pieces citing different statements become one sentence in coloured parts (checked like any parts); the
+    same statements, one sentence. Up to MAX_PARTS parts; beyond that the fragment stays and is refused."""
+    out: list = []
+    for sent in para:
+        if not isinstance(sent, dict):
+            out.append(sent)
+            continue
+        text = str(sent.get("text") or "").strip() or _join_parts(_pieces(sent))
+        prev = out[-1] if out and isinstance(out[-1], dict) else None
+        prev_text = _join_parts(_pieces(prev)) if prev is not None else ""
+        if prev is not None and text and (FRAGMENT_END.search(prev_text)
+                                          or (text[:1].islower() and not FULL_END.search(prev_text))):
+            pieces = _pieces(prev) + _pieces(sent)
+            if len(pieces) <= MAX_PARTS:
+                ids = list(dict.fromkeys(x for p in pieces for x in p["ids"]))
+                if len({tuple(sorted(p["ids"])) for p in pieces}) == 1:
+                    out[-1] = {"text": _join_parts(pieces), "ids": ids}
+                else:
+                    out[-1] = {"text": _join_parts(pieces), "ids": ids, "parts": pieces}
+                continue
+        # a lower-case start after a finished sentence is a slip, not a fragment ("police said ..."), unless it
+        # opens with a joining word that needs a sentence before it
+        if text[:1].islower() and not CONNECTIVE.match(text) and not sent.get("parts"):
+            sent = dict(sent, text=text[:1].upper() + text[1:])
+        out.append(sent)
+    return out
+
+
 def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool = True,
                       keys: list[str] | None = None) -> tuple[list[list[dict]], list[dict], int]:
     """Validated sentences only. Sentences that depend on each other stand or fall together
@@ -721,6 +776,7 @@ def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool =
     sentences that failed a check themselves (with the reason, for the repair pass), and how many
     sentences left the essay."""
     flat: list[tuple[int, int, dict]] = []
+    drafted = [_join_fragments(para) if isinstance(para, list) else para for para in drafted]
     for p, para in enumerate(drafted):
         for k, sent in enumerate(para):
             flat.append((p, k, _from_parts(sent)))

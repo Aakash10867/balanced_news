@@ -92,7 +92,7 @@ Reply with JSON only: {{"results": [{{"n": 1, "answer": "same"}}, {{"n": 2, "ans
 SAME_BATCH = 6     # small batches: the models answer short lists far better than long ones
 
 
-def same_facts(router: Router | None, pairs: list[tuple[str, str]]) -> list[bool]:
+def same_facts(router: Router | None, pairs: list[tuple[str, str]], firsts: dict | None = None) -> list[bool]:
     """Are these the same fact in other words? (Oct 7 2026: four outlets saying he takes charge on 31
     October, in four wordings, stood as four one-outlet lines.) Asked twice, A/B swapped in the second
     asking, in small batches with a plain yes/no choice: the models are simple, and a wrong "same" would
@@ -123,6 +123,8 @@ def same_facts(router: Router | None, pairs: list[tuple[str, str]]) -> list[bool
         return got
 
     first = ask(pairs)
+    if firsts is not None:                 # the first answers, for the writing layer (fact groups)
+        firsts.update({i: ok for i, ok in enumerate(first)})
     again = [i for i, ok in enumerate(first) if ok]
     for i, ok in zip(again, ask([(pairs[i][1], pairs[i][0]) for i in again])):
         out[i] = ok
@@ -145,7 +147,7 @@ If you are not sure, answer "no".
 Reply with JSON only: {{"results": [{{"n": 1, "answer": "yes"}}, {{"n": 2, "answer": "no"}}]}}"""
 
 
-def covers_facts(router: Router | None, pairs: list[tuple[str, str]]) -> list[bool]:
+def covers_facts(router: Router | None, pairs: list[tuple[str, str]], firsts: dict | None = None) -> list[bool]:
     """(detailed, short) pairs: does the detailed line say everything the short one says? Asked twice,
     the second time in reverse order of lines; only two "yes" answers count (simple models answer
     by position and length as much as by meaning)."""
@@ -175,6 +177,8 @@ def covers_facts(router: Router | None, pairs: list[tuple[str, str]]) -> list[bo
         return got
 
     first = ask(list(range(len(pairs))))
+    if firsts is not None:
+        firsts.update(first)
     again = ask([i for i in reversed(range(len(pairs))) if first.get(i)])
     for i, ok in again.items():
         out[i] = ok and first.get(i, False)

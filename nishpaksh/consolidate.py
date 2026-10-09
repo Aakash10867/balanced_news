@@ -66,10 +66,11 @@ Reply with JSON only:
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
 SAME_ASK_MAX = 30         # same-fact questions per consolidation, closest pairs first (the rest next time)
-CONSOLIDATE_VERSION = 10  # part of the cache key: stories are consolidated again when the task changes
+CONSOLIDATE_VERSION = 11  # part of the cache key: stories are consolidated again when the task changes
                           # (9, Oct 8 2026: paraphrases proposed by topic, dupes.py)
                           # (10, Oct 9 2026: the review's results had been wiped by perspectives.py; every
                           # story is reviewed again so covered lines, updates and doubtful disputes exist)
+                          # (11, Oct 9 2026: fact groups need the first answers recorded)
 
 
 
@@ -238,15 +239,38 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     ask_pairs = list(dict.fromkeys(tuple(sorted(p)) for p in ask_pairs if tuple(sorted(p)) not in code_same_set))
     same_checks = dict(analysis.get("same_checks") or {})
     todo = [p for p in ask_pairs if key(p) not in same_checks][:SAME_ASK_MAX]
-    for p, ok in zip(todo, same_facts(router, [(texts[a], texts[b]) for a, b in todo])):
+    firsts: dict[int, bool] = {}
+    for n, (p, ok) in enumerate(zip(todo, same_facts(router, [(texts[a], texts[b]) for a, b in todo], firsts))):
         same_checks[key(p)] = ok
+        same_checks["f" + key(p)] = firsts.get(n, False)
     ckey = lambda p: "c" + key(p)  # noqa: E731
     todo = [p for p in ask_cover if ckey(p) not in same_checks][:SAME_ASK_MAX]
-    for p, ok in zip(todo, covers_facts(router, [(texts[a], texts[b]) for a, b in todo])):
+    firsts = {}
+    for n, (p, ok) in enumerate(zip(todo, covers_facts(router, [(texts[a], texts[b]) for a, b in todo], firsts))):
         same_checks[ckey(p)] = ok
+        same_checks["f" + ckey(p)] = firsts.get(n, False)
     for big, small in ask_cover:
         if same_checks.get(ckey((big, small))):
             covered.setdefault(small, big)
+    # FACT GROUPS, the writing layer (owner, Oct 9 2026: "it's fine if we leave out lines from outlets if they
+    # have already been covered from other outlets and just give their number"): a line whose fact another
+    # line already tells is not written again; its outlets' numbers go on that line's sentence, which keeps
+    # its own colour (compose.fold_covered), so the article counts facts, not statements. Colours never
+    # change here, so ONE model "yes" is enough, checked by code: every number and name of the left-out line
+    # is in the line that tells it. (Merging, which does change colours, still needs two.)
+    def tells(lead: int, member: int) -> bool:
+        pl, pm = prof[lead], prof[member]
+        nums_ok = all(any(abs(x - y) <= 0.05 * max(abs(x), abs(y), 1) for y in pl.nums) for x in pm.nums)
+        return nums_ok and pm.names <= (pl.names | pl.roots)
+    for big, small in ask_cover:
+        if small not in covered and same_checks.get("f" + ckey((big, small))) and tells(big, small):
+            covered[small] = big
+    for a, b in ask_pairs:
+        if same_checks.get(key((a, b))) or not same_checks.get("f" + key((a, b))):
+            continue                          # merged for support already, or the model said different
+        lead, member = sorted((a, b), key=lambda x: (-support.get(x, 0), -len(texts[x]), x))
+        if member not in covered and tells(lead, member):
+            covered[member] = lead
     same_groups = [list(p) for p in code_same_set] + [list(p) for p in ask_pairs if same_checks.get(key(p))]
     # disputes: one gate (code finds the same question with a different answer; figures that changed
     # over time are updates; the model asked "can both be true?" twice decides the rest)
@@ -263,6 +287,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     for pair in earlier - conflicts:
         _remove_conflict(store, *pair)       # not confirmed by the gate: taken back
     keep_apart = conflicts | {tuple(sorted(p)) for p in updates.items()}
+    # two sides of a dispute, or an old and a new figure, are both written: neither is folded into the other
+    covered = {s_: b_ for s_, b_ in covered.items() if tuple(sorted((s_, b_))) not in keep_apart}
     merged = 0
     gone: set[int] = set()
     merged_into: dict[int, int] = {}
