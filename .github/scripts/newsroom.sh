@@ -186,7 +186,8 @@ seed() {   # $1 = Supabase database URL
   local where; where="$(sed -E 's#^[^/]*//##; s#^[^@]*@##; s#\?.*$##' <<<"$src")"
   case "$where" in *:*@*|*password*) where="(address hidden)" ;; esac
   echo "copying from $where"
-  if ! pg pg_dump --no-owner --no-acl -Fc -Z 6 "${tabs[@]}" -f $W/seed.dump "$src" 2> "$DIR/seed.err"; then
+  # the app role reads these tables through its row-level-security policy (app_full_access: every row)
+  if ! pg pg_dump --enable-row-security --no-owner --no-acl -Fc -Z 6 "${tabs[@]}" -f $W/seed.dump "$src" 2> "$DIR/seed.err"; then
     local err; err="$(tail -c 600 "$DIR/seed.err" | tr '\n' ' ' | sed -E 's#[^ ]*://[^ ]*@#<url>@#g; s#password[^ ]*#password=<hidden>#g')"
     rm -f "$DIR/seed.err"
     fail "pg_dump from $where failed: $err"
