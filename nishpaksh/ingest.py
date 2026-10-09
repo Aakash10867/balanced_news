@@ -207,13 +207,21 @@ def fetch_image(url: str) -> str:
         return ""
 
 
-def fill_images(store: Store, limit: int = 60) -> int:
-    """Articles of the last 36 h in a story that were stored before pictures were collected (or by a path that
-    does not read the page): look once, newest first. A page that has none, or blocks us, is marked "" and left."""
-    since = utcnow() - dt.timedelta(hours=36)
+def fill_images(store: Store, limit: int = 120) -> int:
+    """Articles stored before pictures were collected (or by a path that does not read the page): look once.
+    First those behind the articles live on the site (any age: a live page needs its picture), then those of the
+    last 36 h in a story, newest first. A page that has none, or blocks us, is marked "" and left."""
+    from .db import published
+    live = select(published.c.story_id)
     rows = store.rows(select(articles.c.id, articles.c.url).where(
-        articles.c.image.is_(None), articles.c.story_id.isnot(None), articles.c.published_at >= since)
+        articles.c.image.is_(None), articles.c.story_id.in_(live))
         .order_by(articles.c.published_at.desc()).limit(limit))
+    if len(rows) < limit:
+        since = utcnow() - dt.timedelta(hours=36)
+        have = {r["id"] for r in rows}
+        rows += [r for r in store.rows(select(articles.c.id, articles.c.url).where(
+            articles.c.image.is_(None), articles.c.story_id.isnot(None), articles.c.published_at >= since)
+            .order_by(articles.c.published_at.desc()).limit(limit - len(rows))) if r["id"] not in have]
     if not rows:
         return 0
     with ThreadPoolExecutor(max_workers=8) as pool:
