@@ -205,7 +205,7 @@
   #sheet.anim .rise { transition: opacity 300ms ease 200ms, transform 420ms var(--ease) 160ms; }
   #sheet.open .rise { opacity: 1; transform: none; }
   /* closing: what is not on the card goes at once, so the headline and the picture travel back alone */
-  #sheet.anim:not(.open) .rise { transition: opacity 110ms ease, transform 200ms ease; }
+  #sheet.anim:not(.open) .rise { transition: opacity 110ms ease, transform 200ms ease, visibility 0s linear 110ms; visibility: hidden; }
   #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 110ms ease; }
   #sheet.anim:not(.open) .hbox .layer { transition: opacity 280ms ease; }
   #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 300ms ease 80ms; }
@@ -1100,6 +1100,7 @@ function closeStory(animate = true) {
     sheetScroll.scrollTop = 0;     // the article's top goes back into the card, as it came out of it
     sheet.classList.add("anim");
     placeOverCard(r, lastOff);
+    flyBarBack(el);                // 2.1: the colour bar travels back into the card with the headline
     setClip(r); sheet.classList.remove("open");
     closing = setTimeout(() => { sheet.classList.remove("on", "anim"); closing = null; }, 470);
   } else {
@@ -1603,6 +1604,17 @@ function flyBar(fromCard) {
     ab.style.transform = "";
     setTimeout(() => { ab.style.transition = ""; }, 600);
   }));
+}
+function flyBarBack(cardEl) {       // closing: the bar goes back to the card's foot, by transform, with the headline
+  const cb = cardEl && cardEl.querySelector(".bar"), ab = $("abar");
+  if (!cb || !ab || STILL.matches) return;
+  const a = cb.getBoundingClientRect(), b = ab.getBoundingClientRect();
+  if (!b.width) return;
+  ab.style.willChange = "transform";
+  ab.style.opacity = "1";
+  ab.style.transition = "transform 460ms var(--ease)";
+  ab.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, 0.8)`;
+  setTimeout(() => { ab.style.transition = ""; ab.style.transform = ""; ab.style.opacity = ""; ab.style.willChange = ""; }, 500);
 }
 // every sentence of the article knows its place (paragraph.sentence), for the audio's lighting
 function markSentences(row) {
