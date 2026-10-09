@@ -81,9 +81,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     `pages/<id>.json.gz`, `index/<YYYY-MM>.jsonl`) and is deleted from Supabase only after the push.
     The site and follow-ups read archived parents from the branch (raw.githubusercontent.com).
 - **Writing desk and preparation queue (owner, Oct 6 2026).** Target: at least one article an hour,
-  at most two. The writer is its own job (`desk.py`, workflow `writer.yml`, dispatched at :45 UTC = :15 IST by
-  pg_cron `public.dispatch_desk()`, same Vault token; GitHub schedule :55 as backup; pg_cron is UTC, the
-  pipeline starts :05 UTC = :35 IST): it writes the
+  at most two. The writer is its own step (`desk.py`; since Oct 10 2026 in hourly.yml right after the
+  pipeline, which starts :05 UTC = :35 IST; before, workflow `writer.yml` at :45 UTC): it writes the
   settled stories most important first until the clock hour has `desk_per_hour` (2) articles; a try
   (`desk_tries`, 5) counts only when the writer is asked; stories turned away before that (a follow-up
   refused, no headline) are counted in `skipped` and the desk moves on (at most 25 looked at), and a
@@ -489,7 +488,30 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   dropped. An outlet in no group (found by search) is Indian unless its domain is another country's.
 - **Scheduling:** Supabase `pg_cron` calls GitHub's workflow_dispatch at :05 every hour
   (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); the pipeline has no GitHub
-  schedule (removed Oct 8 2026). The writer (`writer.yml`) keeps its :55 GitHub schedule as backup.
+  schedule (removed Oct 8 2026). Since Oct 10 2026 the desk runs in the same job right after the pipeline
+  (see "The newsroom lives in the job"); `writer.yml` is gone and pg_cron's desk job (`dispatch_desk`) is off.
+- **The newsroom lives in the job (owner, Oct 10 2026: "we have no other option, go for it").** Supabase's free
+  egress (5 GB/month) was used ~15 GB in 9 days, ~all of it the pipeline reading its own data back, and the org
+  went into its grace period (a transfer to a fresh org is refused during it). Now: every newsroom table (feeds,
+  articles, stories, claims, canonical, story_pairs, source_clusters, published, translations, story_links,
+  quota_usage) lives in a Postgres 17 SERVICE inside the hourly job (hourly.yml), loaded from the saved copy and
+  saved again at the end (`.github/scripts/newsroom.sh`): pg_dump, checked (articles/stories never empty, the
+  main tables present), AES-256 encrypted with the `NEWSROOM_KEY` secret (public repo, outlets' text), kept in the
+  Actions cache (`newsroom-<run>`) AND force-pushed to the `newsroom` branch (90 MB parts); restore takes the copy
+  with the newer stamp and REFUSES to start with none (never an empty newsroom saved over the real one); save
+  refuses unless this job loaded a copy. Supabase keeps the READER tables and the run logs (`db.READER_TABLES`:
+  profiles, follows, push_subscriptions, notifications, audio_requests, audio_files, recaps, videos, saved,
+  notify_state, account_events, runs, diagnostics): `Store` sends each statement to the database its tables live
+  in (`READERS_DATABASE_URL` = Supabase, `DATABASE_URL` = the newsroom; one statement may not mix them: tests run
+  split, conftest `two_databases`). The live articles are copied to Supabase's `published` after each save
+  (`mirror.py`, md5 per row, JSON copied as exact text; writing is free) for the site's fallback and the audio
+  job, which still runs on Supabase alone. One job per hour: gate (Supabase `runs`) -> load -> pipeline (45 min
+  budget) -> archive -> desk (20 min) -> save -> [only if saved] mirror, feed, notifications, audio check; a
+  published article is shown only once the hour is saved, so a lost hour is re-done, never published twice.
+  Tools (replay, modelcmp, probe, daily archive) load a read-only copy (`.github/actions/newsroom-load`).
+  `newsroom-seed.yml` made the first copy from Supabase (refuses if one exists unless "replace"); Supabase's own
+  newsroom tables are frozen since and must never be written again. Every load/save/refusal is logged in
+  Supabase `diagnostics` kind 'newsroom' (`newsroomlog.py`). `heavy.py` is unused in the job (reads are free).
 
 - **Reader features (owner, Oct 9 2026; built functional and plain, the owner designs them later; never ask him UI
   questions).** Guiding rule: personalise by TOPIC, never by viewpoint; perspective sorts were refused ("our project is
@@ -504,7 +526,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     states (`places.py`: the section call names states, code keeps one only if the article names it or a city of it; "New
     Delhi" alone is not Delhi); people/bodies (`people.py`, code only, titles stripped); a single story (a follow-up
     published = notified); the daily recap. EVERY match is notified: no cap, no quiet hours (owner). `notify.py` runs at
-    the end of every desk run (queue only), one row per reader+kind+ref, which is also the site's inbox; writer.yml SENDS
+    the end of every desk run (queue only), one row per reader+kind+ref, which is also the site's inbox; the hourly job SENDS
     the pushes in its own step after the feed is published, and the site asks for en.json/hi.json with the minute in the
     address (`?m=`) to step past GitHub's 5-minute cache (owner, Oct 10 2026: the home page showed an article 5 minutes
     after its notification). Coming back to the page after 2 minutes away reloads the cards.
@@ -566,7 +588,7 @@ perspectives → origins + fact/characterisation → verdicts (`verify.py`) → 
 colours of published articles mature → retention → health checks in `runs.stats.health` → (workflow
 step) articles older than 3 days to the archive branch. Rating (`priority.py`) comes after grouping;
 search, Tavily reads, reading and analysis cover the preparation queue only.
-Writing desk (`desk.py`, :45 UTC): settled stories, most important first → follow-up? → page, written once
+Writing desk (`desk.py`, after the pipeline in the same job): settled stories, most important first → follow-up? → page, written once
 (`compose.py`: threads, the news; `narrative.py`: the essay led by the news; `news.py`: headline) →
 Hindi. At most 2 per clock hour.
 

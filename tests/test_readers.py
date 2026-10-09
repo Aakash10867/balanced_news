@@ -287,3 +287,24 @@ def test_a_videos_language_is_read_from_its_title():
     assert videos.title_lang("Delhi Braces For CJP Protest 2.0 Against CEC Gyanesh Kumar") == "en"
     assert videos.title_lang("हिमाश्री बोरो के साथ ट्रेन में आखिर क्या हुआ?") == "hi"
     assert videos.title_lang("Himashree Boro Case: Train Mein Kya Hua Tha?") == "hi"
+
+
+def test_reader_tables_and_run_logs_go_to_the_readers_database(tmp_path):
+    """Oct 10 2026: the newsroom moved into the GitHub job; reader tables and run logs stay on Supabase."""
+    import pytest
+    import sqlalchemy as sa
+    from nishpaksh.db import Store, articles, diagnostics, follows, insert, published, select
+    s = Store(f"sqlite:///{tmp_path / 'news.db'}")
+    s.init()
+    assert s.readers is not s
+    s.exec(insert(follows).values(reader="r1", kind="section", key="politics"))
+    s.exec(insert(diagnostics).values(kind="desk", report={}))
+    s.exec(insert(published).values(story_id=1, version=1, headline_en="h"))
+    news = sa.create_engine(f"sqlite:///{tmp_path / 'news.db'}")
+    with news.connect() as c:
+        assert c.execute(sa.text("select count(*) from follows")).scalar() == 0
+        assert c.execute(sa.text("select count(*) from diagnostics")).scalar() == 0
+        assert c.execute(sa.text("select count(*) from published")).scalar() == 1
+    assert len(s.rows(select(follows))) == 1 and len(s.rows(select(diagnostics))) == 1
+    with pytest.raises(RuntimeError, match="mixes"):
+        s.rows(select(articles.c.id).where(articles.c.story_id.in_(select(follows.c.key))))

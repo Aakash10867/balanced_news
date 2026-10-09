@@ -276,6 +276,7 @@ def _vapid_key(store: Store) -> str | None:
     k = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
     if k:
         return k
+    store = store.readers          # the key is in Supabase's Vault, never in the newsroom copy
     if store.engine.dialect.name != "postgresql":
         return None
     try:

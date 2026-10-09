@@ -253,8 +253,42 @@ def utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
 
+# Two databases (Oct 10 2026, Supabase egress): the NEWSROOM (everything the pipeline and the desk work on) is
+# a Postgres inside the GitHub Actions job, restored from a saved copy each hour (.github/scripts/newsroom.sh);
+# reads there cost nothing. READERS stay on Supabase: what the site, the account function and readers write, plus
+# the small run logs (`runs`, `diagnostics`) so they can be read from outside the job. With READERS_DATABASE_URL
+# set, every statement on these tables goes to Supabase and every other one to DATABASE_URL; one statement may not
+# mix the two. Without it (tests, the audio and notify jobs) everything goes to DATABASE_URL as before.
+READER_TABLES = frozenset({"profiles", "follows", "push_subscriptions", "notifications", "audio_requests",
+                           "audio_files", "recaps", "videos", "saved", "notify_state", "account_events",
+                           "runs", "diagnostics"})
+
+
+def statement_tables(stmt) -> set[str]:
+    """Names of the tables a SQLAlchemy statement reads or writes (none for a text() statement)."""
+    from sqlalchemy.sql import visitors
+    names: set[str] = set()
+    t = getattr(stmt, "table", None)
+    if isinstance(t, Table):
+        names.add(t.name)
+    for el in visitors.iterate(stmt):
+        if isinstance(el, Table):
+            names.add(el.name)
+        else:
+            tab = getattr(el, "table", None)
+            if isinstance(tab, Table):
+                names.add(tab.name)
+    return names
+
+
 class Store:
-    def __init__(self, url: str):
+    def __init__(self, url: str, readers_url: str | None = None):
+        if readers_url is None:
+            readers_url = os.environ.get("READERS_DATABASE_URL", "").strip()
+            if readers_url:
+                from .config import normalize_db_url
+                readers_url = normalize_db_url(readers_url)
+        self.readers: "Store" = Store(readers_url, readers_url="") if readers_url and readers_url != url else self
         kw = {"pool_pre_ping": True}
         if url.startswith("sqlite"):
             kw["connect_args"] = {"check_same_thread": False}
@@ -286,10 +320,22 @@ class Store:
             if missing:
                 raise RuntimeError(f"tables missing and cannot be created by this role: {missing}. "
                                    "Apply supabase/migrations.") from e
+        if self.readers is not self:
+            self.readers.init()
 
     # generic helpers ---------------------------------------------------------
+    def route(self, stmt) -> "Store":
+        """The store a statement belongs to: the readers' database for reader tables, else this one."""
+        if self.readers is self:
+            return self
+        names = statement_tables(stmt)
+        theirs = names & READER_TABLES
+        if theirs and names - READER_TABLES:
+            raise RuntimeError(f"one statement mixes reader and newsroom tables: {sorted(names)}")
+        return self.readers if theirs else self
+
     def rows(self, stmt) -> list[dict]:
-        with self.engine.connect() as c:
+        with self.route(stmt).engine.connect() as c:
             return [dict(r._mapping) for r in c.execute(stmt)]
 
     def one(self, stmt) -> dict | None:
@@ -297,11 +343,11 @@ class Store:
         return r[0] if r else None
 
     def exec(self, stmt):
-        with self.engine.begin() as c:
+        with self.route(stmt).engine.begin() as c:
             return c.execute(stmt)
 
     def insert_returning_id(self, table: Table, values: dict) -> int:
-        with self.engine.begin() as c:
+        with self.route(insert(table)).engine.begin() as c:
             res = c.execute(insert(table).values(**values))
             return int(res.inserted_primary_key[0])
 

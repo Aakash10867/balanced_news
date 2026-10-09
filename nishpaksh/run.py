@@ -351,11 +351,10 @@ def _record_crash() -> None:
     import json
     import traceback
     try:
-        from sqlalchemy import text as sql
-        with Store(database_url()).engine.begin() as c:
-            c.execute(sql("insert into diagnostics (kind, report) values ('crash', :r)"),
-                      {"r": json.dumps({"trigger": os.environ.get("RUN_TRIGGER", "manual"),
-                                        "traceback": traceback.format_exc()[-6000:]})})
+        from .db import diagnostics, insert
+        Store(database_url()).exec(insert(diagnostics).values(   # routed: diagnostics live with the readers
+            kind="crash", report={"trigger": os.environ.get("RUN_TRIGGER", "manual"),
+                                  "traceback": traceback.format_exc()[-6000:]}))
     except Exception:  # noqa: BLE001
         log.exception("could not record the crash")
 

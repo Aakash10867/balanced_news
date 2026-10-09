@@ -1,9 +1,16 @@
 name: hourly-pipeline
 
-# Started every hour at :05 by Supabase (pg_cron -> workflow_dispatch, see supabase/migrations).
-# GitHub's own schedule was removed (owner, Oct 8 2026): it is best-effort, skipped hours at a time,
-# and only added runs the gate had to turn away. The gate lets the Supabase trigger through only if
-# no run has started recently. "Run workflow" (manual) always goes ahead.
+# The newsroom hour (Oct 10 2026): the pipeline, then the writing desk, in ONE job, on a Postgres inside the
+# job (the "newsroom", .github/scripts/newsroom.sh). It is loaded from the saved copy at the start and saved at
+# the end; Supabase keeps only the readers' tables and the run logs (nishpaksh/db.py READER_TABLES), so the
+# pipeline's reads no longer count against Supabase's 5 GB of free egress a month (it was used ~10x over).
+# The pipeline and the desk used to be two jobs at :05 and :45 on one shared database; on a saved copy they
+# must not overlap, so the desk now runs as soon as the pipeline finishes (pipeline 17 min on average, 31 at
+# most; desk 7, at most 23: Oct 8-10 2026). Their own time budgets are unchanged.
+#
+# Started every hour at :05 by Supabase (pg_cron -> workflow_dispatch, see supabase/migrations). The gate
+# lets the Supabase trigger through only if no run has started recently. "Run workflow" (manual) always
+# goes ahead.
 on:
   workflow_dispatch:
     inputs:
@@ -13,7 +20,7 @@ on:
 
 concurrency:
   group: nishpaksh-pipeline
-  cancel-in-progress: false   # never run two pipelines on the same database at once
+  cancel-in-progress: false   # never two jobs on the newsroom copy at once
 
 jobs:
   gate:
@@ -29,7 +36,7 @@ jobs:
       - run: pip install -q "sqlalchemy>=2.0" "psycopg2-binary>=2.9" "pyyaml>=6.0"
       - id: check
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}       # `runs` is on Supabase
           REASON: ${{ github.event.inputs.reason }}
         run: |
           reason="$REASON"
@@ -43,12 +50,29 @@ jobs:
     needs: gate
     if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
-    # Safety net only, for a run that hangs. The pipeline's own 45-minute deadline is a
-    # checkpoint: it stops starting new work, finishes what is in progress, and leaves the
-    # rest for the next run, so this limit should never be what ends a healthy run.
-    timeout-minutes: 75
+    # Safety net only. The pipeline stops starting new work at 45 minutes and the desk at 20; this limit
+    # should never be what ends a healthy run.
+    timeout-minutes: 110
     permissions:
-      contents: write          # push articles older than 3 days to the archive branch
+      contents: write          # the newsroom backup, the archive and feed branches
+      actions: write           # start the audio job when a reader asked for audio (audio.yml)
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      # the newsroom (this job's Postgres) and the readers (Supabase): nishpaksh/db.py routes each statement
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/newsroom
+      READERS_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NEWSROOM_KEY: ${{ secrets.NEWSROOM_KEY }}
+      NEWSROOM_LOG_URL: ${{ secrets.DATABASE_URL }}    # loads and saves logged in Supabase diagnostics
+      GH_TOKEN: ${{ github.token }}
+      RUN_TRIGGER: ${{ github.event.inputs.reason || github.event_name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -56,35 +80,64 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Restore the cache of article text and vectors
-        # heavy columns are read from Supabase only when new or changed (nishpaksh/heavy.py: egress)
-        uses: actions/cache@v4
+      - name: Find the newsroom copy in the cache
+        uses: actions/cache/restore@v4
         with:
-          path: .heavycache
-          key: heavy-${{ github.run_id }}
-          restore-keys: heavy-
+          path: .newsroom/cache
+          key: newsroom-${{ github.run_id }}
+          restore-keys: newsroom-
+      - name: Load the newsroom
+        id: restore
+        run: bash .github/scripts/newsroom.sh restore
       - name: Run pipeline
+        id: pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          RUN_TRIGGER: ${{ github.event.inputs.reason || github.event_name }}
-          NISHPAKSH_HEAVY_CACHE: .heavycache/heavy.sqlite
         run: python -m nishpaksh.run --time-budget 45
       - name: Move articles older than 3 days to the archive branch
-        # a story leaves the database only after its page is pushed (nishpaksh/pagearchive.py)
-        if: ${{ !cancelled() }}
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GH_TOKEN: ${{ github.token }}
+        # a story leaves the newsroom only after its page is pushed (nishpaksh/pagearchive.py)
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
         run: bash .github/scripts/archive_pages.sh
-      - name: Publish the feed for the reading site
-        # colours matured and old articles archived: refresh the site's ready-made files (nishpaksh/feed.py)
-        if: ${{ !cancelled() }}
-        continue-on-error: true
+      - name: Write and publish (the desk)
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: python -m nishpaksh.desk --minutes 20
+      - name: Save the newsroom
+        # always, once a copy was loaded: whatever this hour did is kept, even after a failed step
+        id: save
+        if: ${{ always() && steps.restore.outcome == 'success' }}
+        run: bash .github/scripts/newsroom.sh save
+      - name: Keep the copy in the cache
+        if: ${{ always() && steps.save.outcome == 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .newsroom/cache
+          key: newsroom-${{ github.run_id }}-${{ github.run_attempt }}
+      # Everything below runs only once this hour's work is safely saved: an article shown on the site but lost
+      # from the newsroom would be written and published a second time next hour.
+      - name: Copy the live articles to Supabase
+        # the site's fallback and the audio job read them there; writing costs no egress (nishpaksh/mirror.py)
+        if: ${{ always() && steps.save.outcome == 'success' }}
+        continue-on-error: true
+        run: python -m nishpaksh.mirror
+      - name: Publish the feed for the reading site
+        if: ${{ always() && steps.save.outcome == 'success' }}
+        continue-on-error: true
         run: bash .github/scripts/publish_feed.sh
+      - name: Send notifications
+        # after the feed, so the article is on the home page when the reader taps (owner, Oct 10 2026)
+        if: ${{ always() && steps.save.outcome == 'success' }}
+        continue-on-error: true
+        run: python -m nishpaksh.notify --send-only
+      - name: Start the audio job if a reader is waiting
+        if: ${{ always() && steps.save.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          if python -m nishpaksh.audio --dir audio-out --check; then gh workflow run audio.yml -f reason=desk; fi

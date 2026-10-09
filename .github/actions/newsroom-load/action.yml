@@ -1,0 +1,15 @@
+name: Load the newsroom (read-only)
+description: >-
+  Loads the latest saved newsroom copy into the job's Postgres service (port 5432) for tools that read
+  the newsroom (replay, modelcmp, probe, the daily archive). Never saved back: only the hourly job saves.
+  The job needs the postgres:17 service, NEWSROOM_KEY and GH_TOKEN (see hourly.yml).
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/restore@v4
+      with:
+        path: .newsroom/cache
+        key: newsroom-${{ github.run_id }}
+        restore-keys: newsroom-
+    - shell: bash
+      run: bash .github/scripts/newsroom.sh restore

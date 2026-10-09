@@ -8,6 +8,14 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
+def two_databases(monkeypatch, tmp_path):
+    """Production keeps reader tables and run logs in Supabase and the newsroom in the job's own Postgres
+    (db.READER_TABLES, Oct 10 2026): every test runs the same way, each with its own readers' database, so a
+    statement sent to the wrong database, or mixing the two, fails here."""
+    monkeypatch.setenv("READERS_DATABASE_URL", f"sqlite:///{tmp_path / 'readers.db'}")
+
+
+@pytest.fixture(autouse=True)
 def model_verdicts_on(monkeypatch):
     """Red verdicts are on hold in production (SETTINGS.model_verdicts = False); the tests keep the
     machinery working for when a second model family is available."""

@@ -1,0 +1,60 @@
+name: newsroom-seed
+
+# ONE TIME (Oct 10 2026): copy the newsroom tables from Supabase into the first saved newsroom copy
+# (.github/scripts/newsroom.sh). After that the newsroom lives only in the hourly job's own Postgres and
+# Supabase's copies of these tables go stale. Running this again would replace the newsroom with that stale
+# copy, so it refuses when a newsroom copy already exists, unless "replace" is typed.
+on:
+  workflow_dispatch:
+    inputs:
+      replace:
+        description: "type replace to overwrite an existing newsroom copy with Supabase's tables"
+        default: ""
+
+concurrency:
+  group: nishpaksh-pipeline     # never while an hourly job has the newsroom open
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      NEWSROOM_KEY: ${{ secrets.NEWSROOM_KEY }}
+      NEWSROOM_LOG_URL: ${{ secrets.DATABASE_URL }}
+      GH_TOKEN: ${{ github.token }}
+      SUPABASE_URL_DB: ${{ secrets.DATABASE_URL }}
+      REPLACE: ${{ github.event.inputs.replace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Refuse if a newsroom copy exists
+        run: |
+          if git ls-remote --exit-code --heads origin newsroom >/dev/null 2>&1 && [ "$REPLACE" != "replace" ]; then
+            echo "a newsroom copy already exists: not replacing it"; exit 1
+          fi
+      - name: Copy the newsroom tables from Supabase
+        run: bash .github/scripts/newsroom.sh seed "$SUPABASE_URL_DB"
+      - name: Save the first newsroom copy
+        id: save
+        run: bash .github/scripts/newsroom.sh save
+      - name: Keep the copy in the cache
+        uses: actions/cache/save@v4
+        with:
+          path: .newsroom/cache
+          key: newsroom-${{ github.run_id }}-${{ github.run_attempt }}
