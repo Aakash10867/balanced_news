@@ -129,8 +129,7 @@ def main() -> None:
                 published=ok, headline=pe.get("headline"), importance=pe.get("importance"), rank=pe.get("rank"),
                 parents=pe.get("parents"), background=[b["text"] for b in pe.get("background") or []],
                 model=nar.get("model"), rejected=nar.get("rejected"), reasons=nar.get("reject_reasons"),
-                lead=pe.get("lead"), covered=len(((local.one(select(stories.c.analysis).where(stories.c.id == sid))
-                                                  or {}).get("analysis") or {}).get("covered") or {}),
+                lead=pe.get("lead"), review=_review(local, sid),
                 paragraphs=[[x["text"] for x in para] for para in nar.get("paragraphs") or []],
                 section_keys=nar.get("section_keys"))
         except Exception as e:  # noqa: BLE001
@@ -140,6 +139,18 @@ def main() -> None:
         log.info("%s", json.dumps(entry)[:800])
         _save(prod, [entry])           # each story saved as it finishes: a run cut off still leaves its results
     log.info("replay done: %d stories", len(report))
+
+
+def _review(local: Store, sid: int) -> dict:
+    """What the story review did, readable: topics, proposed pairs, and which line each folded line went into."""
+    an = (local.one(select(stories.c.analysis).where(stories.c.id == sid)) or {}).get("analysis") or {}
+    text = {r["id"]: r["text"] for r in local.rows(select(canonical.c.id, canonical.c.text).where(canonical.c.story_id == sid))}
+    dc = an.get("dupe_checks") or {}
+    sc = an.get("same_checks") or {}
+    return {"topics": [g for k, v in dc.items() if k.startswith("t") for g in v if len(g) > 1][:30],
+            "proposed": {k: v for k, v in dc.items() if k.startswith("p")},
+            "asked": sum(1 for k in sc if not k.startswith("f")), "first_yes": sum(1 for k, v in sc.items() if k.startswith("f") and v),
+            "folded": [[text.get(int(a), a), text.get(int(b), b)] for a, b in (an.get("covered") or {}).items()][:40]}
 
 
 def _save(prod: Store, report: list) -> None:
