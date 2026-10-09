@@ -20,6 +20,7 @@ import logging
 import re
 
 from .db import Store, articles, canonical, claims, select, stories, update
+from . import heavy
 from .match import _add_conflict, _merge
 from .router import QuotaExhausted, Router
 
@@ -358,7 +359,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     # "Ritesh Kumar Singh, named in reports as Abhishek Kumar Singh")
     if name_conf:
         texts = [r["text"] for r in store.rows(select(canonical.c.text).where(canonical.c.story_id == story_id))]
-        texts += [r["text"] for r in store.rows(select(articles.c.text).where(articles.c.story_id == story_id))]
+        texts += [r["text"] for r in heavy.fill(store, store.rows(select(articles.c.id, *heavy.columns(store, "text"))
+                                                                   .where(articles.c.story_id == story_id)), "text")]
         name_conf = {k: v for k, v in name_conf.items() if not named_together(v, texts)}
     after = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind)
                                    .where(canonical.c.story_id == story_id)) if r["kind"] != "relation" and r["text"]]

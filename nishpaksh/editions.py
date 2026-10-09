@@ -27,6 +27,8 @@ from zoneinfo import ZoneInfo
 
 from .config import SETTINGS
 from .db import Store, articles, published, select, stories, story_links, insert, update, utcnow
+from sqlalchemy import text as sql_text
+
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -280,6 +282,14 @@ def mature(store: Store, sid: int) -> bool:
     base_verdicts(store, sid)
     verdict = {r["id"]: r["verdict"] for r in store.rows(select(canonical.c.id, canonical.c.verdict)
                                                          .where(canonical.c.story_id == sid))}
+    # the colours depend only on these verdicts: when they are the ones the page was last matured with, the
+    # page (~160 KB in two languages) is not read at all. Every live page was read every run (egress, Oct 10 2026)
+    sig = hashlib.md5(json.dumps(sorted((str(k), v) for k, v in verdict.items())).encode()).hexdigest()
+    pg = store.engine.dialect.name == "postgresql"
+    if pg:
+        seen = store.one(select(stories.c.analysis["mature_sig"].as_string().label("s")).where(stories.c.id == sid))
+        if seen and seen["s"] == sig:
+            return False
     row = store.one(select(published.c.payload_en, published.c.payload_hi).where(published.c.story_id == sid))
     if not row:
         return False
@@ -314,4 +324,8 @@ def mature(store: Store, sid: int) -> bool:
         out[col] = p
     if changed:
         store.exec(update(published).where(published.c.story_id == sid).values(**out))
+    if pg:      # set in SQL, so the story's analysis is not read or rewritten here
+        store.exec(sql_text("update stories set analysis = jsonb_set(coalesce(analysis::jsonb, '{}'::jsonb), "
+                            "'{mature_sig}', to_jsonb(cast(:sig as text)))::json where id = :sid")
+                   .bindparams(sig=sig, sid=sid))
     return changed

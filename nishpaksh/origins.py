@@ -22,6 +22,7 @@ import re
 from collections import defaultdict
 
 from .db import Store, articles, canonical, claims, select, stories, update
+from . import heavy
 from .ownership import government_of, owner_of, state_government
 from .router import QuotaExhausted, Router
 
@@ -205,10 +206,10 @@ def compute_origins(store: Store, router: Router | None, story_id: int) -> dict[
     story = store.one(select(stories).where(stories.c.id == story_id))
     if not story:
         return {}
-    arts = {a["id"]: a for a in store.rows(select(
+    arts = {a["id"]: a for a in heavy.fill(store, store.rows(select(
         articles.c.id, articles.c.outlet, articles.c.url, articles.c.author, articles.c.agency,
-        articles.c.wire_group, articles.c.text, articles.c.text_source, articles.c.published_at,
-        articles.c.extracted_at).where(articles.c.story_id == story_id))}
+        articles.c.wire_group, *heavy.columns(store, "text"), articles.c.text_source, articles.c.published_at,
+        articles.c.extracted_at).where(articles.c.story_id == story_id)), "text")}
     rows = [r for r in store.rows(select(claims).where(claims.c.story_id == story_id,
                                                       claims.c.canonical_id.is_not(None)))
             if r["article_id"] in arts]

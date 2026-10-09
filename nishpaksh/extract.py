@@ -16,6 +16,7 @@ from .config import SETTINGS
 from .frames import normalize as normalize_frame
 from sqlalchemy import func
 from .db import Store, articles, claims, delete, insert, select, stories, update, utcnow
+from . import heavy
 from .router import CallFailed, QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -346,8 +347,8 @@ def select_for_extraction(store: Store, focus: set[int] | None = None) -> list[d
     texts = {}
     ids = [a["id"] for a in chosen]
     for start in range(0, len(ids), 400):
-        texts.update({r["id"]: r["text"] for r in store.rows(
-            select(articles.c.id, articles.c.text).where(articles.c.id.in_(ids[start:start + 400])))})
+        texts.update({r["id"]: r["text"] for r in heavy.fill(store, store.rows(
+            select(articles.c.id, *heavy.columns(store, "text")).where(articles.c.id.in_(ids[start:start + 400]))), "text")})
     for a in chosen:
         a["text"] = texts.get(a["id"])
     return chosen

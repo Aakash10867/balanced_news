@@ -439,6 +439,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   run stats `heavy_cache` (hit / fetched). Article choice reads text lengths, then the text of the chosen articles only;
   priority reads only stories with a fresh report; the feed re-reads only articles whose payload md5 changed
   (`manifest.json` on the feed branch). Keep new heavy reads behind `heavy.columns`/`heavy.fill`.
+  **Oct 10 2026 (still ~1.7 GB/day after the cache; the org went over quota):** the thread check read every live
+  page (~70 KB each) for every story it checked: it now reads only the headline and first two lead sentences in
+  SQL (`threads._slim`); `editions.mature` reads a page only when its verdicts changed since the last maturing
+  (`stories.analysis.mature_sig`, set in SQL with jsonb_set); per-story text reads (origins, perspectives,
+  consolidate, extract) go through `heavy`; the desk (writer.yml) uses the same cache; the site tries the feed
+  twice with 15 s before reading Supabase (5 s fallbacks read ~100 MB a day). Never select a `published` payload
+  whole where a JSON path would do. Budget: 5 GB a month = ~165 MB a day for everything.
 - **Domains and Sport: one rigorous route, reserved places (owner, Oct 9 2026).** A cheaper "brief" lane for business
   and sport (single source, no embeddings) was designed and REJECTED by the owner: one standard everywhere, same
   depth, same perspectives. Instead: (1) **Business = Economy · Companies · Markets · Your money · Domains**, and

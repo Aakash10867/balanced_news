@@ -60,6 +60,12 @@ def _summary(row: dict) -> str:
     return f'{p.get("headline") or row.get("headline_en") or ""}. {first}'[:500]
 
 
+def _slim(headline, s0, s1) -> dict:
+    """The part of a page `_summary` reads: its headline and the first two sentences of its lead."""
+    first = [{"text": t} for t in (s0, s1) if t]
+    return {"headline": headline, "narrative": {"paragraphs": [first] if first else []}}
+
+
 def find_parents(store: Store, router: Router | None, story_id: int, headline: str, summary: str,
                  max_candidates: int = 6, window_days: int = 60) -> list[int]:
     story = store.one(select(stories.c.analysis, stories.c.created_at).where(stories.c.id == story_id))
@@ -74,8 +80,16 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
     if analysis.get("thread_checked") == headline and str(analysis.get("thread_checked_at") or "") >= newest:
         return [r["parent_id"] for r in store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == story_id))]
     since = utcnow() - dt.timedelta(days=window_days)
-    rows = store.rows(select(published.c.story_id, published.c.headline_en, published.c.payload_en, published.c.updated_at)
-                      .where(published.c.story_id != story_id, published.c.updated_at >= since))
+    # only the headline and the first two sentences of each page are needed (`_summary`): a whole page is
+    # ~70 KB, and reading every live page for every story checked was the largest egress (Oct 10 2026)
+    pe = published.c.payload_en
+    rows = [{"story_id": r["story_id"], "headline_en": r["headline_en"], "updated_at": r["updated_at"],
+             "payload_en": _slim(r["h"], r["s0"], r["s1"])}
+            for r in store.rows(select(published.c.story_id, published.c.headline_en, published.c.updated_at,
+                                       pe[("headline",)].as_string().label("h"),
+                                       pe[("narrative", "paragraphs", 0, 0, "text")].as_string().label("s0"),
+                                       pe[("narrative", "paragraphs", 0, 1, "text")].as_string().label("s1"))
+                                .where(published.c.story_id != story_id, published.c.updated_at >= since))]
     created = {r["id"]: r["created_at"] for r in store.rows(select(stories.c.id, stories.c.created_at)
                                                              .where(stories.c.id.in_([r["story_id"] for r in rows] or [-1])))}
     # parents that already moved to the archive branch (pagearchive.py) are candidates too

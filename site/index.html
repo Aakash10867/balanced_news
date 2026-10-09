@@ -701,7 +701,10 @@ async function loadCards(l) {
   try {
     // the minute in the address: GitHub's cache keeps a file up to 5 minutes, so a new article showed up to 5
     // minutes after its notification (owner, Oct 10 2026); now at most a minute, and every reader shares that minute
-    const d = await getJSON(`${FEED_URL}/${l}.json?m=${Math.floor(Date.now() / 60000)}`, {cache: "no-cache"}, 5000);
+    // a slow phone gave up after 5 s and read the database instead, ~3 MB a time (Supabase egress, Oct 10 2026):
+    // the feed gets 15 s and a second try first
+    const u = `${FEED_URL}/${l}.json?m=${Math.floor(Date.now() / 60000)}`;
+    const d = await getJSON(u, {cache: "no-cache"}, 15000).catch(() => getJSON(u, {cache: "no-cache"}, 15000));
     if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
     if (d && d.sections && d.sections.tree3) SECTIONS[l] = d.sections;   // a feed from before Domains: the built-in names
   } catch (e) { /* the feed is missing or slow: read the database */ }
@@ -740,7 +743,8 @@ function loadStory(id) {
   id = String(id);
   if (!storyCache.has(id)) {
     const p = (async () => {
-      try { return await getJSON(`${FEED_URL}/story/${encodeURIComponent(id)}.json`, {}, 5000); } catch (e) { /* fall through */ }
+      const u = `${FEED_URL}/story/${encodeURIComponent(id)}.json`;      // 15 s and a second try before the database (egress)
+      try { return await getJSON(u, {}, 15000).catch(() => getJSON(u, {}, 15000)); } catch (e) { /* fall through */ }
       try { const rows = await api(`published?story_id=eq.${encodeURIComponent(id)}&select=*`); if (rows.length) return rows[0]; } catch (e) { /* fall through */ }
       return await fromArchive(id);
     })();

@@ -32,6 +32,13 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: Restore the cache of article text and vectors
+        # the same value cache as the pipeline's (nishpaksh/heavy.py: egress); any run's copy is valid
+        uses: actions/cache@v4
+        with:
+          path: .heavycache
+          key: heavy-${{ github.run_id }}
+          restore-keys: heavy-
       - name: Write and publish
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -40,6 +47,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           RUN_TRIGGER: ${{ github.event.inputs.reason || github.event_name }}
+          NISHPAKSH_HEAVY_CACHE: .heavycache/heavy.sqlite
         run: python -m nishpaksh.desk --minutes 20
       - name: Publish the feed for the reading site
         # ready-made files on the feed branch (nishpaksh/feed.py); the site falls back to Supabase

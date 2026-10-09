@@ -23,6 +23,7 @@ import numpy as np
 
 from .config import SETTINGS
 from .db import Store, articles, canonical, claims, delete, insert, select, source_clusters, stories, story_pairs, update, utcnow
+from . import heavy
 from .wire import independence_groups, independent, is_state
 
 log = logging.getLogger(__name__)
@@ -150,9 +151,10 @@ def _direct_conflict(side, groups, M, conflicts) -> bool:
 
 
 def analyze_story(store: Store, story_id: int) -> dict:
-    arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.author, articles.c.agency,
-                             articles.c.wire_group, articles.c.role, articles.c.text, articles.c.text_source,
-                             articles.c.extracted_at).where(articles.c.story_id == story_id))
+    arts = heavy.fill(store, store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.author,
+                                               articles.c.agency, articles.c.wire_group, articles.c.role,
+                                               *heavy.columns(store, "text"), articles.c.text_source,
+                                               articles.c.extracted_at).where(articles.c.story_id == story_id)), "text")
     by_id = {a["id"]: a for a in arts}
     gmap = independence_groups(arts)
     # state media are a government speaking, not an outlet with a perspective: listed, never clustered
