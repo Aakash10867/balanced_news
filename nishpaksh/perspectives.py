@@ -310,18 +310,17 @@ def analyze_story(store: Store, story_id: int) -> dict:
             c.execute(insert(story_pairs), [dict(story_id=story_id, a=a, b=b, value=float(v))
                                             for (a, b), v in pair_rows.items()])
 
-    old = old_analysis
     analysis = {
+        # every other stage's work survives: this step rewrites only its own fields. It used to keep a fixed
+        # list of other fields, so whatever was added later was wiped every run while "consolidated" was kept
+        # (Oct 9 2026, story 16000): covered lines, updates, doubtful disputes and the review's cached answers
+        # never reached the writer, whose own review then saw the story as done. Doubtful disputes block
+        # green: wiping them could show a statement as established.
+        **old_analysis,
         # article bodies are cleared after a while (retention): keep the evidence already gathered
         "coverage": _coverage(store, story_id, arts, gmap) or old_analysis.get("coverage") or {},
         "departures": departures,
         "assessed": assessed,
-        # kept across re-analysis: work done by origins.py and consolidate.py
-        # work done by other stages (origins, consolidate, compose, threads) survives re-analysis;
-        # writer_failures and importance were being wiped, so failures went unrecorded (Oct 2026)
-        **{k: old[k] for k in ("attribution_map", "consolidated", "speakers", "names", "not_same",
-                               "importance", "writer_failures", "thread_checked", "roles", "related_event",
-                               "responses", "name_conflicts") if k in old},
         "qualified_by": "perspectives" if qualifies else None,
         "mode": mode,
         "split": side is not None,

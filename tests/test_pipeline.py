@@ -2719,3 +2719,22 @@ def test_paraphrases_are_proposed_topic_by_topic_story_13970():
     moved = {i + 100: t for i, t in texts.items()}
     same3, covers3 = dupes.propose(Model(), moved, cache)
     assert same3 == {(113, 114)} and covers3 == [(111, 110)]
+
+
+def test_perspectives_keep_every_other_stages_work_story_16000(store):
+    """Oct 9 2026: perspectives.analyze_story rewrote the story's analysis keeping a fixed list of fields, with
+    "consolidated" on it and the review's results off it: covered lines, updates, doubtful disputes and the
+    cached answers were wiped every run, and the writer's own review then saw the story as done (16000 repeated
+    one hearing three times). Doubtful disputes block green, so this could also show a statement as established."""
+    from nishpaksh import perspectives
+    from nishpaksh.run import run
+    _seed(store)
+    run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
+    sid = store.rows(select(stories.c.id).order_by(stories.c.id))[0]["id"]
+    an = dict(store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"] or {})
+    work = {"covered": {"5": 7}, "updates": {"3": 4}, "doubtful_conflicts": [8, 9], "same_checks": {"k": True},
+            "conflict_checks": {"k": "both_true"}, "dupe_checks": {"t1": [["a"]]}, "context_checks": {"x": []}}
+    store.exec(update(stories).where(stories.c.id == sid).values(analysis={**an, **work}))
+    perspectives.analyze_story(store, sid)
+    after = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
+    assert {k: after.get(k) for k in work} == work

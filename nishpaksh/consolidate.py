@@ -66,8 +66,10 @@ Reply with JSON only:
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
 SAME_ASK_MAX = 30         # same-fact questions per consolidation, closest pairs first (the rest next time)
-CONSOLIDATE_VERSION = 9   # part of the cache key: stories are consolidated again when the task changes
+CONSOLIDATE_VERSION = 10  # part of the cache key: stories are consolidated again when the task changes
                           # (9, Oct 8 2026: paraphrases proposed by topic, dupes.py)
+                          # (10, Oct 9 2026: the review's results had been wiped by perspectives.py; every
+                          # story is reviewed again so covered lines, updates and doubtful disputes exist)
 
 
 

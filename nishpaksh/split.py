@@ -16,7 +16,8 @@ is never lost or added. Anything that fails keeps the row whole. The pieces repl
 stance, speaker, evidence, time, context role) and go through matching like any fact, so the shared part
 becomes one statement with every outlet that reported it, with its colour decided by the usual rules.
 
-A row is asked about once (`rel.split`: "whole" or "piece"). Reading tier, paused with reading on quota.
+A row is asked about once (`rel.split`: "whole" or "piece"). Analysis tier ("light"): on the reading tier the
+night's refusals left most rows unasked (Oct 9 2026).
 """
 from __future__ import annotations
 
@@ -148,7 +149,8 @@ def split_story(store: Store, router: Router | None, story_id: int) -> dict:
         chunk = compound[start:start + BATCH]
         body = "\n".join(f'{k + 1}. "{r["text"]}"' for k, r in enumerate(chunk))
         try:
-            res = router.call("bulk", PROMPT.format(sentences=body), json_out=True, max_output_tokens=2500)
+            # analysis tier: the reading tier refused most calls overnight (Oct 9 2026) and nothing was split
+            res = router.call("light", PROMPT.format(sentences=body), json_out=True, max_output_tokens=2500)
         except QuotaExhausted:
             break                                      # asked again on a later run
         except Exception as e:  # noqa: BLE001

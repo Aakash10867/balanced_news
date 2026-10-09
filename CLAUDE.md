@@ -162,7 +162,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (A = shared fact + x, B = shared fact + y), neither covers the other, so the shared fact stayed in two
   statements. Before matching, in preparation, a fact row that looks compound (14+ words and a joining
   "and", ", which", ";", " but "...) is split into its single facts by one Flash-Lite question per batch of 10
-  (reading tier): at most 3, 4 allowed, more = kept whole; one fact = unchanged. Code checks every piece: its
+  (analysis tier since Oct 9): at most 3, 4 allowed, more = kept whole; one fact = unchanged. Code checks every piece: its
   numbers and names from the original, nearly all its words too, the pieces together carry every number and
   name, a said thing keeps its speaker in every piece, a "not" is never lost or added, and no two pieces share 60%+
   of their root words (a list split apart: "higher EMIs for home loans" / "... for car loans", seen on 13970);
@@ -431,6 +431,14 @@ Hindi. At most 2 per clock hour.
   Singh rules in a DGP story when the model wavered once, and "Section 22" in a story on voter deletion.
   Reading is told to ignore other stories a page lists (`extract.py`). `replay --mode context` runs only
   this check on stored stories (unpaced: run it after the 12:30 IST reset, it spends the writer's quota).
+- Story 16000 (Oct 9 2026): one hearing written three times although covered lines existed for exactly that.
+  `perspectives.analyze_story` rewrote `stories.analysis` keeping a FIXED LIST of other fields: "consolidated" was
+  on it, the review's results were not, so covered lines, updates, doubtful disputes and the cached same /
+  conflict / topic answers were wiped every run, and the desk's own review saw the story as done. Doubtful
+  disputes block green, so this could also show a statement as established. Now every stage's work survives
+  (`{**old_analysis, ...own fields}`); `CONSOLIDATE_VERSION` 10 reviews every story again. Any stage writing
+  `stories.analysis` must read the whole record and change only its own fields. The split moved to the
+  analysis tier ("light"): the reading tier refused 14 of 15 calls in a night run and nothing was split.
 - One spelling per name in an article by code (`spelling.py`, Oct 7 2026: Machhar / Machar / Matchar /
   Machchhar on one page): capitalised words with the same key (tch/chh = ch, ee = i, oo = u, doubled letters
   single) take the spelling most reports use; applied to statements before writing and to the article and
