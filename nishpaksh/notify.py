@@ -43,10 +43,10 @@ RECAP_HOUR_IST = 23                         # the desk run at 23:15 IST makes th
 
 WORDS = {
     "en": {"followup": "Update to a story you follow", "established": "established", "outlets": "outlets",
-           "recap": "The day in brief", "recap_body": lambda n: f"{n} stories today, section by section",
+           "recap": "Daily recap", "recap_body": lambda n: f"Today's {n} stories in short, section by section",
            "audio": "Your audio is ready", "place": "", "entity": ""},
     "hi": {"followup": "जिस ख़बर को आप फ़ॉलो करते हैं, उसमें नया", "established": "स्थापित", "outlets": "स्रोत",
-           "recap": "आज का सार", "recap_body": lambda n: f"आज की {n} ख़बरें, खंड के अनुसार",
+           "recap": "दिन का सार", "recap_body": lambda n: f"आज की {n} ख़बरें संक्षेप में, खंड के अनुसार",
            "audio": "आपका ऑडियो तैयार है", "place": "", "entity": ""},
 }
 
