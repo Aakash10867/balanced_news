@@ -90,8 +90,10 @@ def support_summary(cid: int, members, agroup, gpersp) -> dict:
         w = EVIDENCE_WEIGHT.get(r["evidence"], 1.0) * (0.5 if r["stance"] == "attributes" else 1.0)
         target = deny if r["stance"] == "denies" else sup
         target[g] = max(target.get(g, 0.0), w)
+    from .wire import is_state
     return {
-        "support_groups": sorted(sup), "deny_groups": sorted(deny),
+        # state media are their government speaking (origins), never an outlet: not counted as one
+        "support_groups": sorted(g for g in sup if not is_state(g)), "deny_groups": sorted(deny),
         "support_weight": round(sum(sup.values()), 2),
         "support_perspectives": sorted({gpersp.get(g) for g in sup if gpersp.get(g)}),
         "deny_perspectives": sorted({gpersp.get(g) for g in deny if gpersp.get(g)}),

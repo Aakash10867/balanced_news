@@ -22,7 +22,7 @@ import re
 from collections import defaultdict
 
 from .db import Store, articles, canonical, claims, select, stories, update
-from .ownership import government_of, owner_of
+from .ownership import government_of, owner_of, state_government
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -188,19 +188,20 @@ def article_originality(arts: dict[int, dict], first_support: dict[int, int], un
 
 
 def independent_read_outlets(store: Store, story_id: int) -> int:
-    """Owner groups (wire copies merged) with at least one fully read article in the story."""
-    from .wire import independence_groups
+    """Owner groups (wire copies merged) with at least one fully read article in the story; state media
+    are their government speaking, not an outlet."""
+    from .wire import independence_groups, independent
     arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency,
                              articles.c.wire_group, articles.c.extracted_at, articles.c.text_source)
                       .where(articles.c.story_id == story_id))
     groups = independence_groups(arts)
-    return len({groups[a["id"]] for a in arts if a["extracted_at"] and a["text_source"] != "summary"})
+    return len(independent(groups[a["id"]] for a in arts if a["extracted_at"] and a["text_source"] != "summary"))
 
 
 def compute_origins(store: Store, router: Router | None, story_id: int) -> dict[int, dict]:
     """Per canonical statement: {"origins": [...], "outlets": n independent read outlets,
     "first_seen": iso}. Stored in canonical.origins; returned for the caller."""
-    from .wire import independence_groups
+    from .wire import independence_groups, independent
     story = store.one(select(stories).where(stories.c.id == story_id))
     if not story:
         return {}
@@ -243,7 +244,7 @@ def compute_origins(store: Store, router: Router | None, story_id: int) -> dict[
             return info["key"]
         a = arts[r["article_id"]]
         owner = owner_of(a["outlet"], a["url"])
-        gov = government_of(owner)
+        gov = government_of(owner) or state_government(None, None, a.get("agency"))
         if gov:
             return "gov:" + _norm(gov)
         if a.get("agency"):
@@ -261,7 +262,7 @@ def compute_origins(store: Store, router: Router | None, story_id: int) -> dict[
         info = {
             "origins": origins,
             "n_origins": len([o for o in origins if o != POOL]),
-            "outlets": len({groups[r["article_id"]] for r in read}),
+            "outlets": len(independent(groups[r["article_id"]] for r in read)),
             "first_seen": min((arts[r["article_id"]]["published_at"] for r in rs), default=None),
         }
         if info["first_seen"] is not None:

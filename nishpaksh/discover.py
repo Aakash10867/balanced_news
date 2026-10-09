@@ -33,7 +33,7 @@ from .config import SETTINGS
 from .db import Store, articles, insert, published, select, stories, update, utcnow
 from .ingest import HEADERS, canonical_url, detect_agency, fetch_article, is_web_url
 from .ownership import canonical_outlet, owner_of
-from .wire import independence_groups, minhash
+from .wire import independence_groups, independent, minhash
 
 log = logging.getLogger(__name__)
 STOP = set("""a an the of in on at to for from by with and or but as is are was were be been has have had
@@ -150,7 +150,7 @@ def pick_stories(store: Store, n: int, focus: set[int] | None = None) -> list[di
             continue
         if s["last_searched_at"] and now - s["last_searched_at"] < dt.timedelta(hours=SETTINGS.search_every_hours):
             continue
-        groups = len(set(independence_groups(members).values()))
+        groups = len(independent(independence_groups(members)))
         newest = max(a["published_at"] for a in members)
         age_h = (now - newest).total_seconds() / 3600
         official = any(a["role"] == "official" for a in members)
@@ -240,7 +240,7 @@ def discover(store: Store, tavily=None, n_stories: int | None = None, until: flo
                 title=r["title"] or (page or {}).get("title") or "", author=(author or None) and author[:300],
                 published_at=r.get("published_at") or utcnow(), fetched_at=utcnow(), text=text,
                 text_source=source, agency=detect_agency(author, text), minhash=minhash(text),
-                extract_failures=0, found_by="search"))
+                extract_failures=0, found_by="search", image=(page or {}).get("image") or ""))
             added += 1
         stats["new_articles"] += added
         store.exec(update(stories).where(stories.c.id == s["id"]).values(last_searched_at=utcnow()))

@@ -7,7 +7,7 @@ import html
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import feedparser
 import requests
@@ -18,6 +18,7 @@ from .db import Store, articles, feeds, insert, select, update, utcnow
 from .wire import minhash
 
 log = logging.getLogger(__name__)
+IMAGE_STATS = {"with": 0, "without": 0}   # new articles this run with / without a picture (run stats "images")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/128.0 Safari/537.36")
 HEADERS = {"User-Agent": UA, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -45,6 +46,9 @@ AGENCY_PATTERNS = [
     ("UNI", r"\(\s*UNI\s*\)"),
     ("Reuters", r"\(\s*Reuters\s*\)"),
     ("AFP", r"\(\s*AFP\s*\)"),
+    ("AP", r"\(\s*AP\s*\)"),
+    ("Xinhua", r"\(\s*Xinhua\s*\)"),
+    ("APP", r"\(\s*APP\s*\)"),
     ("Bhasha", r"\(\s*भाषा\s*\)|^भाषा\b"),
     ("ANI", r"\(\s*एएनआई\s*\)"),
     ("IANS", r"\(\s*आईएएनएस\s*\)"),
@@ -72,8 +76,60 @@ def detect_agency(author: str | None, text: str | None) -> str | None:
         for p in probes:
             if p and re.search(pat, p, flags=re.MULTILINE):
                 return name
-    if author and re.fullmatch(r"(?i)\s*(pti|ani|ians|uni|reuters|afp|agencies|agency)\s*", author):
+    if author and re.fullmatch(r"(?i)\s*(pti|ani|ians|uni|reuters|afp|ap|xinhua|agencies|agency)\s*", author):
         return author.strip().upper()
+    return None
+
+
+# The picture each outlet publishes for its own share previews (owner, Oct 9 2026): collected now, chosen and
+# shown later. Only the link is stored (never the image), "" = looked and found none, NULL = not looked yet.
+IMAGE_META = ("og:image:secure_url", "og:image", "og:image:url", "twitter:image", "twitter:image:src")
+_META = re.compile(r"<meta\b[^>]*>", re.I)
+_ATTR = re.compile(r"""([a-zA-Z:_-]+)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)""")
+
+
+def clean_image(u: str | None, base: str = "") -> str | None:
+    """A usable picture link: absolute, http(s), not a data: URI, not absurdly long."""
+    u = html.unescape((u or "").strip())
+    if not u or u.startswith("data:"):
+        return None
+    if u.startswith("//"):
+        u = "https:" + u
+    u = urljoin(base, u) if base else u
+    if not is_web_url(u) or len(u) > 1500:
+        return None
+    return u
+
+
+def page_image(page_html: str, base: str = "") -> str | None:
+    """og:image (else twitter:image) from a page's head."""
+    head = page_html[:200_000]
+    found: dict[str, str] = {}
+    for tag in _META.findall(head):
+        attrs = {k.lower(): v.strip("\"'") for k, v in _ATTR.findall(tag)}
+        key = (attrs.get("property") or attrs.get("name") or "").strip().lower()
+        if key in IMAGE_META and attrs.get("content") and key not in found:
+            found[key] = attrs["content"]
+    for key in IMAGE_META:
+        img = clean_image(found.get(key), base)
+        if img:
+            return img
+    return None
+
+
+def entry_image(e) -> str | None:
+    """The picture a feed entry carries (media:content, media:thumbnail, an image enclosure)."""
+    for key in ("media_content", "media_thumbnail"):
+        for m in e.get(key) or []:
+            if (m.get("medium") in (None, "image")) and not str(m.get("type", "image")).startswith(("video", "audio")):
+                img = clean_image(m.get("url"))
+                if img:
+                    return img
+    for ln in e.get("links") or []:
+        if str(ln.get("type", "")).startswith("image"):
+            img = clean_image(ln.get("href"))
+            if img:
+                return img
     return None
 
 
@@ -121,6 +177,7 @@ def fetch_feed(feed: dict) -> list[dict]:
             "summary": strip_html(e.get("summary", "")),
             "author": e.get("author"),
             "published_at": entry_time(e),
+            "image": entry_image(e),
         })
     return out
 
@@ -137,7 +194,49 @@ def fetch_article(url: str) -> dict | None:
     if doc is None:
         return None
     d = doc.as_dict() if hasattr(doc, "as_dict") else dict(doc)
-    return {"text": d.get("text") or "", "author": d.get("author"), "title": d.get("title")}
+    image = page_image(r.text, url) or clean_image(d.get("image"), url)
+    return {"text": d.get("text") or "", "author": d.get("author"), "title": d.get("title"), "image": image}
+
+
+def fetch_image(url: str) -> str:
+    """Only the picture of a page already read ("" when it has none or cannot be read)."""
+    try:
+        r = _get(url, timeout=15)
+        return (page_image(r.text, url) or "") if r.status_code == 200 and r.text else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def fill_images(store: Store, limit: int = 120) -> int:
+    """Articles stored before pictures were collected (or by a path that does not read the page): look once.
+    First those behind the articles live on the site (any age: a live page needs its picture), then those of the
+    last 36 h in a story, newest first. A page that has none, or blocks us, is marked "" and left."""
+    from .db import published
+    live = select(published.c.story_id)
+    # a few per story, round the stories, so one story of 289 reports does not take the whole run
+    per: dict[int, list] = {}
+    for r in store.rows(select(articles.c.id, articles.c.url, articles.c.story_id).where(
+            articles.c.image.is_(None), articles.c.story_id.in_(live)).order_by(articles.c.published_at.desc())):
+        per.setdefault(r["story_id"], []).append(r)
+    rows = []
+    for k in range(3):
+        rows += [v[k] for v in per.values() if len(v) > k]
+    rows = rows[:limit]
+    if len(rows) < limit:
+        since = utcnow() - dt.timedelta(hours=36)
+        have = {r["id"] for r in rows}
+        rows += [r for r in store.rows(select(articles.c.id, articles.c.url).where(
+            articles.c.image.is_(None), articles.c.story_id.isnot(None), articles.c.published_at >= since)
+            .order_by(articles.c.published_at.desc()).limit(limit - len(rows))) if r["id"] not in have]
+    if not rows:
+        return 0
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        got = list(pool.map(lambda r: fetch_image(r["url"]), rows))
+    for r, img in zip(rows, got):
+        store.exec(update(articles).where(articles.c.id == r["id"]).values(image=img))
+    found = sum(1 for g in got if g)
+    log.info("images: %d of %d older articles have one", found, len(rows))
+    return found
 
 
 def ingest(store: Store) -> int:
@@ -204,10 +303,12 @@ def ingest(store: Store) -> int:
             title=en["title"] or (page or {}).get("title") or "", author=(author or None) and author[:300],
             published_at=en["published_at"] or now, fetched_at=now, text=text, text_source=source,
             agency=detect_agency(author, text), minhash=minhash(text), extract_failures=0,
+            image=(page or {}).get("image") or en.get("image") or "",
         )
         try:
             store.exec(insert(articles).values(**values))
             added += 1
+            IMAGE_STATS["with" if values["image"] else "without"] += 1
             diag[feed["name"]]["added"] += 1
         except Exception as e:  # unique race etc.
             log.debug("insert skipped %s: %s", en["url"], e)

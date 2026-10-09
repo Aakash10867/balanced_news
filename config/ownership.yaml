@@ -3,6 +3,16 @@
 # independent source. Names must match the outlet names in feeds.yaml; `domains` lets
 # articles found by search (whose outlet name comes from the search engine) be matched too.
 # Any outlet not listed is its own owner group.
+#
+# region: world    -> an owner based outside India (default: India). Indian coverage decides whether a
+#                     story is relevant (worldgate.py, priority.py).
+# government: X    -> the government controls the editorial line (state media) and no law guarantees its
+#                     independence: what it publishes is that government speaking, one origin with its
+#                     officials, never an independent outlet. A public fact about control, like ownership.
+#                     Public broadcasters independent by law (BBC, DW, France 24, NPR) are not state media.
+#                     Borderline cases decided by the owner, Oct 9 2026: Al Jazeera, The National, CNA are
+#                     state (direct ownership, no guarantee); Arab News and DD News / AIR are not.
+# voice: "..."     -> how the article names a foreign state outlet's own reporting ("Chinese state media said").
 groups:
   Network18 (Reliance):
     outlets: [News18, News18 Hindi, Firstpost, CNBC-TV18, Moneycontrol]
@@ -32,8 +42,9 @@ groups:
     outlets: [The Indian Express, Jansatta, Financial Express, Loksatta]
     domains: [indianexpress.com, jansatta.com, financialexpress.com, loksatta.com]
   BBC:
-    outlets: [BBC Hindi, BBC News India, BBC News]
+    outlets: [BBC Hindi, BBC News India, BBC News, BBC News World]
     domains: [bbc.com, bbc.co.uk]
+    region: world
   The Wire (Foundation for Independent Journalism):
     outlets: [The Wire, The Wire Hindi]
     domains: [thewire.in, thewirehindi.com]
@@ -85,3 +96,172 @@ groups:
     outlets: [PIB, PIB Hindi]
     domains: [pib.gov.in]
     government: Union
+
+  # ---------- outside India (owner, Oct 9 2026) ----------
+  Guardian Media Group:
+    outlets: [The Guardian]
+    domains: [theguardian.com]
+    region: world
+  Deutsche Welle:
+    outlets: [DW]
+    domains: [dw.com]
+    region: world
+  France Médias Monde:
+    outlets: [France 24, RFI]
+    domains: [france24.com, rfi.fr]
+    region: world
+  NPR:
+    outlets: [NPR]
+    domains: [npr.org]
+    region: world
+  Associated Press:
+    outlets: [AP, Associated Press, AP News]
+    domains: [apnews.com]
+    region: world
+  Reuters (Thomson Reuters):
+    outlets: [Reuters]
+    domains: [reuters.com]
+    region: world
+  Agence France-Presse:
+    outlets: [AFP]
+    domains: [afp.com]
+    region: world
+  Warner Bros. Discovery:
+    outlets: [CNN]
+    domains: [cnn.com]
+    region: world
+  New York Times:
+    outlets: [The New York Times]
+    domains: [nytimes.com]
+    region: world
+  Nash Holdings:
+    outlets: [The Washington Post]
+    domains: [washingtonpost.com]
+    region: world
+  News Corp:
+    outlets: [The Wall Street Journal, The Times, The Australian, New York Post]
+    domains: [wsj.com, thetimes.co.uk, thetimes.com, theaustralian.com.au, nypost.com]
+    region: world
+  Bloomberg:
+    outlets: [Bloomberg]
+    domains: [bloomberg.com]
+    region: world
+  Nikkei:
+    outlets: [Financial Times, Nikkei Asia]
+    domains: [ft.com, asia.nikkei.com]
+    region: world
+  Alibaba (SCMP):
+    outlets: [South China Morning Post, SCMP]
+    domains: [scmp.com]
+    region: world
+  # Pakistan
+  Dawn Media Group:
+    outlets: [Dawn]
+    domains: [dawn.com]
+    region: world
+  Express Media Group:
+    outlets: [The Express Tribune, Express Tribune]
+    domains: [tribune.com.pk, express.pk]
+    region: world
+  Jang Group:
+    outlets: [The News, Geo News]
+    domains: [thenews.com.pk, geo.tv, jang.com.pk]
+    region: world
+  # Bangladesh
+  Transcom Group:
+    outlets: [The Daily Star, Prothom Alo]
+    domains: [thedailystar.net, prothomalo.com]
+    region: world
+  Dhaka Tribune:
+    outlets: [Dhaka Tribune]
+    domains: [dhakatribune.com]
+    region: world
+  # Nepal
+  Kantipur Media Group:
+    outlets: [The Kathmandu Post, Kathmandu Post]
+    domains: [kathmandupost.com, ekantipur.com]
+    region: world
+  International Media Network Nepal:
+    outlets: [The Himalayan Times]
+    domains: [thehimalayantimes.com]
+    region: world
+  # Sri Lanka
+  Wijeya Newspapers:
+    outlets: [Daily Mirror Sri Lanka, Daily Mirror]
+    domains: [dailymirror.lk]
+    region: world
+  EconomyNext:
+    outlets: [EconomyNext]
+    domains: [economynext.com]
+    region: world
+  # Afghanistan
+  Moby Group:
+    outlets: [TOLOnews]
+    domains: [tolonews.com]
+    region: world
+  # Gulf (some nine million Indians live there)
+  Al Nisr Publishing:
+    outlets: [Gulf News]
+    domains: [gulfnews.com]
+    region: world
+  Galadari (Khaleej Times):
+    outlets: [Khaleej Times]
+    domains: [khaleejtimes.com]
+    region: world
+  Okaz Organization for Press and Publication:
+    outlets: [Saudi Gazette, Okaz]
+    domains: [saudigazette.com.sa, okaz.com.sa]
+    region: world
+  Saudi Research and Media Group:
+    outlets: [Arab News]
+    domains: [arabnews.com]
+    region: world
+  # State media: a government speaking
+  Al Jazeera Media Network (Qatar):
+    outlets: [Al Jazeera]
+    domains: [aljazeera.com, aljazeera.net]
+    region: world
+    government: Qatar
+    voice: Qatari state-owned media
+  International Media Investments (UAE):
+    outlets: [The National]
+    domains: [thenationalnews.com]
+    region: world
+    government: United Arab Emirates
+    voice: UAE state-owned media
+  Mediacorp (Singapore):
+    outlets: [CNA, Channel NewsAsia]
+    domains: [channelnewsasia.com]
+    region: world
+    government: Singapore
+    voice: Singapore state-owned media
+  Chinese state media:
+    outlets: [Xinhua, Global Times, CGTN, China Daily, People's Daily]
+    domains: [news.cn, xinhuanet.com, globaltimes.cn, cgtn.com, chinadaily.com.cn, people.cn]
+    region: world
+    government: China
+    voice: Chinese state media
+  Pakistani state media:
+    outlets: [APP, Associated Press of Pakistan, PTV News, Radio Pakistan]
+    domains: [app.com.pk, ptv.com.pk, radio.gov.pk]
+    region: world
+    government: Pakistan
+    voice: Pakistani state media
+  Bangladeshi state media:
+    outlets: [BSS, Bangladesh Sangbad Sangstha]
+    domains: [bssnews.net]
+    region: world
+    government: Bangladesh
+    voice: Bangladesh's state news agency
+  Russian state media:
+    outlets: [TASS, RT]
+    domains: [tass.com, tass.ru, rt.com]
+    region: world
+    government: Russia
+    voice: Russian state media
+  Turkish state media:
+    outlets: [Anadolu Agency, TRT World]
+    domains: [aa.com.tr, trtworld.com]
+    region: world
+    government: Turkey
+    voice: Turkey's state news agency

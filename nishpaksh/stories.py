@@ -126,7 +126,28 @@ def embed_model(router: Router | None) -> str | None:
     return next(iter(ids), None)
 
 
-def _embed_missing(store: Store, router: Router | None, arts: list[dict]) -> int:
+def _yields(arts: list[dict]) -> dict[str, float]:
+    """Per outlet: the share of its grouped articles in the window that sit in a story with 3+
+    independent outlets (Oct 9 2026: Aaj Tak's home feed, 377 a day, 30%; The Hindu 23%; NDTV India
+    26%). When the embedding budget is short, the outlets whose articles end up in real stories go first;
+    nothing is dropped, the rest wait."""
+    from .wire import independence_groups, independent
+    by_story: dict[int, list[dict]] = {}
+    for a in arts:
+        if a["story_id"] is not None:
+            by_story.setdefault(a["story_id"], []).append(a)
+    big = {sid for sid, m in by_story.items() if len(m) >= 3 and len(independent(independence_groups(m))) >= 3}
+    tot: dict[str, list[int]] = {}
+    for a in arts:
+        if a["story_id"] is not None and a.get("outlet"):
+            t = tot.setdefault(a["outlet"], [0, 0])
+            t[0] += a["story_id"] in big
+            t[1] += 1
+    # an outlet with few grouped articles yet (a new feed) is taken as average
+    return {o: (h / n if n >= 20 else 0.5) for o, (h, n) in tot.items()}
+
+
+def _embed_missing(store: Store, router: Router | None, arts: list[dict], yields: dict[str, float] | None = None) -> int:
     model = embed_model(router)
     for a in arts:
         if a["embedding"] and model and a.get("embed_model") != model:
@@ -149,7 +170,11 @@ def _embed_missing(store: Store, router: Router | None, arts: list[dict]) -> int
     budget = min(budget, router.remaining_now("embed"))
     # Half for new arrivals (newest first: that is what forms today's stories), half for read
     # articles still on an old model's vector (their stories cannot be published until regrouped).
-    new = sorted([a for a in missing if a["extracted_at"] is None], key=lambda a: a["published_at"], reverse=True)
+    # better-yielding outlets first (to one decimal, so a small difference does not starve a feed),
+    # newest first within
+    yields = yields or {}
+    new = sorted([a for a in missing if a["extracted_at"] is None],
+                 key=lambda a: (round(yields.get(a.get("outlet"), 0.5), 1), a["published_at"]), reverse=True)
     old = sorted([a for a in missing if a["extracted_at"] is not None], key=lambda a: a["published_at"], reverse=True)
     half = budget // 2
     take_old = old[:max(half, budget - len(new))]
@@ -332,7 +357,8 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
     healed = _heal_copied_vectors(store, since, limit=SETTINGS.heal_per_run)
     arts = heavy.fill(store, store.rows(
         select(articles.c.id, articles.c.title, *heavy.columns(store, "text", "embedding"), articles.c.embed_model,
-               articles.c.story_id, articles.c.published_at, articles.c.extracted_at)
+               articles.c.story_id, articles.c.published_at, articles.c.extracted_at, articles.c.outlet,
+               articles.c.url, articles.c.lang, articles.c.feed_id, articles.c.agency, articles.c.wire_group)
         .where(articles.c.text.is_not(None), articles.c.published_at >= since)
         .order_by(articles.c.published_at)
     ), "text", "embedding")
@@ -351,7 +377,13 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
             if not a["extracted_at"] and a.get("embed_model") != model and not a.get("frozen"):
                 a["story_id"] = None
         _drop_empty_stories(store)
-    embedded = _embed_missing(store, router, arts)
+    # world outlets: only articles that can join a story Indian outlets cover, or a world story several
+    # world outlets carry (worldgate.py); the rest wait as headlines and are checked again next run
+    from . import worldgate
+    held = worldgate.hold(arts, utcnow())
+    if held:
+        log.info("stories: %d world-outlet articles wait (no Indian or wide world coverage yet)", len(held))
+    embedded = _embed_missing(store, router, [a for a in arts if a["id"] not in held], _yields(arts))
     # an article whose story was decided on another model's vector is grouped again from scratch
     regroup = [a["id"] for a in arts if a["id"] in stale and a.get("embed_model") == model and a["story_id"] is not None]
     if regroup:

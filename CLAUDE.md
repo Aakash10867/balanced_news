@@ -38,8 +38,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (and not disputed or false) goes INTO the article, shown purple ("one outlet only": an exclusive,
   or a mistake); the colour, not words, says so (see "One author's voice"). `narrative.shade`; the writer and the revision pass must
   use every statement, one-outlet lines included (they were "minor" and optional before).
-- **Interim publishing rule** while perspectives are unknown: 3+ independent read outlets and 2+
-  origins. Perspectives emerge from agreement data (no hand labels of outlets).
+- **Interim publishing rule** while perspectives are unknown: 3+ independent read outlets (state media
+  and PIB not counted, see "Outlets outside India") and 2+ origins. Perspectives emerge from agreement data (no hand labels of outlets).
 - **Option B:** a page we could not read (headline/blurb only) is listed as "could not be read",
   never used for facts. Tavily reads blocked pages on budget.
 - **One author's voice; the colour carries the support (owner, Oct 7 2026, option A).** No "according
@@ -341,7 +341,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   with the owner from ~490 rated stories (politics ~30%, crime/courts ~25%, world ~11%, accidents/weather ~8%,
   business ~7%, health/education ~7%, defence ~5%, films ~3%, sport ~1%: sport is too thin for its own section):
   Politics (Elections, Parties, Government, Parliament, Protests) · Justice (Crime, Police, Courts, Corruption,
-  Terror) · Business (Economy, Companies, Jobs, Your money, Tech) · World (Diplomacy, Indians abroad, Conflicts,
+  Terror) · Business (Economy, Companies, Markets, Your money, Domains > HR, Finance, Marketing, Analytics,
+  Operations; Oct 9 2026, see "Domains and Sport") · World (Diplomacy, Indians abroad, Conflicts,
   Defence, Abroad) · Life (Health, Education, Accidents, Environment, Sport & films). Owner: short, catchy names;
   at most five of each (the site's bottom bar). An article gets up to 2 primary and 2 secondary
   (`payload.category`, keys, first = main; same in Hindi; labels in `categories.labels`, in en.json/hi.json
@@ -362,6 +363,27 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   over it); All: the whole button. Tapping the wordmark also goes to the latest. Bar classes are prefixed `sb-`: a
   class named "back" once picked up the article back button's shadow. Share: a button at the right of the article's
   sources and time line (the phone's share sheet, else the link is copied).
+- **Pictures: collected first, shown later (owner, Oct 9 2026).** Principles agreed: (1) only the outlet's own
+  SHARE picture (og:image / twitter:image, else the feed's media:content / thumbnail / image enclosure), LINKED from
+  the outlet and credited to it, never copied to us; (2) chosen by a SIMPLE code rule, no image analysis (owner, Oct 9 2026: "we
+  don't need complex analysis, just the most relevant one"): the picture of the outlet whose report the lead comes
+  from, else the next outlet of the story; an outlet's default logo picture (the same link across its unrelated
+  stories, e.g. TASS) is never used. Licence-free Wikimedia pictures were offered and not chosen (generic, often none); (3) a picture that does not load leaves the
+  card as it is. Stored in `articles.image` (migration `20261009000100`; "" = looked, none; NULL = not looked):
+  `ingest.page_image` / `entry_image` at reading, `discover` for search finds, `ingest.fill_images` looks once at up
+  to 60 articles of the last 36 h in a story that have none yet (run stats `images`: with / without / filled).
+  **Shown (owner, Oct 9 2026, canvas "Pictures A" and "Article · Calm + tiles + quotes + rail"):** `feed.pictures`
+  picks one per live article at every export (the lead's reports first, then the rest; a link on 3+ stories =
+  logo) and puts it on the cards (`img`: src, by, href). Home card: the picture across the top, sharp, then
+  blurred and washed to white where the headline begins, credit chip "Photo: <outlet>"; a story without one, or
+  whose picture fails to load, keeps today's card. Article: the picture at the top of the indigo headline box,
+  dissolving into it, credit linked to the outlet's article; the top stays (back · wordmark · language) with the
+  wordmark where and as big as on the home page in the home page's indigo gradient; under it a rail of the
+  article's sections (the one being read filled, a tap goes there) and a line in the same gradient that fills as
+  you read; the lead alone in a larger serif; each section its own card under a numbered heading; By the numbers
+  as tiles (the sentence's first figure big, the sentence under it, colours and source numbers kept); What they
+  say one card per paragraph with its speaker (`feed._speakers`: the name the reports give most often,
+  `narrative.who`, English page only). Display only: the closed article's text is unchanged.
 - **No internal notes for readers (owner, Oct 8 2026):** the article page no longer shows "Nothing in this
   story is confirmed by independent sources yet" (read as "this story is fake"; the colours already say which
   parts are supported) nor "Which outlets form different perspectives is not yet known" (internal state, not
@@ -377,6 +399,43 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   run stats `heavy_cache` (hit / fetched). Article choice reads text lengths, then the text of the chosen articles only;
   priority reads only stories with a fresh report; the feed re-reads only articles whose payload md5 changed
   (`manifest.json` on the feed branch). Keep new heavy reads behind `heavy.columns`/`heavy.fill`.
+- **Domains and Sport: one rigorous route, reserved places (owner, Oct 9 2026).** A cheaper "brief" lane for business
+  and sport (single source, no embeddings) was designed and REJECTED by the owner: one standard everywhere, same
+  depth, same perspectives. Instead: (1) **Business = Economy · Companies · Markets · Your money · Domains**, and
+  Domains has a THIRD level, **HR · Finance · Marketing · Analytics · Operations** (`categories.TERTIARY`;
+  `payload.category.tertiary`; up to 2 of each level; "business/domains/hr" in the one section call). A domain is a
+  LENS over the news, not a pile of news: a story is HR if it changes something for people at work, whatever
+  else it is (Oct 2-9: only ~2-5 genuine stories a week per domain among 526 multi-outlet stories). Jobs and Tech
+  became HR and Analytics (`categories.normalize` / site `normCat` map old keys; stored payloads unchanged).
+  (2) **Reading queue:** of `prep_queue` (16), `prep_beat` (4) go to the best Domains/Sport stories; unused places
+  go back (`priority.queue`). A story is a beat story when the rating call's `beat` field says so (scheduling
+  only) or half its articles come from feeds tagged `beat: domains|sport` (`priority.is_beat`). (3) **Desk seats:**
+  at most 3 an hour, 2 for any story (`desk_per_hour`), 1 only for Domains/Sport (`desk_beat_seat`), filled by a
+  beat story first; with none ready it stays EMPTY (`desk.seats`; diagnostics `beat_seat`). (4) Specialist feeds
+  (Moneycontrol, ET Markets, ESPNcricinfo ...) are ordinary feeds with `beat:`, added once embedding room is
+  measured; section feeds, not everything-feeds. **Site:** a secondary with sections of its own opens them the way
+  a primary does: Domains slides to the left as the back button (‹ Domains) and its five take the other places;
+  a domain filters, tapped again = all of Domains; ‹ Domains = back to Business (`sub`, `ter` in index.html).
+  Trade-press exclusives (one outlet) are not published: the same rule a niche political story faces.
+- **Outlets outside India (owner, Oct 9 2026; `worldgate.py`, `priority.py`, `config/ownership.yaml`).** Two jobs:
+  India's stories seen from outside (independent origins, real cross-border disputes) and world stories of global
+  impact. Indian coverage decides relevance: (1) a world outlet's article joins stories Indian outlets cover;
+  (2) Indian outlets' world pages are read too; (3) a story no Indian outlet covers is a candidate only with 3+
+  independent world outlets AND two "yes" to one global-impact question (asked twice, reverse order; unsure = no;
+  `analysis.world`). Ownership groups carry `region: world` (BBC included) and, for state media, `government:`
+  and `voice:`. **State media** (the government controls the editorial line, no legal guarantee of independence):
+  their group key is `gov:<government>` (`wire.independence_groups`; a paper carrying "(Xinhua)" copy joins it),
+  one origin with that government's officials, NEVER counted as an independent outlet (`wire.independent`:
+  reading threshold, rating, origins `outlets`, `n_sources`, perspectives) and never a perspective unit. This
+  also stopped PIB counting as an outlet. A statement only foreign state media report in their own voice gets the
+  speaker "Chinese state media" etc. (`compose._state_voice`). Owner's borderline calls: Al Jazeera, The National,
+  CNA = state; Arab News, DD News / AIR = not. Public broadcasters independent by law (BBC, DW, France 24, NPR)
+  are ordinary outlets. Paywalled papers are not fed (option B). **Embeddings** (3,000 texts/day; 2,236-2,975
+  used Oct 5-8 before this): a world-feed article is embedded only if it names India, shares 2+ names with an
+  Indian headline of the last 48 h, or with headlines of 2+ other independent world outlets; the rest wait and
+  are checked each run (`worldgate.hold`, code only). When the budget is short, outlets whose articles end in
+  3+ outlet stories go first (`stories._yields`; Aaj Tak home 30%, The Hindu 23%, NDTV India 26%); nothing is
+  dropped. An outlet in no group (found by search) is Indian unless its domain is another country's.
 - **Scheduling:** Supabase `pg_cron` calls GitHub's workflow_dispatch at :05 every hour
   (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); the pipeline has no GitHub
   schedule (removed Oct 8 2026). The writer (`writer.yml`) keeps its :55 GitHub schedule as backup.

@@ -128,17 +128,34 @@
   #sheet.open { background: var(--ground); }
   .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .sheet-scroll::-webkit-scrollbar { display: none; }
-  .col { max-width: 560px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 48px max(14px, env(safe-area-inset-left)); }
-  /* back button | wordmark | language: equal side columns keep the wordmark at the true centre */
-  .chrome { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 2px 2px 12px; opacity: 0; }
-  .chrome > :first-child { justify-self: start; }
-  .chrome > :last-child { justify-self: end; }
-  #sheet.anim .chrome { transition: opacity 260ms ease 220ms; }
+  .col { max-width: 560px; margin: 0 auto; padding: 0 max(14px, env(safe-area-inset-right)) 48px max(14px, env(safe-area-inset-left)); }
+  /* the article's top stays (owner, Oct 9 2026, canvas "Article · Calm + tiles + quotes + rail"): back | wordmark |
+     language, the wordmark where and as big as on the home page, in the home page's indigo; under it the article's
+     sections (the one being read is filled; tap to go) and a line in the same indigo that fills as you read */
+  .chrome { position: sticky; top: 0; z-index: 3; margin: 0 calc(-1 * max(14px, env(safe-area-inset-left))); opacity: 0;
+            padding: calc(max(14px, env(safe-area-inset-top)) + 7px) max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
+            transition: background-color 240ms ease, box-shadow 240ms ease; }
+  .chrome.stuck { background: rgba(236,236,233,0.88); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 1px 0 rgba(0,0,0,0.06); }
+  .crow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; height: 44px; margin-bottom: 10px; }
+  .crow > :first-child { justify-self: start; }
+  .crow > :last-child { justify-self: end; }
+  #sheet.anim .chrome { transition: opacity 260ms ease 220ms, background-color 240ms ease, box-shadow 240ms ease; }
   #sheet.open .chrome { opacity: 1; }
+  .wm-ink { background: linear-gradient(135deg, #46549a 0%, #2f3a72 45%, #1f2550 75%, #161a38 100%); -webkit-background-clip: text;
+            background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+  .rail { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail:empty { display: none; }
+  .rail button { flex: none; border: 0; border-radius: 999px; padding: 6px 12px; min-height: 32px; font-size: 13px; font-weight: 600; cursor: pointer;
+                 background: #fff; color: var(--ink-soft); box-shadow: 0 2px 0 var(--edge); transition: background-color 220ms ease, color 220ms ease; }
+  .rail button.on { background: #2f3a72; color: #fff; box-shadow: none; }
+  .readline { height: 3px; margin: 0 calc(-1 * max(14px, env(safe-area-inset-left))); background: rgba(0,0,0,0.05); }
+  .readline i { display: block; height: 100%; background: linear-gradient(90deg, #46549a 0%, #2f3a72 45%, #1f2550 75%, #161a38 100%);
+                clip-path: inset(0 100% 0 0); }
   .back { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; border: 0;
           background: #fff; box-shadow: 0 2px 0 var(--edge); cursor: pointer; }
-  .chrome .wordmark { color: var(--ink); font-size: 19px; }
-  html.hi .chrome .wordmark { font-size: 21px; }
+  .chrome .wordmark { font-size: 23px; }
+  html.hi .chrome .wordmark { font-size: 26px; }
   .hbox { position: relative; border-radius: 22px; color: var(--ink); padding: 0 var(--hx, 22px); transform: translate(0, var(--hy, 0px)); }
   .hbox .layer { position: absolute; inset: 0; border-radius: 22px; opacity: 0; }
   #sheet.anim .hbox { transition: padding 460ms var(--ease), transform 460ms var(--ease), color 320ms ease 120ms; }
@@ -146,6 +163,16 @@
   #sheet.open .hbox { padding: 18px; transform: none; color: #fff; }
   #sheet.open .hbox .layer { opacity: 1; }
   #sheet.open .hbox h1 { text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); }
+  /* the picture at the top of the indigo box, dissolving into it (owner, Oct 9 2026) */
+  .hbox .hpic { position: absolute; left: 0; right: 0; top: 0; height: 200px; border-radius: 22px 22px 0 0; overflow: hidden; opacity: 0; display: none; }
+  .hbox.has-pic .hpic { display: block; }
+  .hbox .hpic img { width: 100%; height: 100%; object-fit: cover; display: block;
+                    -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
+  #sheet.anim .hbox .hpic { transition: opacity 340ms ease 100ms; }
+  #sheet.open .hbox .hpic { opacity: 1; }
+  #sheet.open .hbox.has-pic { padding-top: 150px; }
+  .pic-credit { position: absolute; top: 10px; right: 12px; font-size: 11px; font-weight: 500; color: #fff; background: rgba(10,12,30,0.42);
+                padding: 3px 8px; border-radius: 999px; text-decoration: none; }
   .hbox h1 { position: relative; margin: 0; font-family: var(--head); font-weight: 600; font-size: 27px; line-height: 1.15; letter-spacing: -0.005em; }
   html.hi .hbox h1 { font-size: 24px; line-height: 1.45; letter-spacing: 0; }
   .hbox .meta { position: relative; margin-top: 10px; font-size: 13px; opacity: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -164,6 +191,30 @@
   #sheet.anim .rise { transition: opacity 300ms ease 200ms, transform 420ms var(--ease) 160ms; }
   #sheet.open .rise { opacity: 1; transform: none; }
 
+  /* sections as cards with numbered headings; the lead alone; figures as tiles; what they say by speaker */
+  .paper.lead { font-family: var(--head); font-size: 20px; line-height: 1.5; }
+  html.hi .paper.lead { font-size: 19px; line-height: 1.75; }
+  .sechead { display: flex; align-items: baseline; gap: 10px; margin: 26px 6px 0; scroll-margin-top: 150px; }
+  .sechead span { font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; color: #46549a; }
+  .sechead h3 { margin: 0; font-family: var(--head); font-size: 21px; font-weight: 600; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .tile { background: #fff; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 3px 0 var(--edge); display: flex; flex-direction: column; gap: 6px; }
+  .tile.wide { grid-column: 1 / -1; }
+  .tile b { font-family: var(--head); font-size: 26px; font-weight: 700; line-height: 1.05; color: #1f2550; overflow-wrap: anywhere; }
+  .tile div { font-size: 14px; line-height: 1.45; }
+  .quote .who { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #46549a; margin-bottom: 6px; }
+  .quote p { position: relative; padding-left: 28px; margin: 0 0 8px; font-size: 16.5px; line-height: 1.6; }
+  .quote p:last-child { margin-bottom: 0; }
+  .quote p::before { content: "\201C"; position: absolute; left: 0; top: -6px; font-family: "Newsreader", Georgia, serif; font-size: 44px; line-height: 1; color: #46549a; }
+  /* pictures on the cards (owner, Oct 9 2026, canvas "Pictures A"): sharp at the top, softly blurred and washed to
+     white where the headline begins; a card without a picture is as before */
+  .card.has-pic { padding-top: 0; }
+  .card .pic { position: relative; flex: none; height: 46%; margin: 0 -22px; overflow: hidden; background: #f1f1ee; }
+  .card .pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .card .pic .soft { filter: blur(16px) saturate(1.1); transform: scale(1.15); }
+  .card .pic .sharp { -webkit-mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); }
+  .card .pic .wash { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
+  .card.has-pic h2 { position: relative; margin-top: -70px; }
   .key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 12px 4px 0; font-size: 13px; font-weight: 500; }
   .key span { white-space: nowrap; }
   .paper { margin-top: 12px; background: #fff; border-radius: 20px; padding: 16px; box-shadow: 0 3px 0 var(--edge); }
@@ -215,6 +266,8 @@
   @media (min-width: 700px) {
     #app { padding-top: 22px; }
     .card { padding: 30px 30px 22px; }
+    .card .pic { margin: 0 -30px; }
+    .chrome { padding-top: 29px; }
     .card h2 { font-size: 32px; }
   }
   /* the sections bar (owner, Oct 9 2026; designed on the canvas as "Sections A"): joined to the bottom edge,
@@ -294,16 +347,17 @@
 <div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-h">
   <div class="sheet-scroll" id="sheet-scroll">
     <div class="col">
-      <div class="chrome">
+      <div class="chrome" id="chrome"><div class="crow">
         <button type="button" class="back" id="back" aria-label="Back to all stories">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
-        <div class="wordmark" id="wm2">Nishpaksh</div>
+        <div class="wordmark wm-ink" id="wm2">Nishpaksh</div>
         <div class="pill light" role="group" aria-label="Language">
           <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिं</button>
         </div>
       </div>
-      <div class="hbox" id="hbox"><div class="layer brand"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
+      <div class="rail" id="rail" aria-label="Sections of this article"></div><div class="readline"><i id="readfill"></i></div></div>
+      <div class="hbox" id="hbox"><div class="layer brand"></div><div class="hpic" id="hpic"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
       <div class="rise" id="rise"></div>
     </div>
@@ -337,9 +391,9 @@ const T = {
     sections: {happened: "What happened", numbers: "By the numbers", say: "What they say", background: "Background",
                related: "Related events", explained: "Explained", next: "What next"},
     bar: (c) => `${c.e} established, ${c.o} one outlet only, ${c.d} disputed, ${c.r} shown false, ${c.u} not yet cross-checked`,
-    all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`,
+    all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`, secUp: (l, p) => `Back from ${l} to ${p}`,
     secEmpty: (l) => `Nothing in ${l} yet.`, secBody: "Articles get their sections when they are published, so this one will fill up as new stories come in.",
-    showAll: "Show all news", share: "Share", copied: "Link copied", latest: "Go to the latest story",
+    showAll: "Show all news", photo: "Photo", share: "Share", copied: "Link copied", latest: "Go to the latest story",
   },
   hi: {
     wordmark: "निष्पक्ष", hello: "नमस्ते।", greet: ["सुप्रभात।", "नमस्कार।", "शुभ संध्या।"],
@@ -358,16 +412,16 @@ const T = {
     sections: {happened: "क्या हुआ", numbers: "आँकड़ों में", say: "किसने क्या कहा", background: "पृष्ठभूमि",
                related: "जुड़ी घटनाएँ", explained: "समझिए", next: "आगे क्या"},
     bar: (c) => `${c.e} स्थापित, ${c.o} केवल एक स्रोत, ${c.d} मतभेद, ${c.r} असत्य, ${c.u} अभी पुष्टि नहीं`,
-    all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`,
+    all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`, secUp: (l, p) => `${l} से ${p} पर लौटें`,
     secEmpty: (l) => `${l} में अभी कोई ख़बर नहीं।`, secBody: "हर लेख को छपते समय उसका खंड मिलता है, इसलिए नई ख़बरों के साथ यह खंड भरता जाएगा।",
-    showAll: "सारी ख़बरें देखें", share: "शेयर करें", copied: "लिंक कॉपी हो गया", latest: "सबसे ताज़ा ख़बर पर जाएँ",
+    showAll: "सारी ख़बरें देखें", photo: "फ़ोटो", share: "शेयर करें", copied: "लिंक कॉपी हो गया", latest: "सबसे ताज़ा ख़बर पर जाएँ",
   },
 };
 const KEYCOLOR = {established: "var(--est)", developing: "var(--unv)", unverified: "var(--unv)", single: "var(--one)", disputed: "var(--dis)", false: "var(--fal)"};
 const VERDICT = {corroborated: "established", confirmed: "established", established: "established", developing: "developing",
                  disputed: "disputed", false: "false", single: "single", unverified: "unverified", pending: "unverified"};
 // the sections' names (nishpaksh/categories.py labels); the feed's en.json / hi.json carry the same
-const SECTIONS = {"en": {"primary": {"politics": "Politics", "justice": "Justice", "business": "Business", "world": "World", "life": "Life"}, "secondary": {"elections": "Elections", "parties": "Parties", "government": "Government", "parliament": "Parliament", "protests": "Protests", "crime": "Crime", "police": "Police", "courts": "Courts", "corruption": "Corruption", "terror": "Terror", "economy": "Economy", "companies": "Companies", "jobs": "Jobs", "money": "Your money", "tech": "Tech", "diplomacy": "Diplomacy", "indians-abroad": "Indians abroad", "conflicts": "Conflicts", "defence": "Defence", "abroad": "Abroad", "health": "Health", "education": "Education", "accidents": "Accidents", "environment": "Environment", "sport-films": "Sport & films"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "jobs", "money", "tech"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}}, "hi": {"primary": {"politics": "राजनीति", "justice": "न्याय", "business": "बिज़नेस", "world": "दुनिया", "life": "जीवन"}, "secondary": {"elections": "चुनाव", "parties": "दल", "government": "सरकार", "parliament": "संसद", "protests": "प्रदर्शन", "crime": "अपराध", "police": "पुलिस", "courts": "अदालत", "corruption": "भ्रष्टाचार", "terror": "आतंक", "economy": "अर्थव्यवस्था", "companies": "कंपनियां", "jobs": "नौकरियां", "money": "आपका पैसा", "tech": "टेक", "diplomacy": "कूटनीति", "indians-abroad": "विदेश में भारतीय", "conflicts": "संघर्ष", "defence": "रक्षा", "abroad": "विदेश", "health": "सेहत", "education": "शिक्षा", "accidents": "हादसे", "environment": "पर्यावरण", "sport-films": "खेल और फ़िल्में"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "jobs", "money", "tech"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}}};
+const SECTIONS = {"en": {"primary": {"politics": "Politics", "justice": "Justice", "business": "Business", "world": "World", "life": "Life"}, "secondary": {"elections": "Elections", "parties": "Parties", "government": "Government", "parliament": "Parliament", "protests": "Protests", "crime": "Crime", "police": "Police", "courts": "Courts", "corruption": "Corruption", "terror": "Terror", "economy": "Economy", "companies": "Companies", "markets": "Markets", "money": "Your money", "domains": "Domains", "diplomacy": "Diplomacy", "indians-abroad": "Indians abroad", "conflicts": "Conflicts", "defence": "Defence", "abroad": "Abroad", "health": "Health", "education": "Education", "accidents": "Accidents", "environment": "Environment", "sport-films": "Sport & films"}, "tertiary": {"hr": "HR", "finance": "Finance", "marketing": "Marketing", "analytics": "Analytics", "operations": "Operations"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}, "hi": {"primary": {"politics": "राजनीति", "justice": "न्याय", "business": "बिज़नेस", "world": "दुनिया", "life": "जीवन"}, "secondary": {"elections": "चुनाव", "parties": "दल", "government": "सरकार", "parliament": "संसद", "protests": "प्रदर्शन", "crime": "अपराध", "police": "पुलिस", "courts": "अदालत", "corruption": "भ्रष्टाचार", "terror": "आतंक", "economy": "अर्थव्यवस्था", "companies": "कंपनियां", "markets": "बाज़ार", "money": "आपका पैसा", "domains": "क्षेत्र", "diplomacy": "कूटनीति", "indians-abroad": "विदेश में भारतीय", "conflicts": "संघर्ष", "defence": "रक्षा", "abroad": "विदेश", "health": "सेहत", "education": "शिक्षा", "accidents": "हादसे", "environment": "पर्यावरण", "sport-films": "खेल और फ़िल्में"}, "tertiary": {"hr": "एचआर", "finance": "फ़ाइनेंस", "marketing": "मार्केटिंग", "analytics": "एनालिटिक्स", "operations": "ऑपरेशंस"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}};
 const BARKEY = {established: "e", corroborated: "e", confirmed: "e", single: "o", disputed: "d", false: "r", unverified: "u", pending: "u", developing: "u"};
 
 /* ---------- small helpers ---------- */
@@ -441,7 +495,7 @@ async function loadCards(l) {
   try {
     const d = await getJSON(`${FEED_URL}/${l}.json`, {cache: "no-cache"}, 5000);
     if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
-    if (d && d.sections && d.sections.tree) SECTIONS[l] = d.sections;
+    if (d && d.sections && d.sections.tree3) SECTIONS[l] = d.sections;   // a feed from before Domains: the built-in names
   } catch (e) { /* the feed is missing or slow: read the database */ }
   if (!stories) {
     const rows = await api("published?select=story_id,updated_at,headline_en,headline_hi," +
@@ -450,12 +504,13 @@ async function loadCards(l) {
     stories = rows.filter(r => r.pe && r.pe.length).map(r => ({
       id: r.story_id, at: r.updated_at, thread: r.thread || r.story_id, ongoing: !!(r.parents && r.parents.length),
       h: (l === "hi" && r.headline_hi) || r.headline_en, paras: cardText(l === "hi" && r.ph && r.ph.length ? r.ph : r.pe),
-      bar: barCounts(r.pe), n: (r.counts || {}).independent_sources || 0, cat: r.cat || {}}));
+      bar: barCounts(r.pe), n: (r.counts || {}).independent_sources || 0, cat: normCat(r.cat)}));
   }
   // one card per thread: its latest development, newest first (owner, Oct 6 2026)
   const byThread = new Map();
   for (const s of stories) {
     const k = s.thread || s.id, cur = byThread.get(k);
+    s.cat = normCat(s.cat);
     if (!cur) byThread.set(k, {...s, size: 1});
     else { cur.size += 1; if (new Date(s.at) > new Date(cur.at)) byThread.set(k, {...s, size: cur.size}); }
   }
@@ -499,8 +554,12 @@ function sentenceHtml(x) {
 function cardHtml(c, i) {
   const b = c.bar || {e: 0, o: 0, d: 0, r: 0, u: 0};
   const seg = (k, v) => v ? `<span style="flex-grow:${v};background:var(--bar-${k})"></span>` : "";
-  return `<div class="slot" data-i="${i}"><a class="card" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
-      <h2>${esc(c.h)}</h2>
+  const pic = c.img && safeUrl(c.img.src) ? c.img : null;
+  const picHtml = pic ? `<div class="pic"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async">
+      <img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async"><div class="wash"></div>
+      <span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span></div>` : "";
+  return `<div class="slot" data-i="${i}"><a class="card${pic ? " has-pic" : ""}" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
+      ${picHtml}<h2>${esc(c.h)}</h2>
       <div class="text">${(c.paras || []).map(p => `<p>${p.map(sentenceHtml).join("")}</p>`).join("")}</div>
       <div class="foot"><div class="bar" role="img" aria-label="${esc(T[lang].bar(b))}">${seg("e", b.e)}${seg("o", b.o)}${seg("d", b.d)}${seg("r", b.r)}${seg("u", b.u)}</div>
       <span class="ago">${esc(ago(c.at))}</span></div></a></div>`;
@@ -558,6 +617,13 @@ track.addEventListener("click", e => {
   e.preventDefault();
   openStory(a.dataset.id, a);
 });
+track.addEventListener("error", e => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement)) return;
+  const pic = img.closest(".pic"), card = img.closest("a.card");
+  if (pic) pic.remove();
+  if (card) card.classList.remove("has-pic");
+}, true);
 track.addEventListener("pointerdown", e => { const a = e.target.closest("a.card"); if (a) loadStory(a.dataset.id); }, {passive: true});
 
 async function showDeck(keepId) {
@@ -579,6 +645,7 @@ function loadingHtml() {
 
 /* ---------- the article ---------- */
 const sheet = $("sheet"), sheetScroll = $("sheet-scroll"), hbox = $("hbox");
+sheetScroll.addEventListener("scroll", () => requestAnimationFrame(onSheetScroll), {passive: true});
 let openId = null, openedFromDeck = false, closing = null;
 
 function ranges(nums) {
@@ -589,25 +656,49 @@ function ranges(nums) {
   }
   return out;
 }
+// the first figure in a "By the numbers" sentence becomes the tile's big number (the sentence stays under it)
+const FIGURE = /(?:[$₹€£]\s?\d[\d,.]*(?:\s?(?:lakh|crore|million|billion|trillion|bn|mn|cr|लाख|करोड़))?|(?:Rs\.?|INR|USD)\s?\d[\d,.]*(?:\s?(?:lakh|crore|million|billion))?|\d[\d,.]*\s?(?:%|per\s?cent|percent|lakh|crore|million|billion|trillion|dollars|rupees|लाख|करोड़|प्रतिशत|फीसदी|डॉलर|रुपये|रुपए)|\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)/i;
 function essayHtml(nar, t) {
   const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
   const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
-  const sent = x => {
-    const nums = x.sources || [];
-    const sup = ranges(nums).map(([a, b]) => b === a ? link(a) : `${link(a)}–${link(b)}`).join(",");
+  const sup = x => { const r = ranges(x.sources || []).map(([a, b]) => b === a ? link(a) : `${link(a)}–${link(b)}`).join(","); return r ? `<sup>${r}</sup>` : ""; };
+  const body = x => {
     const tag = x.class === "false" ? `<span class="ftag">${esc(t.falseTag)}</span>` : "";
-    const body = x.parts && x.parts.length > 1
+    return tag + (x.parts && x.parts.length > 1
       ? x.parts.map(p => `<span class="s ${esc(cls(p.class))}">${esc(p.text)}</span>`).join(" ")
-      : `<span class="s ${esc(cls(x.class))}">${esc(x.text)}</span>`;
-    return `${tag}${body}${sup ? `<sup>${sup}</sup>` : ""}`;
+      : `<span class="s ${esc(cls(x.class))}">${esc(x.text)}</span>`);
   };
-  const keys = nar.section_keys || [];
-  let last = null;
-  return (nar.paragraphs || []).map((para, k) => {
-    const key = keys[k];
-    const head = key && key !== last && key !== "news" && t.sections[key] ? `<h3>${esc(t.sections[key])}</h3>` : "";
-    last = key || last;
-    return head + "<p>" + para.map(sent).join(" ") + "</p>";
+  const sent = x => body(x) + sup(x);
+  const paras = nar.paragraphs || [], keys = nar.section_keys || [], who = nar.who || [];
+  if (!keys.length) return `<div class="paper essay">${paras.map(p => "<p>" + p.map(sent).join(" ") + "</p>").join("")}</div>`;
+  // group paragraphs into sections in the order they come
+  const groups = [];
+  paras.forEach((para, k) => {
+    const key = keys[k] || (groups.length ? groups[groups.length - 1].key : "happened");
+    const g = groups[groups.length - 1];
+    if (g && g.key === key) g.items.push(k); else groups.push({key, items: [k]});
+  });
+  let no = 0;
+  return groups.map(g => {
+    const ps = g.items.map(k => paras[k]);
+    if (g.key === "news") return `<div class="paper essay lead">${ps.map(p => "<p>" + p.map(sent).join(" ") + "</p>").join("")}</div>`;
+    no += 1;
+    const head = `<div class="sechead" data-sec="${esc(g.key)}"><span>${String(no).padStart(2, "0")}</span><h3>${esc(t.sections[g.key] || "")}</h3></div>`;
+    if (g.key === "numbers") {
+      const tiles = ps.flat().map(x => {
+        const m = (x.text || "").match(FIGURE);
+        return m ? `<div class="tile"><b>${esc(m[0].trim().replace(/[.,]+$/, ""))}</b><div>${sent(x)}</div></div>`
+                 : `<div class="tile wide"><div>${sent(x)}</div></div>`;
+      }).join("");
+      return head + `<div class="tiles">${tiles}</div>`;
+    }
+    if (g.key === "say") {
+      return head + g.items.map(k => {
+        const label = lang === "en" && who[k] ? `<div class="who">${esc(who[k])}</div>` : "";
+        return `<div class="paper quote">${label}${paras[k].map(x => `<p>${sent(x)}</p>`).join("")}</div>`;
+      }).join("");
+    }
+    return head + `<div class="paper essay">${ps.map(p => "<p>" + p.map(sent).join(" ") + "</p>").join("")}</div>`;
   }).join("");
 }
 function keyHtml(t, nar) {
@@ -665,8 +756,51 @@ function articleHtml(row) {
     ${persp ? `<div class="sec">${esc(t.perspectives)}</div><div class="paper persp">${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</div>` : ""}
     <div style="height:12px"></div>${whoHtml(p, t)}`;
 }
+function setSheetPicture(id) {
+  const c = (pool || []).find(x => String(x.id) === String(id)) || (cards || []).find(x => String(x.id) === String(id));
+  const pic = c && c.img && safeUrl(c.img.src) ? c.img : null;
+  const box = $("hpic");
+  hbox.classList.toggle("has-pic", !!pic);
+  box.innerHTML = pic ? `<img src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async">` +
+    (safeUrl(pic.href) ? `<a class="pic-credit" href="${esc(pic.href)}" target="_blank" rel="noopener noreferrer">${esc(T[lang].photo)}: ${esc(pic.by || "")}</a>`
+                       : `<span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span>`) : "";
+  const img = box.querySelector("img");
+  if (img) img.addEventListener("error", () => { hbox.classList.remove("has-pic"); box.innerHTML = ""; }, {once: true});
+}
+// the article's sections as a rail under the top: the one being read is filled, a tap goes there
+function buildRail() {
+  const heads = [...$("rise").querySelectorAll(".sechead")];
+  $("rail").innerHTML = heads.length > 1 ? heads.map((h, i) => `<button type="button" data-i="${i}">${esc(h.querySelector("h3").textContent)}</button>`).join("") : "";
+  onSheetScroll();
+}
+$("rail").addEventListener("click", e => {
+  const b = e.target.closest("button[data-i]");
+  if (!b) return;
+  const h = $("rise").querySelectorAll(".sechead")[Number(b.dataset.i)];
+  if (h) sheetScroll.scrollTo({top: h.getBoundingClientRect().top - sheetScroll.getBoundingClientRect().top + sheetScroll.scrollTop
+                                        - $("chrome").offsetHeight - 8, behavior: "smooth"});
+});
+function onSheetScroll() {
+  const sc = sheetScroll, max = Math.max(1, sc.scrollHeight - sc.clientHeight);
+  const p = Math.min(1, Math.max(0, sc.scrollTop / max));
+  $("readfill").style.clipPath = `inset(0 ${(100 - p * 100).toFixed(2)}% 0 0)`;
+  $("chrome").classList.toggle("stuck", sc.scrollTop > 8);
+  const line = $("chrome").getBoundingClientRect().bottom + 24;
+  let on = -1;
+  $("rise").querySelectorAll(".sechead").forEach((h, i) => { if (h.getBoundingClientRect().top <= line) on = i; });
+  const chips = $("rail").querySelectorAll("button");
+  chips.forEach((b, i) => b.classList.toggle("on", i === Math.max(0, on)));
+  const cur = chips[Math.max(0, on)];
+  if (cur && cur.dataset.shown !== "1") {
+    chips.forEach(b => { b.dataset.shown = ""; });
+    cur.dataset.shown = "1";
+    const r = $("rail"), x = cur.offsetLeft - r.clientWidth / 2 + cur.offsetWidth / 2;
+    r.scrollTo({left: Math.max(0, x), behavior: "smooth"});
+  }
+}
 function fillSheet(row, card) {
   const t = T[lang];
+  setSheetPicture(row ? row.story_id : card && card.id);
   if (row) {
     const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
     const head = (lang === "hi" && row.headline_hi) || row.headline_en || p.headline || "";
@@ -674,11 +808,13 @@ function fillSheet(row, card) {
     const n = (p.counts || {}).independent_sources || 0;
     $("sheet-meta").textContent = `${t.sources(n, (p.counts || {}).outlets)} · ${ago(row.updated_at)}`;
     $("rise").innerHTML = articleHtml(row);
+    buildRail();
     document.title = `${head} · Nishpaksh`;
   } else if (card) {
     $("sheet-h").textContent = card.h;
     $("sheet-meta").textContent = ago(card.at);
     $("rise").innerHTML = `<div class="paper essay" aria-busy="true"><p style="color:var(--muted)">${esc(t.loading)}</p></div>`;
+    $("rail").innerHTML = "";
   }
 }
 function cardRectFor(id) {
@@ -691,11 +827,18 @@ function setClip(r) {
   const v = r ? `inset(${r.top}px ${innerWidth - r.right}px ${innerHeight - r.bottom}px ${r.left}px round 24px)` : "inset(0px 0px 0px 0px round 0px)";
   sheet.style.clipPath = v; sheet.style.webkitClipPath = v;
 }
-function placeHeadlineOver(r) {   // the article's headline starts exactly where the card's was
+function headOffset(cardEl) {   // where the card's headline sits inside the card
+  const h2 = cardEl && cardEl.querySelector("h2");
+  if (!h2) return {x: 22, y: 24};
+  const a = cardEl.getBoundingClientRect(), b = h2.getBoundingClientRect();
+  return {x: b.left - a.left, y: b.top - a.top};
+}
+let lastOff = {x: 22, y: 24};
+function placeHeadlineOver(r, off = lastOff) {   // the article's headline starts exactly where the card's was
   hbox.style.setProperty("--hy", "0px"); hbox.style.setProperty("--hx", "22px");
   const h = hbox.getBoundingClientRect();
-  hbox.style.setProperty("--hx", `${Math.max(0, r.left + 22 - h.left)}px`);
-  hbox.style.setProperty("--hy", `${r.top + 24 - h.top}px`);
+  hbox.style.setProperty("--hx", `${Math.max(0, r.left + off.x - h.left)}px`);
+  hbox.style.setProperty("--hy", `${r.top + off.y - h.top}px`);
 }
 async function openStory(id, fromCard, opts = {}) {
   if (closing) { clearTimeout(closing); closing = null; }
@@ -716,7 +859,8 @@ async function openStory(id, fromCard, opts = {}) {
   sheet.classList.add("on");
   document.documentElement.classList.add("reading"); sections.inert = true;
   if (r) {
-    setClip(r); placeHeadlineOver(r);
+    lastOff = headOffset(fromCard);
+    setClip(r); placeHeadlineOver(r, lastOff);
     void sheet.offsetWidth;                      // start from the card
     sheet.classList.add("anim");
     requestAnimationFrame(() => { setClip(null); sheet.classList.add("open"); });
@@ -741,6 +885,8 @@ function closeStory(animate = true) {
   if (k >= 0 && k !== current) jumpTo(k);
   const r = animate ? cardRectFor(id) : null;
   if (r) {
+    const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
+    if (el) lastOff = headOffset(el);
     sheet.classList.add("anim");
     placeHeadlineOverForClose(r);
     setClip(r); sheet.classList.remove("open");
@@ -753,8 +899,8 @@ function closeStory(animate = true) {
 }
 function placeHeadlineOverForClose(r) {   // the open headline box goes back to where the card's headline is
   const h = hbox.getBoundingClientRect();
-  hbox.style.setProperty("--hx", `${Math.max(0, r.left + 22 - h.left)}px`);
-  hbox.style.setProperty("--hy", `${r.top + 24 - h.top}px`);
+  hbox.style.setProperty("--hx", `${Math.max(0, r.left + lastOff.x - h.left)}px`);
+  hbox.style.setProperty("--hy", `${r.top + lastOff.y - h.top}px`);
 }
 $("back").addEventListener("click", () => {
   if (openedFromDeck && history.state && history.state.story) history.back();
@@ -782,13 +928,29 @@ $("rise").addEventListener("click", e => {
 
 /* ---------- sections: the bottom bar (owner, Oct 9 2026) ---------- */
 const sections = $("sections"), sbar = $("sbar");
-let pool = [], level = null, sec = null, fKey = "all", swapTimer = null, barLang = null;
+// a third level (owner, Oct 9 2026): Business > Domains > HR, Finance ... A secondary with sections of its own
+// opens them the way a primary opens its own: it slides to the left end as the back button (‹ Domains) and its
+// five sections take the other places. `sub` is that open secondary, `ter` the chosen section in it.
+let pool = [], level = null, sec = null, sub = null, ter = null, fKey = "all", swapTimer = null, barLang = null;
 function secLabels() { return SECTIONS[lang] || SECTIONS.en; }
-function secLabel(k) { const s = secLabels(); return (s.primary || {})[k] || (s.secondary || {})[k] || ""; }
+function tree3() { return secLabels().tree3 || {}; }
+function secLabel(k) { const s = secLabels(); return (s.primary || {})[k] || (s.secondary || {})[k] || (s.tertiary || {})[k] || ""; }
+// keys live articles still carry (Jobs and Tech became Domains > HR and Analytics; categories.normalize)
+const OLD_KEYS = {jobs: ["business", "domains", "hr"], tech: ["business", "domains", "analytics"]};
+function normCat(cat) {
+  cat = cat || {};
+  const p = [...(cat.primary || [])], s = [...(cat.secondary || [])], t = [...(cat.tertiary || [])];
+  for (const [old, [a, b, c]] of Object.entries(OLD_KEYS)) {
+    const i = s.indexOf(old);
+    if (i < 0) continue;
+    s[i] = b; if (!p.includes(a)) p.push(a); if (!t.includes(c)) t.push(c);
+  }
+  return {primary: p, secondary: [...new Set(s)], tertiary: t};
+}
 function inSection(c, k) {
   if (k === "all") return true;
   const cat = c.cat || {};
-  return (cat.primary || []).includes(k) || (cat.secondary || []).includes(k);
+  return (cat.primary || []).includes(k) || (cat.secondary || []).includes(k) || (cat.tertiary || []).includes(k);
 }
 function sectionCards() { return pool.filter(c => inSection(c, fKey)).slice(0, MAX_CARDS); }
 const CHEV = `<svg class="chev" height="12" viewBox="0 0 10 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2L2 7l5 5"/></svg>`;
@@ -800,6 +962,7 @@ function buildBar() {   // the buttons, once per language; layoutBar() moves the
   let h = btn("all", "all");
   for (const p of Object.keys(s.tree)) h += btn("primary", p);
   for (const p of Object.keys(s.tree)) for (const k of s.tree[p]) h += btn("sec", k, p);
+  for (const d of Object.keys(s.tree3 || {})) for (const k of s.tree3[d]) h += btn("ter", k, d);
   h += `<button type="button" class="sb-latest" id="sb-latest" tabindex="-1" aria-label="${esc(T[lang].latest)}"></button>`;
   sbar.innerHTML = h;
   $("sb-latest").addEventListener("click", toLatest);
@@ -818,11 +981,15 @@ function textWidth(txt, fs) {
 function layoutBar() {
   const s = secLabels(), prims = Object.keys(s.tree), W = sbar.clientWidth || 360, CH = 13, MINPAD = 8;
   if (!prims.length) return;
-  const rows = [[T[lang].all, ...prims.map(secLabel)]];
+  const deep = Object.keys(tree3()), rows = [[T[lang].all, ...prims.map(secLabel)]];
   for (const p of prims) rows.push([secLabel(p), ...s.tree[p].map(secLabel)]);
+  for (const d of deep) rows.push([secLabel(d), ...tree3()[d].map(secLabel)]);
   // away from the latest: the chosen button gets room for its arrow (the font size never changes for it)
-  const away = isAway(), selRow = level ? prims.indexOf(level) + 1 : 0, selJ = level && sec ? s.tree[level].indexOf(sec) + 1 : 0;
-  const widths = (row, i, fs, room) => row.map((l, j) => textWidth(l, fs) + (i > 0 && j === 0 ? CH : 0) + (room && away && i === selRow && j === selJ ? 16 : 0));
+  const away = isAway();
+  const selRow = sub ? 1 + prims.length + deep.indexOf(sub) : level ? prims.indexOf(level) + 1 : 0;
+  const selJ = sub ? (ter ? tree3()[sub].indexOf(ter) + 1 : 0) : level && sec ? s.tree[level].indexOf(sec) + 1 : 0;
+  // a short label ("HR", "All") still gets a pill, not a bubble: every label counts at least 3em wide
+  const widths = (row, i, fs, room) => row.map((l, j) => Math.max(textWidth(l, fs), 3 * fs) + (i > 0 && j === 0 ? CH : 0) + (room && away && i === selRow && j === selJ ? 16 : 0));
   let fs = lang === "hi" ? 13.5 : 12.5;
   rows.forEach((row, i) => { const t = widths(row, i, fs).reduce((a, b) => a + b, 0); if (t + 6 * MINPAD > W) fs = Math.min(fs, fs * (W - 6 * MINPAD) / t); });
   fs = Math.max(9.5, Math.floor(fs * 4) / 4);
@@ -832,8 +999,9 @@ function layoutBar() {
     let c = 0;
     return ws.map(w => { const r = [c / W * 100, (w + pad) / W * 100]; c += w + pad; return r; });
   };
-  const lay0 = place(rows[0], 0), layP = {};
+  const lay0 = place(rows[0], 0), layP = {}, layD = {};
   prims.forEach((p, i) => { layP[p] = place(rows[i + 1], i + 1); });
+  deep.forEach((d, i) => { const r = 1 + prims.length + i; layD[d] = place(rows[r], r); });
   const count = k => pool.filter(c => inSection(c, k)).length;
   let chosen = lay0[0];
   for (const b of sbar.querySelectorAll("button.sb")) {
@@ -842,11 +1010,15 @@ function layoutBar() {
     if (kind === "all") { pos = lay0[0]; show = level === null; on = show; delay = 140; }
     else if (kind === "primary") {
       const i = prims.indexOf(key), open = level === key;
-      pos = open ? layP[key][0] : lay0[i + 1]; show = level === null || open; back = open; on = open && !sec;
-      delay = level === null ? 170 + i * 30 : 0;
+      pos = open ? layP[key][0] : lay0[i + 1]; show = level === null || (open && !sub); back = open; on = open && !sec;
+      delay = level === null ? 170 + i * 30 : sub ? 0 : 140;
+    } else if (kind === "sec") {
+      const p = b.dataset.parent, j = s.tree[p].indexOf(key), open = sub === key;
+      pos = open ? layD[key][0] : layP[p][j + 1]; show = level === p && (!sub || open); back = open;
+      on = sec === key && !ter; delay = open ? 0 : 130 + j * 40;
     } else {
-      const p = b.dataset.parent, j = s.tree[p].indexOf(key);
-      pos = layP[p][j + 1]; show = level === p; on = sec === key; delay = 130 + j * 40;
+      const d = b.dataset.parent, j = tree3()[d].indexOf(key);
+      pos = layD[d][j + 1]; show = sub === d; on = ter === key; delay = 130 + j * 40;
     }
     b.style.left = pos[0] + "%"; b.style.width = pos[1] + "%";
     b.style.setProperty("--d", (show ? delay : 0) + "ms");
@@ -854,7 +1026,9 @@ function layoutBar() {
     b.classList.toggle("empty", kind !== "all" && !back && count(key) === 0);
     b.setAttribute("aria-pressed", String(on)); b.tabIndex = show ? 0 : -1;
     if (show) b.removeAttribute("aria-hidden"); else b.setAttribute("aria-hidden", "true");
-    if (back) b.setAttribute("aria-label", T[lang].secBack(secLabel(key))); else b.removeAttribute("aria-label");
+    if (back) b.setAttribute("aria-label", kind === "sec" ? T[lang].secUp(secLabel(key), secLabel(b.dataset.parent))
+                                                          : T[lang].secBack(secLabel(key)));
+    else b.removeAttribute("aria-label");
     b.classList.toggle("sb-away", on && away);
     if (on) chosen = pos;
   }
@@ -887,10 +1061,10 @@ function toLatest() {
 }
 $("wm").addEventListener("click", toLatest);
 // the bar moves at once; the cards fade out, change to the section's, start at its newest, and fade in
-function goSection(l, s) {
-  level = l; sec = s;
+function goSection(l, s, t) {
+  level = l; sec = s; ter = t || null; sub = s && tree3()[s] ? s : null;
   layoutBar();
-  const key = sec || level || "all";
+  const key = ter || sec || level || "all";
   if (key === fKey) return;
   fKey = key;
   clearTimeout(swapTimer);
@@ -907,7 +1081,9 @@ sbar.addEventListener("click", e => {
   const kind = b.dataset.kind, key = b.dataset.key;
   if (kind === "all") goSection(null, null);
   else if (kind === "primary") goSection(level === key ? null : key, null);
-  else goSection(b.dataset.parent, sec === key ? null : key);
+  else if (kind === "sec" && sub === key) goSection(level, null);          // ‹ Domains: back to Business
+  else if (kind === "sec") goSection(b.dataset.parent, sec === key ? null : key);
+  else goSection(level, sub, ter === key ? null : key);                     // a domain; tapped again: all of Domains
 });
 new ResizeObserver(() => layoutBar()).observe(sbar);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutBar());

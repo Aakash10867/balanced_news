@@ -18,6 +18,8 @@ archive branch for articles older than three days, so a failed push only costs s
 from __future__ import annotations
 
 import argparse
+import collections
+import datetime as dt
 import hashlib
 import json
 import logging
@@ -26,8 +28,8 @@ import pathlib
 from .config import database_url
 from sqlalchemy import Text, cast, func
 
-from .categories import labels
-from .db import Store, published, select, utcnow
+from .categories import labels, normalize
+from .db import Store, articles, claims, published, select, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -90,14 +92,17 @@ PAGE_KEYS = ("story_id", "headline", "counts", "has_established", "qualified_by"
              "perspectives", "framing", "suicide", "thread", "parents", "children", "written_at", "category")
 
 
-def slim_payload(p: dict | None) -> dict | None:
-    """The fields of a published payload the site reads (the rest stays in the database)."""
+def slim_payload(p: dict | None, who: list | None = None) -> dict | None:
+    """The fields of a published payload the site reads (the rest stays in the database). `who`: the speaker of each
+    "What they say" paragraph, for its label on the site (display only; the article itself is unchanged)."""
     if not p:
         return p
     out = {k: p.get(k) for k in PAGE_KEYS if k in p}
     nar = p.get("narrative") or {}
     out["narrative"] = {"paragraphs": nar.get("paragraphs") or [], "section_keys": nar.get("section_keys") or [],
                         "sources": nar.get("sources") or []}
+    if who and any(who):
+        out["narrative"]["who"] = who
     out["timeline"] = [[_item(i) for i in day] for day in p.get("timeline") or []]
     for k in ("undated", "established", "contested", "context"):
         out[k] = [_item(i) for i in p.get(k) or []]
@@ -116,16 +121,78 @@ def card(row: dict, lang: str) -> dict | None:
             "h": head, "paras": _card_text(paras),
             "bar": bar_counts((pe.get("narrative") or {}).get("paragraphs")),
             "n": (pe.get("counts") or {}).get("independent_sources") or 0,
-            "cat": pe.get("category") or {}}     # the site's sections, keys (labels in en.json / hi.json)
+            "cat": normalize(pe.get("category"))}   # the site's sections, keys (labels in en.json / hi.json)
 
 
 MANIFEST = "manifest.json"
+FEED_VERSION = 2          # part of every article's stamp: raising it rewrites every article file once
+NOT_SPEAKERS = {"", "article", "-", "none", "unknown", "reporter", "the article"}
 
 
-def _page(r: dict) -> dict:
+def _speakers(store: Store, payload: dict | None) -> list | None:
+    """Who speaks in each "What they say" paragraph: the name the reports give most often for its statements
+    (claims.attributed_to, the outlets' own words), the shortest on a tie; None where nobody is named."""
+    nar = (payload or {}).get("narrative") or {}
+    paras, keys = nar.get("paragraphs") or [], nar.get("section_keys") or []
+    want = {k: [i for s in para for i in (s.get("ids") or [])] for k, para in enumerate(paras)
+            if k < len(keys) and keys[k] == "say"}
+    ids = sorted({i for v in want.values() for i in v})
+    if not ids:
+        return None
+    by: dict[int, list[str]] = collections.defaultdict(list)
+    for r in store.rows(select(claims.c.canonical_id, claims.c.attributed_to).where(claims.c.canonical_id.in_(ids))):
+        name = (r["attributed_to"] or "").strip()
+        if name.lower() not in NOT_SPEAKERS:
+            by[r["canonical_id"]].append(name)
+    out: list = [None] * len(paras)
+    for k, pids in want.items():
+        c = collections.Counter(n for i in pids for n in by.get(i, []))
+        if c:
+            out[k] = sorted(c.items(), key=lambda kv: (-kv[1], len(kv[0])))[0][0]
+    return out
+
+
+def _page(r: dict, who: list | None = None) -> dict:
     return {"story_id": r["story_id"], "updated_at": r["updated_at"].isoformat(timespec="seconds"),
             "headline_en": r["headline_en"], "headline_hi": r["headline_hi"],
-            "payload_en": slim_payload(r["payload_en"]), "payload_hi": slim_payload(r["payload_hi"])}
+            "payload_en": slim_payload(r["payload_en"], who), "payload_hi": slim_payload(r["payload_hi"])}
+
+
+def _lead_urls(payload: dict | None) -> list[str]:
+    """The story's reports in the order a picture is taken from: those behind the lead first, then the rest."""
+    nar = (payload or {}).get("narrative") or {}
+    by_n = {s.get("n"): s.get("url") for s in nar.get("sources") or []}
+    paras = nar.get("paragraphs") or []
+    first = [n for s in (paras[0] if paras else []) for n in (s.get("sources") or [])]
+    order = first + sorted(n for n in by_n if n not in first)
+    return [by_n[n] for n in dict.fromkeys(order) if by_n.get(n)]
+
+
+def pictures(store: Store, manifest: dict) -> dict[str, dict]:
+    """One picture per live article (owner, Oct 9 2026): the share picture of the report behind the lead, else
+    the next report's; never an outlet's default picture (the same link on 3+ different stories). Linked, never
+    copied; the credit is the outlet's."""
+    ids = [int(k) for k in manifest]
+    if not ids:
+        return {}
+    since = utcnow() - dt.timedelta(days=6)
+    logos = {r["image"] for r in store.rows(
+        select(articles.c.image).where(articles.c.image.like("http%"), articles.c.fetched_at >= since)
+        .group_by(articles.c.image).having(func.count(func.distinct(articles.c.story_id)) >= 3))}
+    have: dict[int, dict[str, dict]] = collections.defaultdict(dict)
+    for r in store.rows(select(articles.c.story_id, articles.c.url, articles.c.outlet, articles.c.image)
+                        .where(articles.c.story_id.in_(ids), articles.c.image.like("http%"))):
+        if r["image"] not in logos:
+            have[r["story_id"]][r["url"]] = r
+    out: dict[str, dict] = {}
+    for sid, entry in manifest.items():
+        got = have.get(int(sid)) or {}
+        pick = next((got[u] for u in entry.get("lead") or [] if u in got), None)
+        if pick is None and got:
+            pick = got[sorted(got)[0]]
+        if pick:
+            out[sid] = {"src": pick["image"], "by": pick["outlet"], "href": pick["url"]}
+    return out
 
 
 def export(store: Store, root: str | pathlib.Path) -> int:
@@ -151,7 +218,8 @@ def export(store: Store, root: str | pathlib.Path) -> int:
             r["m_en"] = hashlib.md5(json.dumps(r["payload_en"], sort_keys=True, default=str).encode()).hexdigest()
             r["m_hi"] = hashlib.md5(json.dumps(r["payload_hi"], sort_keys=True, default=str).encode()).hexdigest()
     (root / "story").mkdir(exist_ok=True)
-    stamp = lambda r: [r["m_en"], r["m_hi"], r["updated_at"].isoformat(timespec="seconds"), r["headline_en"], r["headline_hi"]]
+    stamp = lambda r: [r["m_en"], r["m_hi"], r["updated_at"].isoformat(timespec="seconds"), r["headline_en"], r["headline_hi"],
+                       FEED_VERSION]
     keep = {str(r["story_id"]) for r in rows
             if (old.get(str(r["story_id"])) or {}).get("m") == stamp(r) and (root / "story" / f"{r['story_id']}.json").exists()}
     todo = [r["story_id"] for r in rows if str(r["story_id"]) not in keep]
@@ -168,19 +236,21 @@ def export(store: Store, root: str | pathlib.Path) -> int:
         f = full.get(r["story_id"])
         if not f:
             continue
-        entry = {"m": stamp(r), "en": card(f, "en"), "hi": card(f, "hi")}
+        entry = {"m": stamp(r), "en": card(f, "en"), "hi": card(f, "hi"), "lead": _lead_urls(f["payload_en"])}
         if not entry["en"]:
             continue                      # a page still waiting for its first essay is not shown
-        (root / "story" / f"{sid}.json").write_text(json.dumps(_page(f), ensure_ascii=False, separators=(",", ":"), default=str),
-                                                   encoding="utf-8")
+        (root / "story" / f"{sid}.json").write_text(json.dumps(_page(f, _speakers(store, f["payload_en"])), ensure_ascii=False,
+                                                              separators=(",", ":"), default=str), encoding="utf-8")
         manifest[sid] = entry
     for p in (root / "story").glob("*.json"):
         if p.stem not in manifest:
             p.unlink()
     now = utcnow().isoformat(timespec="seconds")
     order = [str(r["story_id"]) for r in rows if str(r["story_id"]) in manifest]
+    pics = pictures(store, manifest)      # every export: a picture found later still reaches its card
     for lang in ("en", "hi"):
-        cards = [manifest[sid][lang] for sid in order if manifest[sid].get(lang)]
+        cards = [dict(manifest[sid][lang], **({"img": pics[sid]} if sid in pics else {}))
+                 for sid in order if manifest[sid].get(lang)]
         (root / f"{lang}.json").write_text(json.dumps({"generated_at": now, "sections": labels(lang), "stories": cards},
                                                       ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (root / MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

@@ -2453,10 +2453,41 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
         assert feed.export(store, out) == 1
     finally:
         store.rows = real_rows
-    assert len(reads) == 1 and "payload_en" in reads[0]   # only the cheap list (sqlite: payloads for md5)
+    published_reads = [q for q in reads if "FROM published" in q]
+    assert len(published_reads) == 1 and "payload_en" in published_reads[0]   # only the cheap list (sqlite: payloads for md5)
+    assert not any("payload" in q for q in reads if "FROM published" not in q)  # pictures: links only
     assert json.loads((out / "en.json").read_text(encoding="utf-8"))["stories"][0]["id"] == row["story_id"]
     assert feed.bar_counts([[{"class": "single"}, {"class": "disputed", "parts": [
         {"class": "established"}, {"class": "disputed"}]}]]) == {"e": 1, "o": 1, "d": 1, "r": 0, "u": 0}
+
+
+def test_feed_card_picture_is_the_lead_reports_and_never_an_outlets_default(store, tmp_path):
+    """Pictures (owner, Oct 9 2026): the share picture of the report behind the lead, linked and credited; a picture
+    the same outlet puts on 3+ different stories is its logo and is never used."""
+    from nishpaksh import feed
+    from nishpaksh.db import articles, insert, published, utcnow
+    now = utcnow()
+    nar = {"paragraphs": [[{"text": "Lead.", "class": "single", "sources": [2]}], [{"text": "More.", "class": "single", "sources": [1]}]],
+           "section_keys": ["news", "happened"],
+           "sources": [{"n": 1, "outlet": "A", "url": "https://a.in/1"}, {"n": 2, "outlet": "B", "url": "https://b.in/1"}]}
+    store.exec(insert(published).values(story_id=500, updated_at=now, headline_en="H", headline_hi="ह",
+                                        payload_en={"narrative": nar}, payload_hi={"narrative": nar}))
+    for i, (url, outlet, img, sid) in enumerate([("https://a.in/1", "A", "https://a.in/p.jpg", 500),
+                                                 ("https://b.in/1", "B", "https://b.in/logo.png", 500),
+                                                 ("https://b.in/2", "B", "https://b.in/logo.png", 501),
+                                                 ("https://b.in/3", "B", "https://b.in/logo.png", 502)]):
+        store.exec(insert(articles).values(url=url, outlet=outlet, image=img, story_id=sid, published_at=now, fetched_at=now))
+    out = tmp_path / "feed"
+    feed.export(store, out)
+    c = json.loads((out / "en.json").read_text(encoding="utf-8"))["stories"][0]
+    assert c["img"] == {"src": "https://a.in/p.jpg", "by": "A", "href": "https://a.in/1"}   # B's is its logo
+    store.exec(insert(articles).values(url="https://b.in/9", outlet="B", image="https://b.in/real.jpg", story_id=500,
+                                       published_at=now, fetched_at=now))
+    from nishpaksh.db import update
+    store.exec(update(articles).where(articles.c.url == "https://b.in/1").values(image="https://b.in/lead.jpg"))
+    feed.export(store, out)
+    c = json.loads((out / "en.json").read_text(encoding="utf-8"))["stories"][0]
+    assert c["img"]["src"] == "https://b.in/lead.jpg" and c["img"]["by"] == "B"   # the lead's report first
 
 
 def test_heavy_columns_come_from_the_local_cache_when_unchanged(store, tmp_path, monkeypatch):
@@ -2884,3 +2915,162 @@ def test_one_outlet_line_never_leads_over_a_fact_more_outlets_tell():
          "sources": src("B", "C", "D", "E")},
     ]
     assert pick_news(items)[0] == 2
+
+# ---------------------------------------------------------------- outlets outside India (owner, Oct 9 2026)
+
+def test_state_media_are_a_government_speaking_not_an_outlet():
+    """Xinhua, Global Times and a paper carrying "(Xinhua)" copy are one voice: China's. PIB is the Union
+    government. None counts as an independent outlet."""
+    from nishpaksh.wire import independent
+    arts = [dict(id=1, outlet="Global Times", url="https://www.globaltimes.cn/a"),
+            dict(id=2, outlet="Xinhua", url="https://english.news.cn/b"),
+            dict(id=3, outlet="Gulf News", url="https://gulfnews.com/c", agency="Xinhua"),
+            dict(id=4, outlet="Dawn", url="https://www.dawn.com/d"),
+            dict(id=5, outlet="PIB", url="https://pib.gov.in/e"),
+            dict(id=6, outlet="The Hindu", url="https://www.thehindu.com/f")]
+    g = independence_groups(arts)
+    assert g[1] == g[2] == g[3] == "gov:china" and g[5] == "gov:union"
+    assert len(independent(g)) == 2              # Dawn and The Hindu
+
+
+def test_region_of_outlets():
+    from nishpaksh.ownership import region_of
+    assert region_of("Dawn", "https://www.dawn.com/x") == "world"
+    assert region_of("BBC Hindi", "https://www.bbc.com/hindi/x") == "world"
+    assert region_of("The Hindu", "https://www.thehindu.com/x") == "india"
+    assert region_of("PIB", "https://pib.gov.in/x") == "india"
+    assert region_of("Lokmat", "https://www.lokmat.com/x") == "india"       # found by search, .com
+    assert region_of("Some Paper", "https://paper.co.uk/x") == "world"      # another country's domain
+
+
+def test_world_articles_are_embedded_only_when_they_can_join_a_story():
+    """worldgate: India named, names shared with an Indian headline, or with 2+ other world outlets."""
+    from nishpaksh.worldgate import hold
+    t = NOW - dt.timedelta(hours=1)
+
+    def art(i, outlet, url, title, feed=1, emb=None):
+        return dict(id=i, outlet=outlet, url=url, lang="en", title=title, text="", feed_id=feed,
+                    embedding=emb, published_at=t)
+    arts = [
+        art(1, "The Hindu", "https://www.thehindu.com/1", "Shehbaz Sharif meets Erdogan in Ankara", emb=[1]),
+        art(2, "Dawn", "https://www.dawn.com/2", "India, Pakistan trade charges at UN"),           # (a)
+        art(3, "Dawn", "https://www.dawn.com/3", "Sharif, Erdogan sign defence pact in Ankara"),   # (b)
+        art(4, "Dawn", "https://www.dawn.com/4", "Karachi traffic police launch helmet drive"),     # held
+        art(5, "The Guardian", "https://www.theguardian.com/5", "Macron names Lecornu as prime minister"),
+        art(6, "DW", "https://rss.dw.com/6", "France: Macron reappoints Lecornu"),
+        art(7, "NPR", "https://www.npr.org/7", "Lecornu back as Macron's prime minister"),         # (c) 5, 6, 7
+        art(8, "Dawn", "https://www.dawn.com/8", "Lahore court bails Qureshi", feed=None),        # found by search
+    ]
+    assert hold(arts, NOW) == {4}
+
+
+def test_a_story_no_indian_outlet_covers_needs_global_impact(store):
+    """Rule 1: Indian coverage decides. Rule 3: three independent world outlets and two "yes" to the
+    global-impact question; an "unsure" or one "no" keeps it out."""
+    import nishpaksh.priority as P
+
+    def world_story(title, outlets):
+        sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=True, qualifies=False,
+                                                      signature=title))
+        for k, (o, dom) in enumerate(outlets):
+            store.exec(insert(articles).values(url=f"https://{dom}/{abs(hash(title)) % 10**6}-{k}", outlet=o, lang="en",
+                                               title=f"{title} ({o})", text="t " * 300, text_source="full",
+                                               published_at=NOW - dt.timedelta(hours=1), fetched_at=NOW - dt.timedelta(hours=1),
+                                               story_id=sid, extract_failures=0))
+        return sid
+    three = [("The Guardian", "www.theguardian.com"), ("DW", "www.dw.com"), ("NPR", "www.npr.org")]
+    war = world_story("Israel strikes Iran oil terminal", three)
+    local = world_story("Texas shooting kills three", three)
+    unsure = world_story("Sudan ceasefire talks", three)
+    china = world_story("Beijing hosts trade fair", [("Xinhua", "english.news.cn"), ("Global Times", "www.globaltimes.cn"),
+                                                       ("CGTN", "www.cgtn.com"), ("Dawn", "www.dawn.com")])
+    indian = _story_with_sources(store, "Parliament passes bill", 3)
+    asked = []
+
+    class Desk(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            import re as _re
+            rows = _re.findall(r"^(\d+)\. (.*)$", prompt, _re.M)
+            if "OUTSIDE the country" in prompt:
+                asked.append([h for _, h in rows])
+                ans = lambda h: "yes" if "Iran" in h else "unsure" if "Sudan" in h else "no"
+                return json.dumps({"results": [{"n": int(n), "answer": ans(h)} for n, h in rows]}), [], 30
+            if "each shown by the headlines" in prompt:
+                return json.dumps({"results": [{"n": int(n), "score": 4, "filler": False} for n, _ in rows]}), [], 30
+            return super().generate(model, prompt, json_mode, grounded)
+    assert P.rank_new(store, _router(store, Desk())) == 2           # the war and the Indian story
+    q = P.queue(store, size=10)
+    assert set(q) == {war, indian}
+    assert len(asked) == 2 and len(asked[1]) == 1                   # asked again only for the first "yes"
+    an = store.one(select(stories.c.analysis).where(stories.c.id == unsure))["analysis"]
+    assert an["world"]["global"] is False
+    assert china not in q   # three state outlets are one voice: not three independent outlets
+
+
+# ---------------------------------------------------------------- Domains and Sport (owner, Oct 9 2026)
+
+def test_sections_have_domains_as_a_third_level():
+    from nishpaksh.categories import labels, normalize, parse
+    assert parse(["politics/protests", "business/domains/hr"]) == {
+        "primary": ["politics", "business"], "secondary": ["protests", "domains"], "tertiary": ["hr"]}
+    assert parse(["operations"]) == {"primary": ["business"], "secondary": ["domains"], "tertiary": ["operations"]}
+    assert parse(["business/domains"]) == {"primary": ["business"], "secondary": []}   # which domain? the primary alone
+    assert parse(["business/domains/sport"]) is None
+    # live articles keep their place: Jobs and Tech are now HR and Analytics
+    assert normalize({"primary": ["business"], "secondary": ["tech"]}) == {
+        "primary": ["business"], "secondary": ["domains"], "tertiary": ["analytics"]}
+    lab = labels("en")
+    assert lab["tree"]["business"] == ["economy", "companies", "markets", "money", "domains"]
+    assert lab["tree3"]["domains"] == ["hr", "finance", "marketing", "analytics", "operations"]
+
+
+def test_beat_stories_get_reserved_reading_places(store, monkeypatch):
+    """4 of the 16 places go to the best Domains/Sport stories; places they do not use go back."""
+    import nishpaksh.priority as P
+    monkeypatch.setattr(P, "SETTINGS", dataclasses.replace(P.SETTINGS, prep_queue=3, prep_beat=1))
+    gen = [_story_with_sources(store, f"Parliament story {k}", 3) for k in range(3)]
+    sport = _story_with_sources(store, "Cricket final result", 3)
+
+    class Rater(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            import re as _re
+            if "each shown by the headlines" in prompt:
+                rows = _re.findall(r"^(\d+)\. (.*)$", prompt, _re.M)
+                return json.dumps({"results": [{"n": int(n), "score": 2 if "Cricket" in h else 5, "filler": False,
+                                                "beat": "sport" if "Cricket" in h else "none"} for n, h in rows]}), [], 30
+            return super().generate(model, prompt, json_mode, grounded)
+    P.rank_new(store, _router(store, Rater()))
+    q = P.queue(store)
+    assert sport in q and len(q) == 3 and len(set(q) & set(gen)) == 2
+    monkeypatch.setattr(P, "SETTINGS", dataclasses.replace(P.SETTINGS, prep_queue=3, prep_beat=1))
+    store.exec(update(stories).where(stories.c.id == sport).values(analysis={}))
+    assert set(P.queue(store)) == set(gen)             # no beat story rated: its place goes back
+
+
+def test_the_desk_keeps_one_seat_for_domains_or_sport(store, monkeypatch):
+    """Two seats for any story, one only for a Domains/Sport story; empty when none is ready."""
+    from nishpaksh import desk
+    import nishpaksh.compose as C
+    gen = [_story_with_sources(store, f"General {k}", 3) for k in range(4)]
+    sport = _story_with_sources(store, "Hockey semi-final", 3)
+    for sid in gen + [sport]:
+        store.exec(update(stories).where(stories.c.id == sid).values(
+            analysis={"priority": {"score": 5 if sid != sport else 2, "beat": "sport" if sid == sport else None}}))
+    order = gen + [sport]
+    monkeypatch.setattr(desk, "ready", lambda store, now=None: list(order))
+    done = []
+
+    def fake_publish(store_, router, sid):
+        done.append(sid)
+        store_.exec(insert(published).values(story_id=sid, version=1, updated_at=NOW, headline_en="h", payload_en={}))
+        return True
+    monkeypatch.setattr(C, "publish_story", fake_publish)
+    import nishpaksh.consolidate as K, nishpaksh.verify as V
+    monkeypatch.setattr(K, "consolidate_story", lambda *a, **k: None)
+    monkeypatch.setattr(V, "base_verdicts", lambda *a, **k: None)
+    st = desk.work(store, None, now=NOW)
+    assert done == gen[:2] + [sport] and st["beat_seat"] == [sport]
+    # next hour, nothing of a beat ready: two general articles and the seat stays empty
+    order[:] = gen[2:]
+    st = desk.work(store, None, now=NOW + dt.timedelta(hours=1))
+    assert st["published"] == gen[2:] and st["beat_seat"].startswith("empty")

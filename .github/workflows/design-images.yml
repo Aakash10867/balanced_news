@@ -1,0 +1,39 @@
+# Design tool (Oct 9 2026): fetch a few outlet pictures for mock-ups on the design canvas (the design sandbox
+# cannot reach outlet sites). Writes them to the `design-images` branch, one commit, force-pushed. Never used by
+# the site or the pipeline.
+name: design-images
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "picture links, separated by spaces"
+        required: true
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch the pictures
+        env:
+          URLS: ${{ inputs.urls }}
+        run: |
+          mkdir out && cd out
+          i=0
+          for u in $URLS; do
+            i=$((i+1))
+            curl -sSL --max-time 30 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0 Safari/537.36" \
+              -o "p$i" "$u" || echo "failed $u"
+            echo "p$i $u" >> list.txt
+          done
+          file p* || true
+      - name: Publish to the design-images branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          git init -q -b design-images
+          git add -A
+          git -c user.name=design -c user.email=design@users.noreply.github.com commit -qm "design pictures"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:design-images

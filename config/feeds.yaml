@@ -8,6 +8,9 @@
 # role: news     -> ordinary reporting
 # role: official -> government/court sources; ingested like news, but their own
 #                   statements count as "official_statement" evidence, never as truth.
+# beat: domains | sport -> a specialist feed (owner, Oct 9 2026): same rules as every feed; a story whose
+#                   articles come half or more from such feeds gets the reserved reading places and the
+#                   desk's Domains/Sport seat (priority.py, desk.py).
 
 feeds:
   # ---------- English ----------
@@ -45,6 +48,45 @@ feeds:
   - {name: Satya Hindi, lang: hi, url: "https://www.satyahindi.com/feed"}
   - {name: OpIndia Hindi, lang: hi, url: "https://hindi.opindia.com/feed/"}
   - {name: Panchjanya, lang: hi, url: "https://panchjanya.com/feed/"}
+
+  # ---------- Indian outlets' world pages (owner, Oct 9 2026: Indian coverage decides relevance) ----------
+  - {name: The Hindu, lang: en, url: "https://www.thehindu.com/news/international/feeder/default.rss"}
+  - {name: Hindustan Times, lang: en, url: "https://www.hindustantimes.com/feeds/rss/world-news/rssfeed.xml"}
+  - {name: Times of India, lang: en, url: "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms"}
+  - {name: News18, lang: en, url: "https://www.news18.com/commonfeeds/v1/eng/rss/world.xml"}
+
+  # ---------- Outside India (region and state control: config/ownership.yaml) ----------
+  # Checked from GitHub's runners (probe 'feeds', Oct 9 2026). Refused (403): Indian Express world, Dhaka
+  # Tribune, Arab News, APP, TOLOnews, Newsfirst; stale feeds: Global Times, Xinhua; NDTV's pages (and AMP pages)
+  # refuse us, so its world feed was dropped (headline-only articles add no facts, option B).
+  # Their articles are embedded only when they can join a story Indian outlets cover, or a world story
+  # several world outlets carry (worldgate.py); readable pages only (option B), so no paywalled papers.
+  - {name: BBC News World, lang: en, url: "https://feeds.bbci.co.uk/news/world/rss.xml"}
+  - {name: The Guardian, lang: en, url: "https://www.theguardian.com/world/rss"}
+  - {name: DW, lang: en, url: "https://rss.dw.com/rdf/rss-en-all"}
+  - {name: France 24, lang: en, url: "https://www.france24.com/en/rss"}
+  - {name: NPR, lang: en, url: "https://feeds.npr.org/1004/rss.xml"}
+  - {name: South China Morning Post, lang: en, url: "https://www.scmp.com/rss/3/feed"}
+  # neighbours
+  - {name: Dawn, lang: en, url: "https://www.dawn.com/feeds/home"}
+  - {name: The Express Tribune, lang: en, url: "https://tribune.com.pk/feed/home"}
+  - {name: Geo News, lang: en, url: "https://www.geo.tv/rss/1/1"}
+  - {name: The Daily Star, lang: en, url: "https://www.thedailystar.net/news/bangladesh/rss.xml"}
+  - {name: The Kathmandu Post, lang: en, url: "https://kathmandupost.com/rss"}
+  - {name: The Himalayan Times, lang: en, url: "https://thehimalayantimes.com/rssFeed/15"}
+  - {name: Daily Mirror Sri Lanka, lang: en, url: "https://www.dailymirror.lk/rss/breaking_news/108"}
+  - {name: EconomyNext, lang: en, url: "https://economynext.com/feed"}
+  # Gulf
+  - {name: Gulf News, lang: en, url: "https://gulfnews.com/feed"}
+  - {name: Khaleej Times, lang: en, url: "https://www.khaleejtimes.com/stories.rss"}
+  - {name: Saudi Gazette, lang: en, url: "https://saudigazette.com.sa/rssFeed/74"}
+  # state media (a government speaking: never an independent outlet, never a perspective)
+  - {name: Al Jazeera, lang: en, url: "https://www.aljazeera.com/xml/rss/all.xml"}
+  - {name: The National, lang: en, url: "https://www.thenationalnews.com/arc/outboundfeeds/rss/?outputType=xml"}
+  - {name: CNA, lang: en, url: "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml"}
+  - {name: CGTN, lang: en, url: "https://www.cgtn.com/subscribe/rss/section/world.xml"}
+  - {name: TASS, lang: en, url: "https://tass.com/rss/v2.xml"}
+  - {name: Anadolu Agency, lang: en, url: "https://www.aa.com.tr/en/rss/default?cat=guncel"}
 
   # ---------- Official ----------
   - {name: PIB, lang: en, role: official, url: "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3"}
