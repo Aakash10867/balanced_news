@@ -338,7 +338,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   `sections`, cards `cat`). One page call at publication (headline, lead, top statements; asked once: a section
   colours and merges nothing); code keeps only listed keys, a secondary brings its primary, unsure = primary
   alone; no answer never holds an article back. Live articles from before sections get theirs on desk runs
-  (`fill_live`, 5 per run, only the section is added). Site display: to be designed with the owner.
+  (`fill_live`, 5 per run, only the section is added). **Site display (owner, Oct 9 2026, canvas "Sections A"):** a
+  bottom bar in the header's indigo, joined to the bottom edge, rounded on top: All + the five primaries. Tapping a
+  primary slides it to the LEFT end where All was, it becomes the back button (‹), the others give way to its five
+  secondaries; a secondary filters and the bar stays (tap again = the whole primary); back = all. Labels on one line,
+  measured, one font size for every row, equal space between labels; sections with no story yet are lighter and open
+  an empty card ("Nothing in X yet" + Show all news). The cards fade and restart at the section's newest. The bar
+  slides down off the page while an article is open. Filtering is client-side over every card in the feed.
 - **No internal notes for readers (owner, Oct 8 2026):** the article page no longer shows "Nothing in this
   story is confirmed by independent sources yet" (read as "this story is fake"; the colours already say which
   parts are supported) nor "Which outlets form different perspectives is not yet known" (internal state, not

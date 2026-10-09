@@ -67,7 +67,8 @@
   :focus-visible { outline: 2px solid #46549a; outline-offset: 3px; border-radius: 6px; }
 
   #app { height: 100vh; height: 100dvh; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px;
-         padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+         --padr: max(14px, env(safe-area-inset-right)); --padl: max(14px, env(safe-area-inset-left));
+         padding: max(14px, env(safe-area-inset-top)) var(--padr) 0 var(--padl); }
 
   /* header: the wordmark, the greeting, the language switch */
   .brand { background: var(--brand); }
@@ -203,10 +204,41 @@
     .card .text { font-size: 16px; }
   }
   @media (min-width: 700px) {
-    #app { padding-top: 22px; padding-bottom: 22px; }
+    #app { padding-top: 22px; }
     .card { padding: 30px 30px 22px; }
     .card h2 { font-size: 32px; }
   }
+  /* the sections bar (owner, Oct 9 2026; designed on the canvas as "Sections A"): joined to the bottom edge,
+     rounded on top, the header's indigo. Five primary sections and All; a primary slides to the left end and
+     becomes the back button while its five sub-sections take the other places. Hidden while an article is open. */
+  nav.sections { flex: none; position: relative; z-index: 11; color: #fff;
+                 margin: 0 calc(-1 * var(--padr)) 0 calc(-1 * var(--padl));
+                 padding: 5px 10px calc(7px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0;
+                 box-shadow: 0 -2px 12px rgba(22,26,56,0.12); transition: transform 380ms cubic-bezier(.4,0,.2,1); }
+  html.reading nav.sections { transform: translateY(calc(100% + 24px)); }
+  .sbar { position: relative; height: 42px; font-size: 12.5px; }
+  .sb { position: absolute; top: 0; bottom: 0; padding: 0; margin: 0; border: 0; background: transparent; cursor: pointer;
+        opacity: 1; transform: none; --d: 0ms;
+        transition: left 440ms var(--ease), width 440ms var(--ease), opacity 220ms ease var(--d), transform 320ms var(--ease) var(--d); }
+  .sb.hide { opacity: 0; transform: translateY(10px); pointer-events: none; }
+  .sb .face { position: absolute; top: 0; bottom: 0; left: 2px; right: 2px; display: flex; align-items: center; justify-content: center;
+              gap: 3px; border-radius: 17px; white-space: nowrap; line-height: 1; overflow: hidden; font-weight: 600;
+              color: rgba(255,255,255,0.9); transition: background-color 220ms ease, color 220ms ease, transform 120ms ease; }
+  .sb:active .face { transform: scale(0.96); }
+  .sb.empty .face { color: rgba(255,255,255,0.45); }
+  .sb.back .face { background: rgba(255,255,255,0.16); color: #fff; }
+  .sb[aria-pressed="true"] .face { background: #fff; color: #1f2550; font-weight: 700; }
+  .sb .lbl { display: block; line-height: 1; }
+  .sb .chev { display: block; flex: none; width: 0; opacity: 0; overflow: hidden; transition: width 380ms var(--ease), opacity 260ms ease; }
+  .sb.back .chev { width: 10px; opacity: 1; }
+  .track { transition: opacity 170ms ease, transform 260ms var(--ease); }
+  .track.swap { opacity: 0; transform: translateY(8px); }
+  .state .empty-sec { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 290px; }
+  .state .empty-sec h2 { margin: 0; font-family: var(--head); font-size: 24px; font-weight: 600; line-height: 1.25; color: var(--ink); }
+  .state .empty-sec p { margin: 0; font-size: 15.5px; line-height: 1.55; color: var(--muted); }
+  .state .empty-sec button { margin-top: 6px; border: 0; border-radius: 999px; padding: 10px 20px; min-height: 44px; color: #fff;
+                             font-weight: 600; font-size: 15px; cursor: pointer; }
+
   /* launch screen: the splash, continued inside the page, then faded away */
   #intro { display: none; }
   html.launch #intro { display: flex; position: fixed; inset: 0; z-index: 30; align-items: center; justify-content: center;
@@ -217,6 +249,7 @@
   .greeting { transition: opacity 220ms ease; }
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
+    nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
     #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 </style>
@@ -236,6 +269,7 @@
   <main id="deck" aria-live="polite">
     <div class="track" id="track" tabindex="-1"></div>
   </main>
+  <nav class="sections brand" id="sections" aria-label="Sections"><div class="sbar" id="sbar"></div></nav>
 </div>
 <div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-h">
   <div class="sheet-scroll" id="sheet-scroll">
@@ -282,6 +316,9 @@ const T = {
     sections: {happened: "What happened", numbers: "By the numbers", say: "What they say", background: "Background",
                related: "Related events", explained: "Explained", next: "What next"},
     bar: (c) => `${c.e} established, ${c.o} one outlet only, ${c.d} disputed, ${c.r} shown false, ${c.u} not yet cross-checked`,
+    all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`,
+    secEmpty: (l) => `Nothing in ${l} yet.`, secBody: "Articles get their sections when they are published, so this one will fill up as new stories come in.",
+    showAll: "Show all news",
   },
   hi: {
     wordmark: "निष्पक्ष", hello: "नमस्ते।", greet: ["सुप्रभात।", "नमस्कार।", "शुभ संध्या।"],
@@ -300,11 +337,16 @@ const T = {
     sections: {happened: "क्या हुआ", numbers: "आँकड़ों में", say: "किसने क्या कहा", background: "पृष्ठभूमि",
                related: "जुड़ी घटनाएँ", explained: "समझिए", next: "आगे क्या"},
     bar: (c) => `${c.e} स्थापित, ${c.o} केवल एक स्रोत, ${c.d} मतभेद, ${c.r} असत्य, ${c.u} अभी पुष्टि नहीं`,
+    all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`,
+    secEmpty: (l) => `${l} में अभी कोई ख़बर नहीं।`, secBody: "हर लेख को छपते समय उसका खंड मिलता है, इसलिए नई ख़बरों के साथ यह खंड भरता जाएगा।",
+    showAll: "सारी ख़बरें देखें",
   },
 };
 const KEYCOLOR = {established: "var(--est)", developing: "var(--unv)", unverified: "var(--unv)", single: "var(--one)", disputed: "var(--dis)", false: "var(--fal)"};
 const VERDICT = {corroborated: "established", confirmed: "established", established: "established", developing: "developing",
                  disputed: "disputed", false: "false", single: "single", unverified: "unverified", pending: "unverified"};
+// the sections' names (nishpaksh/categories.py labels); the feed's en.json / hi.json carry the same
+const SECTIONS = {"en": {"primary": {"politics": "Politics", "justice": "Justice", "business": "Business", "world": "World", "life": "Life"}, "secondary": {"elections": "Elections", "parties": "Parties", "government": "Government", "parliament": "Parliament", "protests": "Protests", "crime": "Crime", "police": "Police", "courts": "Courts", "corruption": "Corruption", "terror": "Terror", "economy": "Economy", "companies": "Companies", "jobs": "Jobs", "money": "Your money", "tech": "Tech", "diplomacy": "Diplomacy", "indians-abroad": "Indians abroad", "conflicts": "Conflicts", "defence": "Defence", "abroad": "Abroad", "health": "Health", "education": "Education", "accidents": "Accidents", "environment": "Environment", "sport-films": "Sport & films"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "jobs", "money", "tech"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}}, "hi": {"primary": {"politics": "राजनीति", "justice": "न्याय", "business": "बिज़नेस", "world": "दुनिया", "life": "जीवन"}, "secondary": {"elections": "चुनाव", "parties": "दल", "government": "सरकार", "parliament": "संसद", "protests": "प्रदर्शन", "crime": "अपराध", "police": "पुलिस", "courts": "अदालत", "corruption": "भ्रष्टाचार", "terror": "आतंक", "economy": "अर्थव्यवस्था", "companies": "कंपनियां", "jobs": "नौकरियां", "money": "आपका पैसा", "tech": "टेक", "diplomacy": "कूटनीति", "indians-abroad": "विदेश में भारतीय", "conflicts": "संघर्ष", "defence": "रक्षा", "abroad": "विदेश", "health": "सेहत", "education": "शिक्षा", "accidents": "हादसे", "environment": "पर्यावरण", "sport-films": "खेल और फ़िल्में"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "jobs", "money", "tech"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}}};
 const BARKEY = {established: "e", corroborated: "e", confirmed: "e", single: "o", disputed: "d", false: "r", unverified: "u", pending: "u", developing: "u"};
 
 /* ---------- small helpers ---------- */
@@ -346,7 +388,7 @@ function api(path) {
 }
 
 /* ---------- data: the feed first, Supabase if the feed is missing ---------- */
-const cardCache = {};          // lang -> cards
+const cardCache = {};          // lang -> every card (one per thread, newest first); the deck shows a section's first MAX_CARDS
 const storyCache = new Map();  // id -> Promise<row|null>
 
 function cardText(paras, limit = 9) {       // as nishpaksh/feed.py _card_text
@@ -378,15 +420,16 @@ async function loadCards(l) {
   try {
     const d = await getJSON(`${FEED_URL}/${l}.json`, {cache: "no-cache"}, 5000);
     if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
+    if (d && d.sections && d.sections.tree) SECTIONS[l] = d.sections;
   } catch (e) { /* the feed is missing or slow: read the database */ }
   if (!stories) {
     const rows = await api("published?select=story_id,updated_at,headline_en,headline_hi," +
       "pe:payload_en->narrative->paragraphs,ph:payload_hi->narrative->paragraphs,counts:payload_en->counts," +
-      "thread:payload_en->thread,parents:payload_en->parents&order=updated_at.desc&limit=200");
+      "thread:payload_en->thread,parents:payload_en->parents,cat:payload_en->category&order=updated_at.desc&limit=200");
     stories = rows.filter(r => r.pe && r.pe.length).map(r => ({
       id: r.story_id, at: r.updated_at, thread: r.thread || r.story_id, ongoing: !!(r.parents && r.parents.length),
       h: (l === "hi" && r.headline_hi) || r.headline_en, paras: cardText(l === "hi" && r.ph && r.ph.length ? r.ph : r.pe),
-      bar: barCounts(r.pe), n: (r.counts || {}).independent_sources || 0}));
+      bar: barCounts(r.pe), n: (r.counts || {}).independent_sources || 0, cat: r.cat || {}}));
   }
   // one card per thread: its latest development, newest first (owner, Oct 6 2026)
   const byThread = new Map();
@@ -395,9 +438,9 @@ async function loadCards(l) {
     if (!cur) byThread.set(k, {...s, size: 1});
     else { cur.size += 1; if (new Date(s.at) > new Date(cur.at)) byThread.set(k, {...s, size: cur.size}); }
   }
-  const cards = [...byThread.values()].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, MAX_CARDS);
-  cardCache[l] = cards;
-  return cards;
+  const all = [...byThread.values()].sort((a, b) => new Date(b.at) - new Date(a.at));
+  cardCache[l] = all;
+  return all;
 }
 async function fromArchive(id) {
   if (!("DecompressionStream" in window)) return null;
@@ -442,6 +485,15 @@ function cardHtml(c, i) {
       <span class="ago">${esc(ago(c.at))}</span></div></a></div>`;
 }
 function renderDeck(keepId) {
+  if (!cards.length && fKey !== "all") {
+    const t = T[lang];
+    track.innerHTML = `<div class="slot"><div class="state"><div class="empty-sec">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#7d84b0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
+      <h2>${esc(t.secEmpty(secLabel(fKey)))}</h2><p>${esc(t.secBody)}</p>
+      <button type="button" class="brand" id="showall">${esc(t.showAll)}</button></div></div></div>`;
+    $("showall").onclick = () => goSection(null, null);
+    return;
+  }
   if (!cards.length) { track.innerHTML = `<div class="slot"><div class="state">${esc(T[lang].empty)}</div></div>`; return; }
   const n = cards.length;
   // loop: a copy of the last card before the first and of the first after the last
@@ -487,8 +539,10 @@ track.addEventListener("pointerdown", e => { const a = e.target.closest("a.card"
 
 async function showDeck(keepId) {
   try {
-    cards = await loadCards(lang);
+    pool = await loadCards(lang);
+    cards = sectionCards();
     renderDeck(keepId);
+    buildBar();
   } catch (e) {
     track.innerHTML = `<div class="slot"><div class="state"><div>${esc(T[lang].error)}<br><br>
       <button type="button" class="back" style="width:auto;padding:0 18px;border-radius:999px" id="retry">${esc(T[lang].retry)}</button></div></div></div>`;
@@ -637,6 +691,7 @@ async function openStory(id, fromCard, opts = {}) {
   }
   sheet.classList.remove("anim", "open");
   sheet.classList.add("on");
+  document.documentElement.classList.add("reading"); sections.inert = true;
   if (r) {
     setClip(r); placeHeadlineOver(r);
     void sheet.offsetWidth;                      // start from the card
@@ -658,6 +713,7 @@ function closeStory(animate = true) {
   const id = openId;
   openId = null;
   document.title = "Nishpaksh · निष्पक्ष";
+  document.documentElement.classList.remove("reading"); sections.inert = false;
   const k = cards.findIndex(c => String(c.id) === id);
   if (k >= 0 && k !== current) jumpTo(k);
   const r = animate ? cardRectFor(id) : null;
@@ -700,6 +756,104 @@ $("rise").addEventListener("click", e => {
     openStory(a.dataset.story, null, {instant: true, noHistory: true});
   }
 });
+
+/* ---------- sections: the bottom bar (owner, Oct 9 2026) ---------- */
+const sections = $("sections"), sbar = $("sbar");
+let pool = [], level = null, sec = null, fKey = "all", swapTimer = null, barLang = null;
+function secLabels() { return SECTIONS[lang] || SECTIONS.en; }
+function secLabel(k) { const s = secLabels(); return (s.primary || {})[k] || (s.secondary || {})[k] || ""; }
+function inSection(c, k) {
+  if (k === "all") return true;
+  const cat = c.cat || {};
+  return (cat.primary || []).includes(k) || (cat.secondary || []).includes(k);
+}
+function sectionCards() { return pool.filter(c => inSection(c, fKey)).slice(0, MAX_CARDS); }
+const CHEV = `<svg class="chev" height="12" viewBox="0 0 10 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2L2 7l5 5"/></svg>`;
+function buildBar() {   // the buttons, once per language; layoutBar() moves them
+  if (barLang === lang && sbar.childElementCount) { layoutBar(); return; }
+  barLang = lang;
+  const s = secLabels(), btn = (kind, key, parent) =>
+    `<button type="button" class="sb" data-kind="${kind}" data-key="${esc(key)}" data-parent="${esc(parent || "")}"><span class="face">${CHEV}<span class="lbl">${esc(kind === "all" ? T[lang].all : secLabel(key))}</span></span></button>`;
+  let h = btn("all", "all");
+  for (const p of Object.keys(s.tree)) h += btn("primary", p);
+  for (const p of Object.keys(s.tree)) for (const k of s.tree[p]) h += btn("sec", k, p);
+  sbar.innerHTML = h;
+  sections.setAttribute("aria-label", T[lang].nav);
+  layoutBar();
+}
+let measureCtx = null;
+function textWidth(txt, fs) {
+  try {
+    measureCtx = measureCtx || document.createElement("canvas").getContext("2d");
+    measureCtx.font = `700 ${fs}px Hind, sans-serif`;
+    return measureCtx.measureText(txt).width;
+  } catch (e) { return Array.from(txt).length * fs * 0.56; }
+}
+// one line per label, one font size for every row, the same space between all six labels
+function layoutBar() {
+  const s = secLabels(), prims = Object.keys(s.tree), W = sbar.clientWidth || 360, CH = 13, MINPAD = 8;
+  if (!prims.length) return;
+  const rows = [[T[lang].all, ...prims.map(secLabel)]];
+  for (const p of prims) rows.push([secLabel(p), ...s.tree[p].map(secLabel)]);
+  const widths = (row, i, fs) => row.map((l, j) => textWidth(l, fs) + (i > 0 && j === 0 ? CH : 0));
+  let fs = lang === "hi" ? 13.5 : 12.5;
+  rows.forEach((row, i) => { const t = widths(row, i, fs).reduce((a, b) => a + b, 0); if (t + 6 * MINPAD > W) fs = Math.min(fs, fs * (W - 6 * MINPAD) / t); });
+  fs = Math.max(9.5, Math.floor(fs * 4) / 4);
+  sbar.style.fontSize = fs + "px";
+  const place = (row, i) => {
+    const ws = widths(row, i, fs), pad = Math.max(0, (W - ws.reduce((a, b) => a + b, 0)) / 6);
+    let c = 0;
+    return ws.map(w => { const r = [c / W * 100, (w + pad) / W * 100]; c += w + pad; return r; });
+  };
+  const lay0 = place(rows[0], 0), layP = {};
+  prims.forEach((p, i) => { layP[p] = place(rows[i + 1], i + 1); });
+  const count = k => pool.filter(c => inSection(c, k)).length;
+  for (const b of sbar.children) {
+    const kind = b.dataset.kind, key = b.dataset.key;
+    let pos, show, back = false, on = false, delay = 0;
+    if (kind === "all") { pos = lay0[0]; show = level === null; on = show; delay = 140; }
+    else if (kind === "primary") {
+      const i = prims.indexOf(key), open = level === key;
+      pos = open ? layP[key][0] : lay0[i + 1]; show = level === null || open; back = open; on = open && !sec;
+      delay = level === null ? 170 + i * 30 : 0;
+    } else {
+      const p = b.dataset.parent, j = s.tree[p].indexOf(key);
+      pos = layP[p][j + 1]; show = level === p; on = sec === key; delay = 130 + j * 40;
+    }
+    b.style.left = pos[0] + "%"; b.style.width = pos[1] + "%";
+    b.style.setProperty("--d", (show ? delay : 0) + "ms");
+    b.classList.toggle("hide", !show); b.classList.toggle("back", back);
+    b.classList.toggle("empty", kind !== "all" && !back && count(key) === 0);
+    b.setAttribute("aria-pressed", String(on)); b.tabIndex = show ? 0 : -1;
+    if (show) b.removeAttribute("aria-hidden"); else b.setAttribute("aria-hidden", "true");
+    if (back) b.setAttribute("aria-label", T[lang].secBack(secLabel(key))); else b.removeAttribute("aria-label");
+  }
+}
+// the bar moves at once; the cards fade out, change to the section's, start at its newest, and fade in
+function goSection(l, s) {
+  level = l; sec = s;
+  layoutBar();
+  const key = sec || level || "all";
+  if (key === fKey) return;
+  fKey = key;
+  clearTimeout(swapTimer);
+  track.classList.add("swap");
+  swapTimer = setTimeout(() => {
+    cards = sectionCards();
+    renderDeck(null);
+    track.classList.remove("swap");
+  }, 170);
+}
+sbar.addEventListener("click", e => {
+  const b = e.target.closest("button.sb");
+  if (!b || b.classList.contains("hide")) return;
+  const kind = b.dataset.kind, key = b.dataset.key;
+  if (kind === "all") goSection(null, null);
+  else if (kind === "primary") goSection(level === key ? null : key, null);
+  else goSection(b.dataset.parent, sec === key ? null : key);
+});
+new ResizeObserver(() => layoutBar()).observe(sbar);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutBar());
 
 /* ---------- language ---------- */
 function applyLang() {
