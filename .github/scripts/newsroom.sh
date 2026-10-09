@@ -179,12 +179,17 @@ seed() {   # $1 = Supabase database URL
   # pg_dump needs one session for the whole dump: Supabase's pooler gives that on 5432 (session mode), not
   # on 6543 (transaction mode)
   src="${src/:6543\//:5432\/}"
+  # the secret is written for SQLAlchemy ("postgresql+psycopg2://"); libpq reads only "postgresql://"
+  src="$(sed -E 's#^postgres(ql)?(\+[a-z0-9_]+)?://#postgresql://#' <<<"$src")"
   for t in "${TABLES[@]}"; do tabs+=(-t "public.$t"); done
-  local where; where="$(sed -E 's#^[a-z+]+://[^@]*@##; s#\?.*$##' <<<"$src")"   # host:port/db, no credentials
+  # host:port/db only, for messages; NEVER the user or password (Oct 10 2026: a looser pattern let them through)
+  local where; where="$(sed -E 's#^[^/]*//##; s#^[^@]*@##; s#\?.*$##' <<<"$src")"
+  case "$where" in *:*@*|*password*) where="(address hidden)" ;; esac
   echo "copying from $where"
   if ! pg pg_dump --no-owner --no-acl -Fc -Z 6 "${tabs[@]}" -f $W/seed.dump "$src" 2> "$DIR/seed.err"; then
-    cat "$DIR/seed.err"
-    fail "pg_dump from $where failed: $(tail -c 600 "$DIR/seed.err" | tr '\n' ' ')"
+    local err; err="$(tail -c 600 "$DIR/seed.err" | tr '\n' ' ' | sed -E 's#[^ ]*://[^ ]*@#<url>@#g; s#password[^ ]*#password=<hidden>#g')"
+    rm -f "$DIR/seed.err"
+    fail "pg_dump from $where failed: $err"
   fi
   load_dump seed.dump
   rm -f "$DIR/seed.dump"
