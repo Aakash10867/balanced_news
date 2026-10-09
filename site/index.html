@@ -205,6 +205,10 @@
   .tile b { font-family: var(--head); font-size: 26px; font-weight: 700; line-height: 1.05; color: #1f2550; overflow-wrap: anywhere; }
   .tile div { font-size: 14px; line-height: 1.45; }
   .quote .who { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #46549a; margin-bottom: 6px; }
+  /* one quote mark per card, the section's symbol (owner, Oct 9 2026), not one per line: the lines are reported speech */
+  .paper.quote { position: relative; padding-left: 46px; }
+  .quote::before { content: "\201C"; position: absolute; left: 14px; top: 8px; font-family: "Newsreader", Georgia, serif; font-size: 46px;
+                   line-height: 1; color: #46549a; }
   .quote p { margin: 0 0 10px; font-size: 17px; line-height: 1.65; }
   .quote p:last-child { margin-bottom: 0; }
   /* pictures on the cards (owner, Oct 9 2026, canvas "Pictures A"): sharp at the top, softly blurred and washed to
