@@ -186,7 +186,7 @@ def test_videos_are_fetched_once_for_new_articles(tmp_path):
             pass
 
         def json(self):
-            return {"items": [{"id": {"videoId": self.q[:2] + "1"}, "snippet": {"title": "A &amp; B", "channelTitle": "PIB India",
+            return {"items": [{"id": {"videoId": self.q[:2] + "1"}, "snippet": {"title": "Floods in Assam &amp; Bihar", "channelTitle": "PIB India",
                                                                                  "channelId": "pib", "publishedAt": "2026-10-09T10:00:00Z"}}]}
 
     def get(url, params, timeout):
@@ -196,7 +196,7 @@ def test_videos_are_fetched_once_for_new_articles(tmp_path):
     assert asked == ["hi", "en"]
     from nishpaksh.db import videos as vt
     items = s.one(select(vt))["items"]
-    assert items[0]["title"] == "A & B" and items[0]["primary"] is True
+    assert items[0]["title"] == "Floods in Assam & Bihar" and items[0]["primary"] is True
     assert videos.fetch_new(s, key="k", get=get) == []         # once
     assert videos.fetch_new(s, key="", get=get) == []          # no key: nothing
 
