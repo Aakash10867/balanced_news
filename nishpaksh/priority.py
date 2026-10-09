@@ -10,6 +10,11 @@ queue the moment they rank higher: a big late story jumps the queue, coverage gr
 
     rank_new(store, router)   rate stories not yet rated, or whose coverage grew by 2+ sources
     queue(store)              the story ids to prepare now, best first
+
+World outlets (owner, Oct 9 2026): Indian coverage decides relevance. A story with no Indian outlet
+(Rule 1) is a candidate only when 3+ independent world outlets carry it AND it affects people beyond
+one country (Rule 3): one fixed question, asked twice with the stories in reverse order; two "yes"
+needed, "unsure" = no. Kept in `analysis.world`, asked again when coverage grows by 2+.
 """
 from __future__ import annotations
 
@@ -45,17 +50,41 @@ Reply with JSON only: {{"results": [{{"n": 1, "score": 4, "filler": false}}, ...
 
 BATCH = 20
 
+GLOBAL_PROMPT = """Below are news stories from outside India, each shown by the headlines different outlets gave it.
+For each story: does it directly affect people OUTSIDE the country where it happened?
+
+"yes": a war or armed conflict between countries; a disaster or disease crossing borders; a decision by a
+major power, the UN or another global body that changes things for other countries; oil, trade, markets,
+migration or climate affecting many countries; a coup or election result in a major power.
+"no": one country's own affairs: its local politics, crimes, accidents, courts, celebrities, sport,
+weather, a company's local news.
+
+Examples:
+- "US raises tariffs on all steel imports to 50%" -> yes
+- "Israel strikes Iranian nuclear site; oil jumps 8%" -> yes
+- "WHO declares mpox a global health emergency" -> yes
+- "Pakistan's Supreme Court hears petition on Imran Khan's bail" -> no (one country's courts)
+- "Three killed in Texas shooting" -> no (a crime in one country, however grave)
+- "UK Labour party picks new deputy leader" -> no (one party's affairs)
+- "Earthquake kills 40 in Nepal" -> no (a disaster inside one country)
+If unsure, answer "unsure".
+
+{stories}
+
+Reply with JSON only: {{"results": [{{"n": 1, "answer": "yes"}}, {{"n": 2, "answer": "no"}}, ...]}}"""
+
 
 def _candidates(store: Store, now: dt.datetime) -> dict[int, dict]:
     """Unpublished stories with 3+ independent sources whose newest report is fresh enough to write."""
     from .editions import frozen_ids
-    from .wire import independence_groups
+    from .wire import independence_groups, independent
     since = now - dt.timedelta(hours=SETTINGS.stale_after_hours)
     # only stories with a report inside the window (as `newest < since` below), so old stories are not
     # read every run (egress, Oct 8 2026)
     fresh = (select(articles.c.story_id).where(articles.c.story_id.is_not(None), or_(
         articles.c.fetched_at >= since,
         and_(articles.c.fetched_at.is_(None), or_(articles.c.published_at >= since, articles.c.published_at.is_(None))))))
+    from .ownership import region_of
     rows = store.rows(select(articles.c.id, articles.c.story_id, articles.c.outlet, articles.c.url, articles.c.agency,
                              articles.c.wire_group, articles.c.title, articles.c.lang, articles.c.published_at,
                              articles.c.fetched_at)
@@ -70,11 +99,68 @@ def _candidates(store: Store, now: dt.datetime) -> dict[int, dict]:
         newest = max((a["fetched_at"] or a["published_at"] or now) for a in arts)
         if newest < since:
             continue
-        groups = len(set(independence_groups(arts).values()))
+        groups = len(independent(independence_groups(arts)))
         if groups >= SETTINGS.min_sources_to_read:
             out[sid] = {"groups": groups, "langs": len({a["lang"] for a in arts}),
-                        "titles": list(dict.fromkeys(a["title"] for a in arts if a["title"]))[:3]}
+                        "titles": list(dict.fromkeys(a["title"] for a in arts if a["title"]))[:3],
+                        # Rule 1: an Indian outlet (PIB included) covers it
+                        "indian": any(region_of(a["outlet"], a["url"], a["lang"]) == "india" for a in arts)}
     return out
+
+
+def _ask_global(router: Router, chunk: list[int], cands: dict[int, dict]) -> dict[int, str]:
+    body = "\n".join(f"{n + 1}. " + " | ".join(cands[sid]["titles"]) for n, sid in enumerate(chunk))
+    try:
+        res = router.call("page", GLOBAL_PROMPT.format(stories=body), json_out=True, max_output_tokens=600)
+    except QuotaExhausted:
+        raise
+    except Exception as e:  # noqa: BLE001
+        log.warning("priority: global-impact question failed: %s", str(e)[:200])
+        return {}
+    out = {}
+    for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
+        try:
+            n = int(item["n"]) - 1
+        except (KeyError, TypeError, ValueError):
+            continue
+        if 0 <= n < len(chunk):
+            out[chunk[n]] = str(item.get("answer", "")).strip().lower()
+    return out
+
+
+def world_check(store: Store, router: Router | None, cands: dict[int, dict], an: dict[int, dict],
+                now: dt.datetime) -> int:
+    """Rule 3 for the candidates no Indian outlet covers: global impact, asked twice (the second time
+    in reverse order), only for those the first answer called "yes". Saved in analysis.world."""
+    todo = [sid for sid, c in cands.items() if not c["indian"]
+            and (not (an.get(sid) or {}).get("world")
+                 or c["groups"] >= (an[sid]["world"].get("groups") or 0) + 2)]
+    if not todo or router is None:
+        return 0
+    asked = 0
+    for start in range(0, len(todo), BATCH):
+        chunk = todo[start:start + BATCH]
+        try:
+            first = _ask_global(router, chunk, cands)
+            again = [sid for sid in chunk if first.get(sid) == "yes"]
+            second = _ask_global(router, list(reversed(again)), cands) if again else {}
+        except QuotaExhausted:
+            break
+        for sid in chunk:
+            if sid not in first:
+                continue          # not answered: asked again next run
+            a = an.setdefault(sid, {})
+            a["world"] = {"global": first.get(sid) == "yes" and second.get(sid) == "yes",
+                          "answers": [first.get(sid), second.get(sid)], "groups": cands[sid]["groups"],
+                          "at": now.isoformat(timespec="minutes")}
+            store.exec(update(stories).where(stories.c.id == sid).values(analysis=a))
+            asked += 1
+    return asked
+
+
+def _relevant(c: dict, a: dict | None) -> bool:
+    """Rule 1, or Rule 3 passed."""
+    return c["indian"] or bool(((a or {}).get("world") or {}).get("global"))
 
 
 def rank_new(store: Store, router: Router | None, now: dt.datetime | None = None) -> int:
@@ -85,6 +171,8 @@ def rank_new(store: Store, router: Router | None, now: dt.datetime | None = None
         return 0
     an = {r["id"]: dict(r["analysis"] or {}) for r in store.rows(
         select(stories.c.id, stories.c.analysis).where(stories.c.id.in_(sorted(cands))))}
+    world_check(store, router, cands, an, now)
+    cands = {sid: c for sid, c in cands.items() if _relevant(c, an.get(sid))}
     todo = [sid for sid, c in cands.items()
             if not (an.get(sid) or {}).get("priority")
             or c["groups"] >= (an[sid]["priority"].get("groups") or 0) + 2]
@@ -132,6 +220,7 @@ def queue(store: Store, now: dt.datetime | None = None, size: int | None = None)
         select(stories.c.id, stories.c.analysis).where(stories.c.id.in_(sorted(cands) or [-1])))}
     ranked = [(value(an.get(sid, {}).get("priority"), c["groups"], c["langs"]), c["groups"], sid)
               for sid, c in cands.items()
-              if (an.get(sid, {}).get("priority") or {}).get("score") and not an[sid]["priority"].get("filler")]
+              if (an.get(sid, {}).get("priority") or {}).get("score") and not an[sid]["priority"].get("filler")
+              and _relevant(c, an.get(sid))]
     ranked.sort(reverse=True)
     return [sid for _, _, sid in ranked[:size]]

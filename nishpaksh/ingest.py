@@ -45,6 +45,9 @@ AGENCY_PATTERNS = [
     ("UNI", r"\(\s*UNI\s*\)"),
     ("Reuters", r"\(\s*Reuters\s*\)"),
     ("AFP", r"\(\s*AFP\s*\)"),
+    ("AP", r"\(\s*AP\s*\)"),
+    ("Xinhua", r"\(\s*Xinhua\s*\)"),
+    ("APP", r"\(\s*APP\s*\)"),
     ("Bhasha", r"\(\s*भाषा\s*\)|^भाषा\b"),
     ("ANI", r"\(\s*एएनआई\s*\)"),
     ("IANS", r"\(\s*आईएएनएस\s*\)"),
@@ -72,7 +75,7 @@ def detect_agency(author: str | None, text: str | None) -> str | None:
         for p in probes:
             if p and re.search(pat, p, flags=re.MULTILINE):
                 return name
-    if author and re.fullmatch(r"(?i)\s*(pti|ani|ians|uni|reuters|afp|agencies|agency)\s*", author):
+    if author and re.fullmatch(r"(?i)\s*(pti|ani|ians|uni|reuters|afp|ap|xinhua|agencies|agency)\s*", author):
         return author.strip().upper()
     return None
 

@@ -44,7 +44,7 @@ def published_this_hour(store: Store, now: dt.datetime | None = None) -> int:
 def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
     """Settled, qualifying, unpublished stories, most important first."""
     from . import editions, priority
-    from .wire import independence_groups
+    from .wire import independence_groups, independent
     now = now or utcnow()
     closed = editions.frozen_ids(store)
     rows = store.rows(select(stories.c.id, stories.c.analysis).where(stories.c.qualifies.is_(True)))
@@ -64,7 +64,7 @@ def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
                 pass
         arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency,
                                  articles.c.wire_group, articles.c.lang).where(articles.c.story_id == sid))
-        groups = len(set(independence_groups(arts).values())) if arts else 0
+        groups = len(independent(independence_groups(arts))) if arts else 0
         p = (r["analysis"] or {}).get("priority")
         if p and p.get("filler"):
             continue

@@ -23,7 +23,7 @@ import numpy as np
 
 from .config import SETTINGS
 from .db import Store, articles, canonical, claims, delete, insert, select, source_clusters, stories, story_pairs, update, utcnow
-from .wire import independence_groups
+from .wire import independence_groups, independent, is_state
 
 log = logging.getLogger(__name__)
 STANCE_VAL = {"asserts": 1.0, "attributes": 0.5, "denies": -1.0}
@@ -155,7 +155,9 @@ def analyze_story(store: Store, story_id: int) -> dict:
                              articles.c.extracted_at).where(articles.c.story_id == story_id))
     by_id = {a["id"]: a for a in arts}
     gmap = independence_groups(arts)
-    groups = sorted(set(gmap.values()))
+    # state media are a government speaking, not an outlet with a perspective: listed, never clustered
+    groups = sorted(independent(gmap))
+    state_groups = sorted({g for g in gmap.values() if is_state(g)})
 
     old_analysis = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     amap = old_analysis.get("attribution_map") or {}
@@ -329,8 +331,8 @@ def analyze_story(store: Store, story_id: int) -> dict:
         "groups": {
             g: {"articles": sorted(a for a, gg in gmap.items() if gg == g),
                 "outlets": sorted({by_id[a]["outlet"] for a, gg in gmap.items() if gg == g}),
-                "perspective": labels[g]}
-            for g in groups
+                "perspective": labels.get(g)}
+            for g in groups + state_groups
         },
         "article_group": {str(a): g for a, g in gmap.items()},
     }
@@ -345,7 +347,8 @@ def _coverage(store: Store, story_id: int, arts: list[dict], gmap: dict[int, str
     it is our reader's miss, not the outlet's choice). Omission patterns are the main evidence of a
     perspective (owner, Oct 2026): each side leaves out what is inconvenient to it."""
     from .textmatch import Text, verdict
-    read = [a for a in arts if a["extracted_at"] and a["text_source"] != "summary" and a["text"]]
+    read = [a for a in arts if a["extracted_at"] and a["text_source"] != "summary" and a["text"]
+            and not is_state(gmap[a["id"]])]    # state media are a government speaking, not a unit
     if len({gmap[a["id"]] for a in read}) < 3:
         return {}
     canon = {c["id"]: c["text"] for c in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind)

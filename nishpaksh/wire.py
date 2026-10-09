@@ -85,9 +85,12 @@ def assign_wire_groups(store: Store) -> int:
 
 def independence_groups(arts: list[dict]) -> dict[int, str]:
     """Union articles that are not independent of each other: same wire text,
-    same agency byline, same outlet, or same owner. Returns article id -> group key."""
-    from .ownership import owner_of
-    arts = [dict(a, owner=owner_of(a.get("outlet"), a.get("url"))) for a in arts]
+    same agency byline, same outlet, same owner, or one government's state media.
+    Returns article id -> group key; a group holding state media (or its copy) is
+    "gov:<government>": that government speaking, never an independent outlet (`independent`)."""
+    from .ownership import owner_of, state_government
+    arts = [dict(a, owner=owner_of(a.get("outlet"), a.get("url")),
+                 government=state_government(a.get("outlet"), a.get("url"), a.get("agency"))) for a in arts]
     parent = {a["id"]: a["id"] for a in arts}
 
     def find(x):
@@ -101,7 +104,7 @@ def independence_groups(arts: list[dict]) -> dict[int, str]:
         if rx != ry:
             parent[max(rx, ry)] = min(rx, ry)
 
-    for key in ("wire_group", "agency", "outlet", "owner"):
+    for key in ("wire_group", "agency", "outlet", "owner", "government"):
         first: dict = {}
         for a in arts:
             v = a.get(key)
@@ -111,4 +114,16 @@ def independence_groups(arts: list[dict]) -> dict[int, str]:
                 union(a["id"], first[v])
             else:
                 first[v] = a["id"]
-    return {a["id"]: f"g{find(a['id'])}" for a in arts}
+    gov = {find(a["id"]): a["government"] for a in arts if a["government"]}
+    return {a["id"]: (f"gov:{gov[find(a['id'])].lower()}" if find(a["id"]) in gov else f"g{find(a['id'])}")
+            for a in arts}
+
+
+def is_state(group: str | None) -> bool:
+    return bool(group) and group.startswith("gov:")
+
+
+def independent(groups) -> set[str]:
+    """The independent outlets among group keys (a dict's values or any iterable): state media left out."""
+    vals = groups.values() if isinstance(groups, dict) else groups
+    return {g for g in vals if not is_state(g)}

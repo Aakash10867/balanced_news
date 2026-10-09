@@ -262,7 +262,7 @@ def select_for_extraction(store: Store, focus: set[int] | None = None) -> list[d
     published and teaches the perspective model nothing, so it waits until a second
     independent source appears. Within a story only one article per independent source is
     read (a wire copy repeats its original), up to `max_extract_per_story` sources."""
-    from .wire import independence_groups
+    from .wire import independence_groups, independent
     # the text itself is fetched only for the articles chosen (egress, Oct 8 2026): choosing needs its length
     q = (select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
                 articles.c.story_id, articles.c.title, func.length(articles.c.text).label("text_len"),
@@ -287,7 +287,7 @@ def select_for_extraction(store: Store, focus: set[int] | None = None) -> list[d
         # readable page. Under 3 it can never be published, and omissions (the main evidence of a
         # perspective) can only be seen when several outlets' versions of one story are read.
         readable = {groups[a["id"]] for a in arts if a["text_source"] != "summary"}
-        if len(readable) < SETTINGS.min_sources_to_read:
+        if len(independent(readable)) < SETTINGS.min_sources_to_read:
             continue
         done = [a for a in arts if a["extracted_at"]]
         room = SETTINGS.max_extract_per_story - len(done)
@@ -347,7 +347,7 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int]
     one per independent source per story, stories closest to publishable first."""
     if tavily is None or not tavily.enabled or max_pages <= 0:
         return 0
-    from .wire import independence_groups
+    from .wire import independence_groups, independent
     rows = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
                              articles.c.story_id, articles.c.text_source, articles.c.extracted_at, articles.c.published_at,
                              articles.c.extract_failures, articles.c.author)
@@ -361,7 +361,7 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int]
     wanted: list[tuple[int, dt.datetime, dict]] = []
     for sid, arts in by_story.items():
         groups = independence_groups(arts)
-        if len(set(groups.values())) < 2:
+        if len(independent(groups)) < 2:
             continue
         readable = {groups[a["id"]] for a in arts if a["text_source"] != "summary"}
         tried = set()

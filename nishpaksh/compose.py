@@ -88,6 +88,20 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         d = departures.get(str(aid))
         return f"{d['to']}†" if d else (gpersp.get(agroup.get(aid)) or "–")
 
+    def _state_voice(cid: int) -> str | None:
+        """A statement only foreign state media report in their own voice is that government speaking
+        (owner, Oct 9 2026): written as "Chinese state media said", never as a plain fact."""
+        from .ownership import owner_of, state_voice
+        rows_ = [r for r in members.get(cid, []) if r["stance"] in ("asserts", "attributes")]
+        voices = set()
+        for r in rows_:
+            a = full_arts.get(r["article_id"])
+            v = state_voice(owner_of(a["outlet"], a["url"])) if a else None
+            if not v or r["attributed_to"]:
+                return None
+            voices.add(v)
+        return voices.pop() if len(voices) == 1 else None
+
     def item(cid: int) -> dict:
         c = canon[cid]
         s = support_summary(cid, members, agroup, gpersp)
@@ -122,7 +136,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "framing": {k: sorted(v) for k, v in sorted(framing.items())},
             "sources": sorted(srcs, key=lambda x: (x["perspective"], x["outlet"])),
             "check": check, "minor": s["n_articles"] <= 1,
-            "speaker": speakers.get(str(cid)),
+            "speaker": speakers.get(str(cid)) or _state_voice(cid),
             "role": _role(cid)[0], "related_event": _role(cid)[1] or None,
             "responds_to": [x for x in responds_to.get(cid, []) if members.get(x)],
             "responded_by": [x for x in responded_by.get(cid, []) if members.get(x)],
@@ -202,7 +216,8 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     if prio.get("filler"):
         log.info("story %s is filler: not published", story_id)
         return None
-    n_indep = len(analysis.get("groups") or {})
+    from .wire import independent
+    n_indep = len(independent(list(analysis.get("groups") or {})))
     langs = len({a["lang"] for a in full_arts.values() if a["extracted_at"]})
 
     # threads: earlier stories this one develops, and later ones that develop it (published only)
@@ -243,7 +258,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         "context": context,
         "sources": sources,
         "loaded_words": sorted(banned),
-        "counts": {"articles": len(full_arts), "independent_sources": len(analysis.get("groups") or {}),
+        "counts": {"articles": len(full_arts), "independent_sources": n_indep,
                    "outlets": len({a["outlet"] for a in full_arts.values()})},
         # a suicide story carries a helpline note (responsible-reporting guidelines)
         "suicide": any(re.search(r"(?i)suicide|took (his|her|their) own life|आत्महत्या|ख़ुदकुशी|खुदकुशी", i["text"])

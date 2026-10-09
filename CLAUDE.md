@@ -38,8 +38,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (and not disputed or false) goes INTO the article, shown purple ("one outlet only": an exclusive,
   or a mistake); the colour, not words, says so (see "One author's voice"). `narrative.shade`; the writer and the revision pass must
   use every statement, one-outlet lines included (they were "minor" and optional before).
-- **Interim publishing rule** while perspectives are unknown: 3+ independent read outlets and 2+
-  origins. Perspectives emerge from agreement data (no hand labels of outlets).
+- **Interim publishing rule** while perspectives are unknown: 3+ independent read outlets (state media
+  and PIB not counted, see "Outlets outside India") and 2+ origins. Perspectives emerge from agreement data (no hand labels of outlets).
 - **Option B:** a page we could not read (headline/blurb only) is listed as "could not be read",
   never used for facts. Tavily reads blocked pages on budget.
 - **One author's voice; the colour carries the support (owner, Oct 7 2026, option A).** No "according
@@ -374,6 +374,25 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   run stats `heavy_cache` (hit / fetched). Article choice reads text lengths, then the text of the chosen articles only;
   priority reads only stories with a fresh report; the feed re-reads only articles whose payload md5 changed
   (`manifest.json` on the feed branch). Keep new heavy reads behind `heavy.columns`/`heavy.fill`.
+- **Outlets outside India (owner, Oct 9 2026; `worldgate.py`, `priority.py`, `config/ownership.yaml`).** Two jobs:
+  India's stories seen from outside (independent origins, real cross-border disputes) and world stories of global
+  impact. Indian coverage decides relevance: (1) a world outlet's article joins stories Indian outlets cover;
+  (2) Indian outlets' world pages are read too; (3) a story no Indian outlet covers is a candidate only with 3+
+  independent world outlets AND two "yes" to one global-impact question (asked twice, reverse order; unsure = no;
+  `analysis.world`). Ownership groups carry `region: world` (BBC included) and, for state media, `government:`
+  and `voice:`. **State media** (the government controls the editorial line, no legal guarantee of independence):
+  their group key is `gov:<government>` (`wire.independence_groups`; a paper carrying "(Xinhua)" copy joins it),
+  one origin with that government's officials, NEVER counted as an independent outlet (`wire.independent`:
+  reading threshold, rating, origins `outlets`, `n_sources`, perspectives) and never a perspective unit. This
+  also stopped PIB counting as an outlet. A statement only foreign state media report in their own voice gets the
+  speaker "Chinese state media" etc. (`compose._state_voice`). Owner's borderline calls: Al Jazeera, The National,
+  CNA = state; Arab News, DD News / AIR = not. Public broadcasters independent by law (BBC, DW, France 24, NPR)
+  are ordinary outlets. Paywalled papers are not fed (option B). **Embeddings** (3,000 texts/day; 2,236-2,975
+  used Oct 5-8 before this): a world-feed article is embedded only if it names India, shares 2+ names with an
+  Indian headline of the last 48 h, or with headlines of 2+ other independent world outlets; the rest wait and
+  are checked each run (`worldgate.hold`, code only). When the budget is short, outlets whose articles end in
+  3+ outlet stories go first (`stories._yields`; Aaj Tak home 30%, The Hindu 23%, NDTV India 26%); nothing is
+  dropped. An outlet in no group (found by search) is Indian unless its domain is another country's.
 - **Scheduling:** Supabase `pg_cron` calls GitHub's workflow_dispatch at :05 every hour
   (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); the pipeline has no GitHub
   schedule (removed Oct 8 2026). The writer (`writer.yml`) keeps its :55 GitHub schedule as backup.

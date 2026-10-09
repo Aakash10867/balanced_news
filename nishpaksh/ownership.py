@@ -1,5 +1,13 @@
 """Which owner group an outlet belongs to (config/ownership.yaml). Outlets with one owner count
-as one independent source. Unknown outlets are their own group."""
+as one independent source. Unknown outlets are their own group.
+
+Two more public facts per group (owner, Oct 9 2026):
+  region       "world" for an owner based outside India (default: India). Indian coverage is what
+               makes a story relevant (worldgate.py, priority.py).
+  government   the government that controls the outlet's editorial line (state media; PIB): what it
+               publishes is that government speaking, one origin with its officials, never an
+               independent outlet (wire.independence_groups).
+"""
 from __future__ import annotations
 
 import functools
@@ -12,7 +20,7 @@ from .config import load_yaml
 @functools.lru_cache(maxsize=1)
 def _maps() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     by_outlet, by_domain, gov = {}, {}, {}
-    for group, info in (load_yaml("ownership.yaml").get("groups") or {}).items():
+    for group, info in _groups().items():
         for o in info.get("outlets") or []:
             by_outlet[o.strip().lower()] = group
         for d in info.get("domains") or []:
@@ -20,6 +28,11 @@ def _maps() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
         if info.get("government"):
             gov[group] = str(info["government"])
     return by_outlet, by_domain, gov
+
+
+@functools.lru_cache(maxsize=1)
+def _groups() -> dict[str, dict]:
+    return load_yaml("ownership.yaml").get("groups") or {}
 
 
 def _registrable(host: str) -> str:
@@ -60,8 +73,35 @@ def is_known_outlet(name: str | None) -> bool:
 
 
 def government_of(owner: str) -> str | None:
-    """'Union' for the government's own press office, else None."""
+    """The government that controls an owner group ('Union' for PIB, 'China' for Xinhua), else None."""
     return _maps()[2].get(owner)
+
+
+def state_government(outlet: str | None, url: str | None = None, agency: str | None = None) -> str | None:
+    """The government speaking through this article: its outlet is state media, or it carries the copy
+    of a state agency ("(Xinhua)")."""
+    gov = government_of(owner_of(outlet, url))
+    if not gov and agency and (agency.strip().lower() in _maps()[0] or _plain(agency) in _plain_owner()):
+        gov = government_of(owner_of(agency))
+    return gov
+
+
+def state_voice(owner: str) -> str | None:
+    """How the writer names a foreign state outlet's own reporting ("Chinese state media")."""
+    return (_groups().get(owner) or {}).get("voice")
+
+
+def region_of(outlet: str | None, url: str | None = None, lang: str | None = None) -> str:
+    """'india' or 'world'. An outlet in no group was found by search (Google News, India edition) for a
+    story we already have: Indian unless its domain is another country's (.pk, .co.uk, .com.au ...)."""
+    owner = owner_of(outlet, url)
+    info = _groups().get(owner)
+    if info is not None:
+        return "world" if info.get("region") == "world" else "india"
+    tld = urlsplit(url or "").netloc.lower().rpartition(".")[2]
+    if lang != "hi" and len(tld) == 2 and tld.isalpha() and tld != "in":
+        return "world"
+    return "india"
 
 
 def _plain(name: str) -> str:

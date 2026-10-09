@@ -33,7 +33,7 @@ from .config import SETTINGS
 from .db import Store, articles, insert, published, select, stories, update, utcnow
 from .ingest import HEADERS, canonical_url, detect_agency, fetch_article, is_web_url
 from .ownership import canonical_outlet, owner_of
-from .wire import independence_groups, minhash
+from .wire import independence_groups, independent, minhash
 
 log = logging.getLogger(__name__)
 STOP = set("""a an the of in on at to for from by with and or but as is are was were be been has have had
@@ -150,7 +150,7 @@ def pick_stories(store: Store, n: int, focus: set[int] | None = None) -> list[di
             continue
         if s["last_searched_at"] and now - s["last_searched_at"] < dt.timedelta(hours=SETTINGS.search_every_hours):
             continue
-        groups = len(set(independence_groups(members).values()))
+        groups = len(independent(independence_groups(members)))
         newest = max(a["published_at"] for a in members)
         age_h = (now - newest).total_seconds() / 3600
         official = any(a["role"] == "official" for a in members)
