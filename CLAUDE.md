@@ -290,6 +290,16 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   a role of that person; never a role for a body; he/she only for that speaker with evidence) and "speaker named
   twice" (`voice.double_attribution`); (5) `style.vary_attribution` refers to each sentence's own statements'
   speaker, and a body is never "he" / "she".
+- **A body's run of lines (owner, Oct 9 2026, story 16708: "The US Department of State said that ..." three times
+  in a row).** People already got "..., he said." / "..., Kabir said."; bodies got nothing. Now (`style.vary_attribution`
+  body branch, `voice.is_body`, `voice.body_refs`): in a paragraph, the second and later lines of the same BODY (by
+  its statements' speaker key) end "..., the department said." / "..., it said." (rotated; a plural body: "...,
+  they said." / "..., the officials said."), and "The US Department of State identified ..." becomes "The department
+  identified ..."; never when the line opens with the body's own pronoun ("its primary activity"). A foreign
+  government is one speaker however named (`voice._country_gov`: "US Department of State" = "US officials" = "the
+  United States government"). People are unchanged: he/she only with evidence, else the surname or role (singular
+  "they" for a named person was not adopted: it reads as plural next to bodies). A person missing from the name
+  list is referred to by surname, never "the Raghoo Puri".
 - **Introductions:** every person and body at first mention with the fullest name and role the
   statements give (`narrative._people` lists them for the writer); extraction names people in full.
 - **Attribution like a newspaper:** name a speaker once, then the surname, the role, or "he"/"she" only

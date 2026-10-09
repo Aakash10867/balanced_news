@@ -180,12 +180,40 @@ ALIASES = {
 }
 
 
+# a foreign government however it is named ("US Department of State", "US officials", "the United States government",
+# "Washington": one speaker; Oct 9 2026, story 16708 had them as three)
+COUNTRY = {"us": "us", "u.s.": "us", "united states": "us", "american": "us", "washington": "us", "white house": "us",
+           "state department": "us", "treasury": "us", "china": "china", "chinese": "china", "beijing": "china",
+           "pakistan": "pakistan", "pakistani": "pakistan", "islamabad": "pakistan", "russia": "russia",
+           "russian": "russia", "moscow": "russia", "iran": "iran", "iranian": "iran", "tehran": "iran",
+           "israel": "israel", "israeli": "israel", "uk": "uk", "british": "uk", "bangladesh": "bangladesh",
+           "nepal": "nepal", "sri lanka": "sri lanka", "canada": "canada", "canadian": "canada"}
+GOV_WORD = re.compile(r"\b(government|officials?|administration|department|ministry|treasury|embassy|authorities|"
+                      r"spokesperson|white house|state department)\b")
+
+
+def _country_gov(low: str) -> str | None:
+    m = re.match(r"^(?:the\s+)?(u\.s\.|us|united states|american|washington|white house|state department|treasury|"
+                 r"china|chinese|beijing|pakistan|pakistani|islamabad|russia|russian|moscow|iran|iranian|tehran|israel|"
+                 r"israeli|uk|british|bangladesh|nepal|sri lanka|canada|canadian)\b(?P<rest>.*)$", low)
+    if not m:
+        return None
+    country = COUNTRY[m.group(1)]
+    if m.group(1) in ("washington", "white house", "state department", "treasury", "beijing", "islamabad", "moscow",
+                      "tehran") or GOV_WORD.search(m.group("rest")) or "department of" in low:
+        return f"{country} government"
+    return None
+
+
 def speaker_key(name: str | None) -> str | None:
     """One key per speaker: "the Centre" = "the Central government" = "Solicitor General Tushar Mehta" (who
     argues for it); a person by surname ("Kapil Sibal" = "Sibal"); anything else as written, lower case."""
     if not name or not name.strip():
         return None
     low = re.sub(r"^(?:the|a|an)\s+", "", name.strip().lower())
+    gov = _country_gov(low)
+    if gov:
+        return gov
     for key, names in ALIASES.items():
         if any(low == a or low.startswith(a + " ") or low.endswith(" " + a) for a in names):
             return key
@@ -266,3 +294,48 @@ def double_attribution(sentence: str, source_text: str) -> bool:
     """ "X argued that the Centre argued that ...": a speaker named twice for one claim (story 16197), unless the
     statements themselves are reported speech ("A said that B claimed ...")."""
     return bool(DOUBLE.search(sentence or "")) and not DOUBLE.search(source_text or "")
+
+
+# how an article refers to a body after naming it (owner, Oct 9 2026, story 16708: "The US Department of State said
+# that ..." three times in a row): a short name and "it" for one body, "they" for many; never "he" / "she"
+PLURAL_BODY = re.compile(r"(?i)\b(officials|authorities|police|sources|protesters|students|farmers|workers|residents|"
+                         r"villagers|leaders|members|lawyers|doctors|investigators|agencies|parties|companies|"
+                         r"activists|unions|judges|ministers|mps|mlas|experts|analysts|petitioners)$")
+SHORT_BODY = ("department", "ministry", "court", "commission", "government", "party", "company", "board", "council",
+              "committee", "agency", "bank", "army", "navy", "embassy", "administration", "authority", "bench",
+              "tribunal", "corporation", "union", "regulator", "force", "office", "secretariat", "centre")
+
+
+def body_refs(name: str) -> list[str]:
+    """Second and later references to a body, to rotate: ["the department", "it"], or ["they", "the officials"]."""
+    low = re.sub(r"^(?:the|a|an)\s+", "", (name or "").strip().lower())
+    m = PLURAL_BODY.search(low)
+    if m:
+        word = m.group(1)
+        return ["they"] + ([f"the {word}"] if word != "police" else ["police"])
+    words = re.findall(r"[a-z]+", low)
+    short = next((w for w in reversed(words) if w in SHORT_BODY), None)
+    if speaker_key(name) == "centre":
+        short = "the Centre"
+    elif short:
+        short = f"the {short}"
+    return ([short] if short else []) + ["it"]
+
+
+BODY_WORDS = set(SHORT_BODY) | {"trust", "foundation", "limited", "ltd", "group", "institute", "university", "school",
+                                "hospital", "police", "court", "bench", "division", "state", "states", "india", "nations",
+                                "organisation", "organization", "association", "federation", "front", "congress", "bjp",
+                                "aap", "cell", "wing", "unit", "station", "media", "channel", "network", "inc"}
+
+
+def is_body(name: str | None) -> bool:
+    """A body, not a person: a government, court, party, company, police ... ("US Department of State", "Supreme
+    Court", "Kanzeon Public Charitable Trust", "US officials"); "Union Minister Jyotiraditya Scindia" is a person."""
+    if not name:
+        return False
+    if speaker_key(name) in ALIASES or (speaker_key(name) or "").endswith(" government") or PLURAL_BODY.search(name.strip()):
+        return True
+    words = re.findall(r"[A-Za-z]+", name)
+    last = words[-1].lower() if words else ""
+    return last in BODY_WORDS or any(w.lower() in ("department", "ministry", "commission", "court", "trust", "party",
+                                                       "government", "police", "council") for w in words[-2:])

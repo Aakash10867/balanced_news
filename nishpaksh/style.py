@@ -126,6 +126,9 @@ CHAIN = re.compile(r"^(?P<who>He|She|They|The [a-z]+(?: [a-z]+)?|(?:[A-Z][\w.-]+
 ATTRIB = re.compile(rf"\b{SPEECH}\b")
 PRON_ATTRIB = re.compile(r"(?:^|(?<=, ))(He|She|he|she)(?=\s+(?:also\s+|further\s+)?(?:said|added|stated|noted|claimed|alleged|told|maintained)\b)")
 NEUTRAL = {"stated": "said", "mentioned": "said", "remarked": "said", "asserted": "said", "noted": "said"}
+BODY_LEAD = re.compile(r"^(?P<who>(?:The\s+)?[A-Z][^,\"“”]{1,70}?)\s+(?:(?:also|further|additionally)\s+)?"
+                       r"(?P<verb>said|stated|added|noted|announced|alleged|claimed|maintained|asserted)(?:\s+that)?,?\s+"
+                       r"(?P<body>[^\"“”]{20,}?)(?P<end>[.!?])$")
 
 
 class Refs:
@@ -185,12 +188,50 @@ def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None, spe
     def body_name(sp: str) -> str:
         return sp if sp.lower().startswith("the ") else f"the {sp}"
 
+    from .voice import body_refs, is_body, wrong_speaker
+    body_used: dict[str, int] = {}
+
+    def body_run(sent: dict, prev: dict) -> str | None:
+        """The run of one BODY's lines (owner, Oct 9 2026, story 16708: "The US Department of State said that ..."
+        three times): the second and later end in "..., the department said." / "..., it said." / "..., they
+        said." Only when the line before is the same body's (its statements' speaker, by key) and was attributed."""
+        if not speakers_of or sent.get("parts"):
+            return None
+        sps = [x for x in speakers_of(sent) if x]
+        keys = {speaker_key(x) for x in sps}
+        prev_keys = {speaker_key(x) for x in speakers_of(prev) if x}
+        if len(keys) != 1 or keys != prev_keys or refs.person(sps[0]) or not is_body(sps[0]):
+            return None
+        text = sent["text"].strip()
+        options = body_refs(sps[0])
+        m = BODY_LEAD.match(text)
+        # a body opening with its own pronoun ("... claimed its primary activity ...") would read "Its ..., it claimed"
+        if not m or ATTRIB.search(m.group("body")) or wrong_speaker(text, sps, "", {}) \
+                or re.match(r"(?i)(its|their|it|they)\b", m.group("body")):
+            # "The US Department of State identified ..." after its own line: "The department identified ..."
+            name = re.match(rf"^(?:The\s+)?{re.escape(re.sub(r'(?i)^the\s+', '', sps[0]))}\b", text)
+            subj = next((o for o in options if o not in ("it",)), None)
+            if name and subj and not ATTRIB.search(text[name.end():name.end() + 40]):
+                return subj[:1].upper() + subj[1:] + text[name.end():]
+            return None
+        n = body_used.get(sps[0], 0)
+        body_used[sps[0]] = n + 1
+        ref = options[n % len(options)]
+        verb = "said" if m.group("verb") == "added" else NEUTRAL.get(m.group("verb"), m.group("verb"))
+        body = m.group("body").rstrip(",;: ")
+        return f"{body[:1].upper()}{body[1:]}, {ref} {verb}{m.group('end')}"
+
     for para in paragraphs:
         for k in range(len(para)):
             if para[k].get("parts"):
                 continue                  # moving words across parts would break their colours
             cur = para[k]["text"].strip()
             named = refs.person(cur)
+            if k > 0:
+                varied = body_run(para[k], para[k - 1])
+                if varied:
+                    para[k]["text"] = varied
+                    continue
             m = CHAIN.match(cur)
             if m and k > 0 and ATTRIB.search(para[k - 1]["text"]) and not ATTRIB.search(m.group("body")):
                 who = m.group("who")
@@ -221,8 +262,11 @@ def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None, spe
             t = para[k]["text"]
             for pm in reversed(list(PRON_ATTRIB.finditer(t))):
                 full, body = own(para[k], refs.person(t[:pm.start()]) or current)
-                if body:
+                if body and is_body(body):
                     t = t[:pm.start()] + body_name(body) + t[pm.end():]     # a body is never "he" / "she"
+                elif body:
+                    # a person the article's name list does not hold: the surname, never "the Raghoo Puri"
+                    t = t[:pm.start()] + body.split()[-1] + t[pm.end():]
                 elif full and not refs.allowed(full, pm.group(1)):
                     short = full.split()[-1]
                     t = t[:pm.start()] + short + t[pm.end():]

@@ -3175,3 +3175,29 @@ def test_one_speakers_argument_is_told_together():
     assert [[x["ids"][0] for x in p] for p in out] == [[5], [1, 2], [3, 4, 6]] or \
         [[x["ids"][0] for x in p] for p in out] == [[5], [1, 4, 6, 2], [3]]
     assert keys == ["say"] * len(out)
+
+
+def test_a_bodys_run_of_lines_reads_like_a_newspaper():
+    """Story 16708 (Oct 9 2026): "The US Department of State said that ..." three times in a row."""
+    from nishpaksh.style import Refs, vary_attribution
+    from nishpaksh.voice import speaker_key
+    assert speaker_key("US Department of State") == speaker_key("US officials") == speaker_key("United States government")
+    sp = {1: "US Department of State", 2: "US Department of State", 3: "US Department of State",
+          4: "US Department of State", 5: "US officials", 6: "US officials", 7: "Union Minister Jyotiraditya Scindia",
+          8: "Union Minister Jyotiraditya Scindia"}
+    P = [[{"text": "The US Department of State said that the entities traded petroleum products originating from Iran.", "ids": [1]},
+          {"text": "The US Department of State said that the entities channelled millions of dollars to Iran.", "ids": [2]},
+          {"text": "The US Department of State identified two Mumbai companies for facilitating the import.", "ids": [3]},
+          {"text": "The US Department of State said that a wind-down period runs until October 23.", "ids": [4]}],
+         [{"text": "US officials said that Dhwani Vora and Nisarg Vora were named for their executive roles.", "ids": [5]},
+          {"text": "US officials said that Ketan Kochikar was named for his role in the operations.", "ids": [6]}],
+         [{"text": "Union Minister Jyotiraditya Scindia said one GB of data costs 8 rupees.", "ids": [7]},
+          {"text": "Scindia said the average monthly data usage has grown to 36 GB.", "ids": [8]}]]
+    vary_attribution(P, Refs({}, {}, {}), lambda s: [sp[i] for i in s["ids"]])
+    t = [s["text"] for p in P for s in p]
+    assert t[0].startswith("The US Department of State said")
+    assert t[1].endswith(", the department said.")
+    assert t[2].startswith("The department identified")
+    assert t[3].endswith(", it said.")
+    assert t[5].endswith(", they said.")
+    assert "the union" not in t[7].lower() and "it said" not in t[7]
