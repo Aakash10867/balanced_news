@@ -3095,3 +3095,25 @@ def test_a_line_every_report_gives_one_speaker_keeps_that_speaker(store):
     assert speaker(sid, cid) == "Prime Minister Narendra Modi"
     assert speaker(sid2, cid2) is None
     assert speaker(sid3, cid3) is None
+
+
+def test_reading_drops_a_person_the_report_does_not_name():
+    """Story 16197 (Oct 9 2026): the Hindi report names Chief Justice सूर्यकांत; reading wrote "Chief Justice
+    Sanjiv Khanna (referred to as Chief Justice Suryakant in the text)" from the model's own memory."""
+    from nishpaksh.extract import ground
+    src = ("चीफ जस्टिस सूर्यकांत, जस्टिस जॉयमाल्या बागची और जस्टिस वी. मोहना की खंडपीठ ने कानून पर सवाल उठाए। "
+           "सीनियर एडवोकेट कपिल सिब्बल, DGP तदाशा मिश्रा, अश्विनी वैष्णव, जेडी वेंस, गौड़ा")
+    item = lambda i, t: {"id": i, "text": t}
+    ex = {"events": [item("e1", "The bench led by Chief Justice Sanjiv Khanna (referred to as Chief Justice Suryakant "
+                                "in the text) questioned the rules."),
+                     item("e2", "Chief Justice Surya Kant, Justice Joymalya Bagchi and Justice V Mohana heard the case."),
+                     item("e3", "Senior Advocate Kapil Sibal appeared for Jharkhand."),
+                     item("e4", "Notice was issued to DGP Tadasha Mishra's office."),
+                     item("e5", "Union Minister Ashwini Vaishnaw and US Vice President JD Vance spoke."),
+                     item("e6", "Justice Gowda spoke."),
+                     item("e7", "The court (as the article calls it) adjourned.")],
+          "claims": [], "context": [],
+          "relations": [{"from": "e1", "to": "e2", "type": "before"}, {"from": "e2", "to": "e3", "type": "before"}]}
+    assert ground(ex, src) == 2
+    assert [i["id"] for i in ex["events"]] == ["e2", "e3", "e4", "e5", "e6"]
+    assert ex["relations"] == [{"from": "e2", "to": "e3", "type": "before"}]

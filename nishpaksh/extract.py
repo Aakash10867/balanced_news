@@ -108,6 +108,8 @@ Rules:
    other stories a page lists around the article (other videos, "also read", "trending", "top stories",
    sidebars): they are not this article. Ignore
    anything the page says about the publication itself (its history, readership, editions, awards).
+   Names, posts and numbers come ONLY from the article: never add, correct or update one from your own
+   knowledge (it may be out of date), and never comment on the article ("referred to as X in the text").
 9. "frame": the same item broken into fields, so items from different articles can be compared:
    who = who acts, or what the item is about ("Police", "India and EFTA", "Prime Minister Narendra Modi");
    action = what is done, as a base verb or verb phrase in English ("arrest", "sign", "take effect",
@@ -199,6 +201,32 @@ def normalize_extraction(data: dict) -> dict | None:
     return out
 
 
+META = re.compile(r"(?i)\([^)]*\b(?:the|this) (?:text|article|report|source)\b[^)]*\)|"
+                  r"\b(?:referred to|called|named|written|spelt|spelled) as [^.;]*\bin (?:the|this) (?:text|article|report)\b")
+
+
+def ground(ex: dict, source: str) -> int:
+    """Statements the report itself does not support are dropped, not patched (Oct 9 2026, story 16197: a Hindi
+    report names Chief Justice सूर्यकांत; reading wrote "Chief Justice Sanjiv Khanna (referred to as Chief Justice
+    Suryakant in the text)", a name from the model's own, out-of-date memory): a titled person the report does
+    not name, in any spelling or script (`textmatch.absent_people`), or a note about the text itself."""
+    from .textmatch import absent_people
+    dropped = set()
+    for key in ("events", "claims", "context"):
+        keep = []
+        for it in ex.get(key) or []:
+            bad = absent_people(it["text"], source)
+            if bad or META.search(it["text"]):
+                dropped.add(it["id"])
+                log.info("reading dropped a statement the report does not support (%s): %s",
+                         ", ".join(bad) or "a note about the text", it["text"][:120])
+                continue
+            keep.append(it)
+        ex[key] = keep
+    ex["relations"] = [r for r in ex.get("relations") or [] if r["from"] not in dropped and r["to"] not in dropped]
+    return len(dropped)
+
+
 def store_extraction(store: Store, article_id: int, story_id: int | None, ex: dict) -> None:
     store.exec(delete(claims).where(claims.c.article_id == article_id))
     rows = []
@@ -234,6 +262,7 @@ def _extract_one(store: Store, router: Router, a: dict) -> str:
         ex = normalize_extraction(res.data)
         if ex is None:
             raise ValueError("empty extraction")
+        ground(ex, f"{a['title'] or ''} {a['text'] or ''}")
     except QuotaExhausted:
         return "quota"
     except CallFailed as e:

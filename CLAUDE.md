@@ -587,6 +587,13 @@ Hindi. At most 2 per clock hour.
   81 of the 627 lines on the 40 latest articles that every report gives to someone. Now, when every report of a
   line gives it to the same speaker (stance "attributes", one `attributed_to`), that is its speaker
   (`compose._reading_speaker`); an outlet, "media" or "reports" never is.
+- Story 16197 (Oct 9 2026): the Hindi report names Chief Justice सूर्यकांत; reading wrote "Chief Justice Sanjiv
+  Khanna (referred to as Chief Justice Suryakant in the text)", a name from the model's own out-of-date memory, and it
+  was published. Reading now drops (never patches) a statement naming a titled person the report does not name in
+  any spelling or script (`textmatch.absent_people`: names written in one rough Roman form with vowels, both scripts;
+  same consonants or close spelling = present; a name split differently counts), or a note about the text itself
+  (`extract.ground`, `extract.META`); the prompt says names, posts and numbers come only from the article. On 183
+  real statements naming a titled person (Hindi and English) it flagged only that line.
 - Story 15429 (Oct 8 2026): the page models were overloaded mid-translation and the Hindi page went live
   half in English. The desk now finishes half-translated Hindi pages after writing
   (`compose.finish_translations`, selected in SQL by `payload_hi.translation_complete = false`, up to 3 per
