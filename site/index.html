@@ -148,7 +148,16 @@
   #sheet.open .hbox h1 { text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); }
   .hbox h1 { position: relative; margin: 0; font-family: var(--head); font-weight: 600; font-size: 27px; line-height: 1.15; letter-spacing: -0.005em; }
   html.hi .hbox h1 { font-size: 24px; line-height: 1.45; letter-spacing: 0; }
-  .hbox .meta { position: relative; margin-top: 10px; font-size: 13px; opacity: 0; }
+  .hbox .meta { position: relative; margin-top: 10px; font-size: 13px; opacity: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  /* share (owner, Oct 9 2026): at the right of the sources and time line */
+  .share { flex: none; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin: -8px -6px -8px 0;
+           border: 1px solid rgba(255,255,255,0.28); border-radius: 50%; background: rgba(255,255,255,0.12); color: #fff; cursor: pointer;
+           transition: background-color 160ms ease, transform 120ms ease; }
+  .share:active { transform: scale(0.94); background: rgba(255,255,255,0.24); }
+  .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 20; transform: translate(-50%, 12px); opacity: 0;
+           background: #1f2550; color: #fff; font-size: 14px; font-weight: 600; padding: 10px 16px; border-radius: 999px; pointer-events: none;
+           box-shadow: 0 6px 18px rgba(22,26,56,0.25); transition: opacity 200ms ease, transform 260ms var(--ease); }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
   #sheet.open .hbox .meta { opacity: .92; }
   #sheet.anim .hbox .meta { transition: opacity 260ms ease 260ms; }
   .rise { opacity: 0; transform: translateY(24px); }
@@ -283,7 +292,8 @@
           <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिं</button>
         </div>
       </div>
-      <div class="hbox" id="hbox"><div class="layer brand"></div><h1 id="sheet-h"></h1><div class="meta" id="sheet-meta"></div></div>
+      <div class="hbox" id="hbox"><div class="layer brand"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
       <div class="rise" id="rise"></div>
     </div>
   </div>
@@ -318,7 +328,7 @@ const T = {
     bar: (c) => `${c.e} established, ${c.o} one outlet only, ${c.d} disputed, ${c.r} shown false, ${c.u} not yet cross-checked`,
     all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`,
     secEmpty: (l) => `Nothing in ${l} yet.`, secBody: "Articles get their sections when they are published, so this one will fill up as new stories come in.",
-    showAll: "Show all news",
+    showAll: "Show all news", share: "Share", copied: "Link copied",
   },
   hi: {
     wordmark: "निष्पक्ष", hello: "नमस्ते।", greet: ["सुप्रभात।", "नमस्कार।", "शुभ संध्या।"],
@@ -339,7 +349,7 @@ const T = {
     bar: (c) => `${c.e} स्थापित, ${c.o} केवल एक स्रोत, ${c.d} मतभेद, ${c.r} असत्य, ${c.u} अभी पुष्टि नहीं`,
     all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`,
     secEmpty: (l) => `${l} में अभी कोई ख़बर नहीं।`, secBody: "हर लेख को छपते समय उसका खंड मिलता है, इसलिए नई ख़बरों के साथ यह खंड भरता जाएगा।",
-    showAll: "सारी ख़बरें देखें",
+    showAll: "सारी ख़बरें देखें", share: "शेयर करें", copied: "लिंक कॉपी हो गया",
   },
 };
 const KEYCOLOR = {established: "var(--est)", developing: "var(--unv)", unverified: "var(--unv)", single: "var(--one)", disputed: "var(--dis)", false: "var(--fal)"};
@@ -855,6 +865,24 @@ sbar.addEventListener("click", e => {
 new ResizeObserver(() => layoutBar()).observe(sbar);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutBar());
 
+/* ---------- share (owner, Oct 9 2026): the phone's share sheet, else the link is copied ---------- */
+let toastTimer = null;
+function toast(msg) {
+  const el = $("toast"); el.textContent = msg; el.classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("on"), 1800);
+}
+$("share").addEventListener("click", async () => {
+  if (!openId) return;
+  const url = `${location.origin}${location.pathname}?lang=${lang}#/story/${encodeURIComponent(openId)}`;
+  const title = $("sheet-h").textContent || "Nishpaksh";
+  if (navigator.share) {
+    try { await navigator.share({title, text: title, url}); return; }
+    catch (e) { if (e && e.name === "AbortError") return; }
+  }
+  try { await navigator.clipboard.writeText(url); toast(T[lang].copied); }
+  catch (e) { window.prompt(T[lang].share, url); }
+});
+
 /* ---------- language ---------- */
 function applyLang() {
   document.documentElement.lang = lang;
@@ -862,6 +890,7 @@ function applyLang() {
   $("wm").textContent = T[lang].wordmark; $("wm2").textContent = T[lang].wordmark;
   $("greet").textContent = greeted ? greeting() : T[lang].hello;
   $("back").setAttribute("aria-label", T[lang].back);
+  $("share").setAttribute("aria-label", T[lang].share);
   document.querySelectorAll(".pill button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
 }
 async function setLang(l) {
