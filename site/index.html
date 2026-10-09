@@ -300,16 +300,16 @@
      becomes the back button while its five sub-sections take the other places. Hidden while an article is open. */
   nav.sections { flex: none; position: relative; z-index: 11; color: #fff;
                  margin: 0 calc(-1 * var(--padr)) 0 calc(-1 * var(--padl));
-                 padding: 5px 10px calc(7px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0;
+                 padding: 6px 10px calc(9px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0;
                  box-shadow: 0 -2px 12px rgba(22,26,56,0.12); transition: transform 380ms cubic-bezier(.4,0,.2,1); }
   html.reading nav.sections { transform: translateY(calc(100% + 24px)); }
-  .sbar { position: relative; height: 42px; font-size: 12.5px; }
+  .sbar { position: relative; height: 48px; font-size: 13.25px; }   /* a little taller (review, Oct 9 2026): 54 -> 63 px in all */
   .sb { position: absolute; top: 0; bottom: 0; padding: 0; margin: 0; border: 0; background: transparent; cursor: pointer;
         opacity: 1; transform: none; --d: 0ms;
         transition: left 440ms var(--ease), width 440ms var(--ease), opacity 220ms ease var(--d), transform 320ms var(--ease) var(--d); }
   .sb.hide { opacity: 0; transform: translateY(10px); pointer-events: none; }
   .sb .face { position: absolute; top: 0; bottom: 0; left: 2px; right: 2px; display: flex; align-items: center; justify-content: center;
-              gap: 3px; border-radius: 17px; white-space: nowrap; line-height: 1; overflow: hidden; font-weight: 600;
+              gap: 3px; border-radius: 19px; white-space: nowrap; line-height: 1; overflow: hidden; font-weight: 600;
               color: rgba(255,255,255,0.9); transition: background-color 220ms ease, color 220ms ease, transform 120ms ease; }
   .sb:active .face { transform: scale(0.96); }
   .sb.empty .face { color: rgba(255,255,255,0.45); }
@@ -1071,7 +1071,7 @@ function layoutBar() {
   const selJ = sub ? (ter ? tree3()[sub].indexOf(ter) + 1 : 0) : level && sec ? s.tree[level].indexOf(sec) + 1 : 0;
   // a short label ("HR", "All") still gets a pill, not a bubble: every label counts at least 3em wide
   const widths = (row, i, fs, room) => row.map((l, j) => Math.max(textWidth(l, fs), 3 * fs) + (i > 0 && j === 0 ? CH : 0) + (room && away && i === selRow && j === selJ ? 16 : 0));
-  let fs = lang === "hi" ? 13.5 : 12.5;
+  let fs = lang === "hi" ? 14.25 : 13.25;
   rows.forEach((row, i) => { const t = widths(row, i, fs).reduce((a, b) => a + b, 0); if (t + 6 * MINPAD > W) fs = Math.min(fs, fs * (W - 6 * MINPAD) / t); });
   fs = Math.max(9.5, Math.floor(fs * 4) / 4);
   sbar.style.fontSize = fs + "px";
