@@ -1,0 +1,21 @@
+name: notify
+
+# Send the notifications waiting in the database now (nishpaksh/notify.py --send-only). The desk sends them every
+# hour on its own; this is for checking that notifications reach a phone, without running the desk.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m nishpaksh.notify --send-only

@@ -1531,6 +1531,10 @@ async function rest(path, opts = {}) {
   const txt = await r.text();
   return txt ? JSON.parse(txt) : null;
 }
+function b64url(x) { x = x.replace(/-/g, "+").replace(/_/g, "/"); return atob(x + "=".repeat((4 - x.length % 4) % 4)); }
+// the reader's id from their token. A JWT's middle part has no padding: atob without it threw for one length in four,
+// so a phone that allowed notifications could stay unregistered (owner's Android, Oct 10 2026)
+function myId() { try { return JSON.parse(b64url(me.access_token.split(".")[1])).sub; } catch (e) { return null; } }
 function signedIn(d) {
   me = {name: d.name, email: d.email, ...d.session};
   saveMe(); paintMe();
@@ -1810,11 +1814,11 @@ async function subscribePush(permP) {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
   if ((await permP) !== "granted") return;
   try {
-    const raw = atob(VAPID.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - VAPID.length % 4) % 4));
+    const raw = b64url(VAPID);
     const reg = await navigator.serviceWorker.ready;
     const sub = (await reg.pushManager.getSubscription()) ||
       await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, c => c.charCodeAt(0))});
-    const j = sub.toJSON(), uid = JSON.parse(atob(me.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sub;
+    const j = sub.toJSON(), uid = myId();
     await rest("push_subscriptions?on_conflict=endpoint", {method: "POST", headers: {Prefer: "resolution=merge-duplicates"},
       body: JSON.stringify({endpoint: j.endpoint, reader: uid, p256dh: j.keys.p256dh, auth: j.keys.auth, lang})});
   } catch (e) { /* the notification still waits in the database */ }
@@ -1882,6 +1886,8 @@ function light(force) {
 }
 
 paintMe();
+// a signed-in reader whose browser already allows notifications is (re)registered on every visit
+if (me && "Notification" in window && Notification.permission === "granted") setTimeout(() => subscribePush(Promise.resolve("granted")), 3000);
 applyLang();
 track.innerHTML = loadingHtml();
 showDeck().finally(revealPage);

@@ -290,7 +290,7 @@ def send_pending(store: Store, now: dt.datetime | None = None, pusher=None) -> d
     rows = store.rows(select(notifications).where(notifications.c.sent_at.is_(None),
                                                   notifications.c.created_at >= now - SEND_WITHIN)
                       .order_by(notifications.c.created_at))
-    stats = {"notifications": len(rows), "pushed": 0, "gone": 0, "failed": 0}
+    stats = {"notifications": len(rows), "pushed": 0, "gone": 0, "failed": 0, "answers": []}
     if not rows:
         return stats
     if pusher is None:
@@ -308,7 +308,9 @@ def send_pending(store: Store, now: dt.datetime | None = None, pusher=None) -> d
                 "tag": f"{r['kind']}-{r['ref']}", "id": r["id"]}
         for s in subs.get(str(r["reader"]), []):
             status = pusher(s, data)
-            if status in (404, 410):
+            host = s["endpoint"].split("/")[2] if "//" in s["endpoint"] else "?"
+            stats["answers"].append(f"{host} {status} {getattr(pusher, 'last', '')}"[:260])
+            if status == 410:                     # only "gone" removes a device (Oct 10 2026: one 404 had removed a new one)
                 store.exec(delete(push_subscriptions).where(push_subscriptions.c.endpoint == s["endpoint"]))
                 stats["gone"] += 1
             elif status and 200 <= status < 300:
@@ -335,10 +337,14 @@ def _webpush(private_key: str):
                         vapid_claims={"sub": VAPID_SUB}, ttl=24 * 3600, timeout=10)
             return getattr(r, "status_code", 201)
         except WebPushException as e:
-            return getattr(getattr(e, "response", None), "status_code", 0) or 0
+            resp = getattr(e, "response", None)
+            push.last = f"{getattr(resp, 'status_code', 0)} {(getattr(resp, 'text', '') or str(e))[:200]}"
+            return getattr(resp, "status_code", 0) or 0
         except Exception as e:  # noqa: BLE001
             log.info("push failed: %s", e)
+            push.last = f"error {str(e)[:200]}"
             return 0
+    push.last = ""
     return push
 
 
@@ -351,7 +357,15 @@ def run(store: Store, now: dt.datetime | None = None) -> dict:
         log.warning("recap failed: %s", e)
         out["recap"] = f"failed: {e}"
     out.update(send_pending(store, now))
+    log_push(store, out)
     return out
+
+
+def log_push(store: Store, stats: dict) -> None:
+    """What the push services answered, for checking from the database (job logs cannot be read)."""
+    if stats.get("answers"):
+        from .db import diagnostics
+        store.exec(insert(diagnostics).values(created_at=utcnow(), kind="push", report=stats))
 
 
 def main() -> None:
@@ -361,7 +375,9 @@ def main() -> None:
     ap.add_argument("--send-only", action="store_true")
     a = ap.parse_args()
     store = Store(database_url())
-    print(send_pending(store) if a.send_only else run(store))
+    out = send_pending(store) if a.send_only else run(store)
+    log_push(store, out)
+    print(out)
 
 
 if __name__ == "__main__":
