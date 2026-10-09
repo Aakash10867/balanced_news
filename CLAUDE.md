@@ -362,9 +362,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   sources and time line (the phone's share sheet, else the link is copied).
 - **Pictures: collected first, shown later (owner, Oct 9 2026).** Principles agreed: (1) only the outlet's own
   SHARE picture (og:image / twitter:image, else the feed's media:content / thumbnail / image enclosure), LINKED from
-  the outlet and credited to it, never copied to us; (2) chosen by code, never by taste: the picture most outlets
-  used (wire photos repeat), then an agency or official handout, then the lead's outlet; an outlet's default logo
-  picture (the same link across its unrelated stories) is never used; (3) a picture that does not load leaves the
+  the outlet and credited to it, never copied to us; (2) chosen by a SIMPLE code rule, no image analysis (owner, Oct 9 2026: "we
+  don't need complex analysis, just the most relevant one"): the picture of the outlet whose report the lead comes
+  from, else the next outlet of the story; an outlet's default logo picture (the same link across its unrelated
+  stories, e.g. TASS) is never used. Licence-free Wikimedia pictures were offered and not chosen (generic, often none); (3) a picture that does not load leaves the
   card as it is. Stored in `articles.image` (migration `20261009000100`; "" = looked, none; NULL = not looked):
   `ingest.page_image` / `entry_image` at reading, `discover` for search finds, `ingest.fill_images` looks once at up
   to 60 articles of the last 36 h in a story that have none yet (run stats `images`: with / without / filled).
