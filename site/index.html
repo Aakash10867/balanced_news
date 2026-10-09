@@ -156,33 +156,38 @@
           background: #fff; box-shadow: 0 2px 0 var(--edge); cursor: pointer; }
   .chrome .wordmark { font-size: 23px; }
   html.hi .chrome .wordmark { font-size: 26px; }
-  .hbox { position: relative; margin-top: 14px; border-radius: 22px; color: var(--ink); padding: 0 var(--hx, 22px); transform: translate(0, var(--hy, 0px)); }
+  /* opening and closing move only the headline and the picture, by transform (owner, Oct 9 2026: jitter on two
+     Android phones while padding, width and height were animated): the box keeps its open layout throughout, the
+     headline and the picture start over the card's (--tx/--ty, --pt, measured) and glide home; the rest fades */
+  .hbox { position: relative; margin-top: 14px; border-radius: 22px; color: var(--ink); padding: 18px; }
+  .hbox.has-pic { padding-top: 150px; }
   .hbox .layer { position: absolute; inset: 0; border-radius: 22px; opacity: 0; }
-  #sheet.anim .hbox { transition: padding 460ms var(--ease), transform 460ms var(--ease), color 320ms ease 120ms; }
+  #sheet.anim .hbox { transition: color 320ms ease 120ms; }
   #sheet.anim .hbox .layer { transition: opacity 340ms ease 100ms; }
-  #sheet.open .hbox { padding: 18px; transform: none; color: #fff; }
+  #sheet.open .hbox { color: #fff; }
   #sheet.open .hbox .layer { opacity: 1; }
-  #sheet.open .hbox h1 { text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); }
-  /* the picture at the top of the indigo box, dissolving into it (owner, Oct 9 2026) */
-  /* opening and closing, the card's picture and the article's are one picture: it moves and resizes between the two
-     places (--px/--py/--pw/--ph, set from the card) instead of fading at the headline (owner, Oct 9 2026) */
-  .hbox .hpic { position: absolute; left: var(--px, 0px); top: var(--py, 0px); width: var(--pw, 100%); height: var(--ph, 200px);
-                border-radius: 24px 24px 0 0; overflow: hidden; opacity: 0; display: none; }
+  .hbox h1 { transform: translate(var(--tx, 0px), var(--ty, 0px)); }
+  #sheet.anim .hbox h1 { transition: transform 460ms var(--ease); will-change: transform; }
+  #sheet.open .hbox h1 { transform: none; text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); }
+  /* the picture at the top of the indigo box, dissolving into it; the card's and the article's are one picture */
+  .hbox .hpic { position: absolute; left: 0; right: 0; top: 0; height: 200px; border-radius: 22px 22px 0 0; overflow: hidden;
+                opacity: 0; display: none; transform-origin: 0 0; transform: var(--pt, none); }
   .hbox.has-pic .hpic { display: block; }
   .hbox.morph .hpic { opacity: 1; }
   .hbox .hpic img { width: 100%; height: 100%; object-fit: cover; display: block;
                     -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
   .hbox .hpic .hwash { position: absolute; inset: 0; pointer-events: none; opacity: 1;
                        background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
-  #sheet.anim .hbox .hpic { transition: opacity 340ms ease 100ms, left 460ms var(--ease), top 460ms var(--ease), width 460ms var(--ease),
-                                        height 460ms var(--ease), border-radius 460ms var(--ease); }
+  .hbox .hpic .pic-credit { opacity: 0; }
+  #sheet.anim .hbox .hpic { transition: opacity 340ms ease 100ms, transform 460ms var(--ease); will-change: transform; }
   #sheet.anim .hbox .hpic .hwash { transition: opacity 360ms ease; }
-  #sheet.open .hbox .hpic { opacity: 1; left: 0; top: 0; width: 100%; height: 200px; border-radius: 22px 22px 0 0; }
+  #sheet.anim .hbox .hpic .pic-credit { transition: opacity 220ms ease 300ms; }
+  #sheet.open .hbox .hpic { opacity: 1; transform: none; }
   #sheet.open .hbox .hpic .hwash { opacity: 0; }
-  #sheet.open .hbox.has-pic { padding-top: 150px; }
+  #sheet.open .hbox .hpic .pic-credit { opacity: 1; }
   .pic-credit { position: absolute; top: 10px; right: 12px; font-size: 11px; font-weight: 500; color: #fff; background: rgba(10,12,30,0.42);
                 padding: 3px 8px; border-radius: 999px; text-decoration: none; }
-  .hbox h1 { position: relative; margin: 0; font-family: var(--head); font-weight: 600; font-size: 27px; line-height: 1.15; letter-spacing: -0.005em; }
+  .hbox h1 { position: relative; margin: 0; max-width: var(--hw, none); font-family: var(--head); font-weight: 600; font-size: 27px; line-height: 1.15; letter-spacing: -0.005em; }
   html.hi .hbox h1 { font-size: 24px; line-height: 1.45; letter-spacing: 0; }
   .hbox .meta { position: relative; margin-top: 10px; font-size: 13px; opacity: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   /* share (owner, Oct 9 2026): at the right of the sources and time line */
@@ -204,6 +209,7 @@
   #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 110ms ease; }
   #sheet.anim:not(.open) .hbox .layer { transition: opacity 280ms ease; }
   #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 300ms ease 80ms; }
+  #sheet.anim:not(.open) .hbox .hpic .pic-credit { transition: opacity 110ms ease; }
 
   /* sections as cards with numbered headings; the lead alone; figures as tiles; what they say by speaker */
   .paper.lead { font-family: var(--head); font-size: 20px; line-height: 1.5; }
@@ -342,7 +348,7 @@
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 </style>
 </head>
@@ -888,28 +894,30 @@ function setClip(r) {
 }
 function headOffset(cardEl) {   // where the card's headline sits inside the card
   const h2 = cardEl && cardEl.querySelector("h2");
-  if (!h2) return {x: 22, y: 24, pic: null};
+  if (!h2) return {x: 22, y: 24, w: 0, pic: null};
   const a = cardEl.getBoundingClientRect(), b = h2.getBoundingClientRect();
   const pe = cardEl.querySelector(".pic"), p = pe && pe.getBoundingClientRect();
-  return {x: b.left - a.left, y: b.top - a.top,
+  return {x: b.left - a.left, y: b.top - a.top, w: b.width,
           pic: p && p.height ? {x: p.left - a.left, y: p.top - a.top, w: p.width, h: p.height} : null};
 }
-let lastOff = {x: 22, y: 24, pic: null};
-function placePicture(r, off, h) {   // the article's picture starts (or ends) exactly over the card's picture
-  const s = hbox.style;
-  hbox.classList.toggle("morph", !!off.pic && hbox.classList.contains("has-pic"));
-  if (!off.pic) { ["--px", "--py", "--pw", "--ph"].forEach(k => s.removeProperty(k)); return; }
-  s.setProperty("--px", `${r.left + off.pic.x - h.left}px`);
-  s.setProperty("--py", `${off.pic.y - off.y}px`);      // the closed box's top is the card headline's top
-  s.setProperty("--pw", `${off.pic.w}px`);
-  s.setProperty("--ph", `${off.pic.h}px`);
-}
-function placeHeadlineOver(r, off = lastOff) {   // the article's headline starts exactly where the card's was
-  hbox.style.setProperty("--hy", "0px"); hbox.style.setProperty("--hx", "22px");
-  const h = hbox.getBoundingClientRect();
-  hbox.style.setProperty("--hx", `${Math.max(0, r.left + off.x - h.left)}px`);
-  hbox.style.setProperty("--hy", `${r.top + off.y - h.top}px`);
-  placePicture(r, off, h);
+let lastOff = {x: 22, y: 24, w: 0, pic: null};
+// the article's headline and picture start (or end) exactly over the card's, moved there by transform only: the box
+// itself never changes size, so a phone only slides two finished layers (owner, Oct 9 2026: jitter on Android)
+function placeOverCard(r, off = lastOff) {
+  const st = hbox.style, h1 = $("sheet-h");
+  st.setProperty("--hw", off.w ? `${off.w}px` : "none");          // the same width, so the same line breaks
+  st.setProperty("--tx", "0px"); st.setProperty("--ty", "0px"); st.setProperty("--pt", "none");
+  const a = h1.getBoundingClientRect(), H = hbox.getBoundingClientRect();
+  st.setProperty("--tx", `${r.left + off.x - a.left}px`);
+  st.setProperty("--ty", `${r.top + off.y - a.top}px`);
+  const pic = off.pic && hbox.classList.contains("has-pic");
+  hbox.classList.toggle("morph", !!pic);
+  if (pic) {
+    const P = {left: r.left + off.pic.x, top: r.top + off.pic.y, w: off.pic.w, h: off.pic.h};
+    const k = Math.max(P.w / H.width, P.h / 200);                  // covers the card's picture, like object-fit
+    const tx = P.left + (P.w - H.width * k) / 2 - H.left, ty = P.top - H.top;
+    st.setProperty("--pt", `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${k.toFixed(4)})`);
+  }
 }
 async function openStory(id, fromCard, opts = {}) {
   if (closing) { clearTimeout(closing); closing = null; }
@@ -931,11 +939,12 @@ async function openStory(id, fromCard, opts = {}) {
   document.documentElement.classList.add("reading"); sections.inert = true;
   if (r) {
     lastOff = headOffset(fromCard);
-    setClip(r); placeHeadlineOver(r, lastOff);
+    setClip(r); placeOverCard(r, lastOff);
     void sheet.offsetWidth;                      // start from the card
     sheet.classList.add("anim");
     requestAnimationFrame(() => { setClip(null); sheet.classList.add("open"); });
   } else {
+    hbox.style.removeProperty("--hw"); hbox.classList.remove("morph");
     setClip(null); sheet.classList.add("open");
   }
   if (!quick) {
@@ -960,7 +969,7 @@ function closeStory(animate = true) {
     if (el) lastOff = headOffset(el);
     sheetScroll.scrollTop = 0;     // the article's top goes back into the card, as it came out of it
     sheet.classList.add("anim");
-    placeHeadlineOverForClose(r);
+    placeOverCard(r, lastOff);
     setClip(r); sheet.classList.remove("open");
     closing = setTimeout(() => { sheet.classList.remove("on", "anim"); closing = null; }, 470);
   } else {
@@ -968,12 +977,6 @@ function closeStory(animate = true) {
   }
   const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
   if (el) el.focus({preventScroll: true});
-}
-function placeHeadlineOverForClose(r) {   // the open headline box goes back to where the card's headline is
-  const h = hbox.getBoundingClientRect();
-  hbox.style.setProperty("--hx", `${Math.max(0, r.left + lastOff.x - h.left)}px`);
-  hbox.style.setProperty("--hy", `${r.top + lastOff.y - h.top}px`);
-  placePicture(r, lastOff, h);
 }
 $("back").addEventListener("click", () => {
   if (openedFromDeck && history.state && history.state.story) history.back();

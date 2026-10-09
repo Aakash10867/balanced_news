@@ -406,7 +406,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   you read; the lead alone in a larger serif; each section its own card under a numbered heading; By the numbers
   as tiles (the sentence's first figure big, the sentence under it, colours and source numbers kept); What they
   say one card per paragraph with its speaker (`feed._speakers`: the name the reports give most often,
-  `narrative.who`, English page only). Display only: the closed article's text is unchanged.
+  `narrative.who`, English page only). Display only: the closed article's text is unchanged. **Opening and closing animate by transform and
+  opacity only** (Oct 9 2026, jitter on two Android phones): the headline box keeps its open layout, the headline and
+  the picture are moved over the card's (`placeOverCard`: --tx/--ty, --pt scale covering the card's picture, --hw = the
+  card headline's width so the lines break the same); never animate padding, width, height, top or left there (one
+  relayout per frame: 33-40 per animation before, 3-9 after).
 - **No internal notes for readers (owner, Oct 8 2026):** the article page no longer shows "Nothing in this
   story is confirmed by independent sources yet" (read as "this story is fake"; the colours already say which
   parts are supported) nor "Which outlets form different perspectives is not yet known" (internal state, not
