@@ -95,6 +95,7 @@
            scrollbar-width: none; -ms-overflow-style: none; outline: none; }
   .track::-webkit-scrollbar { display: none; width: 0; height: 0; }
   .slot { height: 100%; padding-bottom: 12px; scroll-snap-align: start; scroll-snap-stop: always; }
+  .track.moving .slot { will-change: transform, opacity; }
   .card { height: 100%; display: flex; flex-direction: column; background: var(--card); border-radius: 24px; box-shadow: 0 4px 0 var(--edge);
           padding: 24px 22px 18px; text-decoration: none; color: var(--ink); transition: transform 160ms ease; overflow: hidden; }
   .card:active { transform: scale(0.985); }
@@ -556,8 +557,8 @@ function cardHtml(c, i) {
   const b = c.bar || {e: 0, o: 0, d: 0, r: 0, u: 0};
   const seg = (k, v) => v ? `<span style="flex-grow:${v};background:var(--bar-${k})"></span>` : "";
   const pic = c.img && safeUrl(c.img.src) ? c.img : null;
-  const picHtml = pic ? `<div class="pic"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async">
-      <img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async"><div class="wash"></div>
+  const picHtml = pic ? `<div class="pic"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async">
+      <img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="wash"></div>
       <span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span></div>` : "";
   return `<div class="slot" data-i="${i}"><a class="card${pic ? " has-pic" : ""}" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
       ${picHtml}<h2>${esc(c.h)}</h2>
@@ -597,6 +598,7 @@ function jumpTo(i) {   // i: index in cards; no animation
 function onSettle() {
   const n = cards.length;
   if (!n || running) return;
+  track.classList.remove("moving");
   const k = Math.round(track.scrollTop / slotHeight());
   if (n > 1 && k === 0) return jumpTo(n - 1);
   if (n > 1 && k === n + 1) return jumpTo(0);
@@ -622,13 +624,27 @@ function paintDepth() {
   painted = now;
 }
 track.addEventListener("scroll", () => {
+  if (!track.classList.contains("moving")) track.classList.add("moving");
   if (!paintQueued) { paintQueued = true; requestAnimationFrame(paintDepth); }
   clearTimeout(settleTimer); settleTimer = setTimeout(onSettle, 130);
 }, {passive: true});
 if ("onscrollend" in window) track.addEventListener("scrollend", () => { clearTimeout(settleTimer); onSettle(); });
+// the stories and pictures of the cards around the one in view are fetched and decoded before they are swiped in
+// (a picture decoded mid-swipe made swiping down stutter, Oct 9 2026)
+const decoded = new Set();
 function prefetchAround() {
   if (!cards.length) return;
-  for (const d of [0, 1, 2, -1]) { const c = cards[(current + d + cards.length) % cards.length]; if (c) loadStory(c.id); }
+  for (const d of [0, 1, 2, 3, -1, -2]) {
+    const c = cards[(current + d + cards.length) % cards.length];
+    if (!c) continue;
+    if (d <= 2 && d >= -1) loadStory(c.id);
+    const src = c.img && safeUrl(c.img.src) ? c.img.src : null;
+    if (src && !decoded.has(src)) {
+      decoded.add(src);
+      const im = new Image(); im.referrerPolicy = "no-referrer"; im.src = src;
+      if (im.decode) im.decode().catch(() => {});
+    }
+  }
 }
 function step(d) { track.scrollBy({top: d * slotHeight(), behavior: "smooth"}); }
 
