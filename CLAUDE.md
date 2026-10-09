@@ -497,12 +497,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   - **Videos** (`videos.py`, desk): once per new article, two YouTube searches (English and Hindi headline), YouTube's own
     order (owner), max 2 per channel, uploaded after the story's first report, "Primary footage" badge, "not checked"
     note. Needs the `YOUTUBE_API_KEY` secret (owner adds it after the design pass); without it nothing runs.
-  - **Sorting, filters, search, read later, share card:** client-side in `site/features.js` over live cards (owner: live
-    only). Cards carry `w` (words), `pl` (states), `pp` (people), `au` (audio languages), `vd` (videos). Skipped by the
-    owner: "what changed since you last read", corrections log, outlet pages, perspective sorts. Not features (left for a
-    pipeline discussion): search grounding for sources, transcripts as evidence, Embedding 2.
-  - `index.html` hooks: `window.NP` (what features.js may use), `NPX.keep/order` in `sectionCards`, `NPX.onArticle` in
-    `fillSheet`, `NPX.route` in `route`, `NPX.onLang`; each sentence is wrapped in `<span class="sent">`.
+  - **Nothing of this is on the site (owner, Oct 9 2026).** A plain interface (site/features.js and hooks in
+    index.html) was published in 5fa89ec without his asking and he had it taken back the same night: the site is exactly
+    as before. The owner designs the reader interface himself; never publish site/UI changes he has not asked for.
+    Planned client-side: sorting, filters, search, read later, share card over live cards only; cards already carry `w`
+    (words), `pl` (states), `pp` (people), `au` (audio languages), `vd` (videos). Skipped by the owner: "what changed
+    since you last read", corrections log, outlet pages, perspective sorts. Not features (left for a pipeline
+    discussion): search grounding for sources, transcripts as evidence, Embedding 2.
 
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
