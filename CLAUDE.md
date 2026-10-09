@@ -508,7 +508,17 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     refresh token) until log out. Article: the colour bar flies from the card to under the headline (`flyBar`), then the
     colour names and the audio and video buttons. Audio card: sign in first; Hindi | English; 1 new audio a day; make or
     play; a player strip lights each sentence (`.sent.lit`). Video card: YouTube's order, Hindi first in turn, links out
-    (needs YOUTUBE_API_KEY). Not built (owner designs later): follows UI, inbox, read later, recap page, search, share card.
+    (needs YOUTUBE_API_KEY).
+    **2.2 menu (owner, Oct 10 2026, canvas, approved):** everything needs sign-in. Following = one card: each section
+    row a circle (follow all of it; light green gradient when on) and an arrow (its sub-sections), multi-select;
+    States; Words and names (filters became follows: a word follow notifies when an article contains the word,
+    `notify.word_in` over headline + text, English and Hindi, whole words, or a person the article names). Notifications
+    = "My audio" (article, language, status) + every notification, unread count on the menu button. Daily recap = made
+    at 11 pm IST, countdown, Notify me toggle (follow `recap|daily`), after 11 pm the articles and Listen. Search and
+    Read later removed ("a news app, not Instagram"). Sort and Log out stay. The phone's back closes any open card.
+    Sign in / log in show a spinner ("Signing in…") then a tick and "Welcome, <name>" before the card closes (owner, Oct
+    10 2026: it looked frozen). The article page never scrolls sideways (`.sheet-scroll` overflow-x hidden, pan-y).
+    Not built: share card.
     Skipped by the owner: "what changed since you last read", corrections log, outlet pages, perspective sorts. Not
     features (pipeline discussion later): search grounding for sources, transcripts as evidence, Embedding 2.
 

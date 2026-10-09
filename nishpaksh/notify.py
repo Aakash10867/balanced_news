@@ -25,6 +25,7 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 
 from sqlalchemy import and_, func, text as sql_text
 
@@ -89,9 +90,30 @@ def section_paths(cat: dict | None) -> set[str]:
     return out
 
 
-def reasons(article: dict, rows: list[dict]) -> dict[str, list[tuple[str, str]]]:
-    """reader -> [(kind, key)] of every follow the article matches."""
+def article_text(*payloads: dict | None) -> str:
+    """Headline and every sentence of the article, English and Hindi, lower case: what a word follow is matched on."""
+    out = []
+    for p in payloads:
+        p = p or {}
+        out.append(p.get("headline") or "")
+        for para in ((p.get("narrative") or {}).get("paragraphs") or []):
+            out.extend(s.get("text") or "" for s in para)
+    return " ".join(out).lower()
+
+
+def word_in(key: str, text: str) -> bool:
+    """A followed word or phrase appears in the text as whole words (any script)."""
+    key = re.sub(r"\s+", " ", (key or "").strip().lower())
+    if not key or not text:
+        return False
+    return re.search(r"(?<![\w\u0900-\u097f])" + re.escape(key) + r"(?![\w\u0900-\u097f])", text) is not None
+
+
+def reasons(article: dict, rows: list[dict], text: str | None = None) -> dict[str, list[tuple[str, str]]]:
+    """reader -> [(kind, key)] of every follow the article matches. A word follow (kind "entity") matches a
+    person the article names, or the word anywhere in the article, English or Hindi (owner, Oct 10 2026)."""
     from .people import matches as name_matches
+    text = article_text(article) if text is None else text
     secs = section_paths(article.get("category"))
     places = set(article.get("places") or [])
     names = article.get("people") or []
@@ -100,7 +122,7 @@ def reasons(article: dict, rows: list[dict]) -> dict[str, list[tuple[str, str]]]
     for r in rows:
         k, key = r["kind"], str(r["key"])
         hit = (k == "section" and key in secs) or (k == "place" and key in places) \
-            or (k == "entity" and name_matches(key, names)) or (k == "story" and key in parents)
+            or (k == "entity" and (name_matches(key, names) or word_in(key, text))) or (k == "story" and key in parents)
         if hit:
             out.setdefault(str(r["reader"]), []).append((k, key))
     return out
@@ -131,7 +153,7 @@ def _label(kind: str, key: str, lang: str, article: dict) -> str:
         return place_labels(lang).get(key, key)
     if kind == "entity":
         from .people import matches
-        return next((n for n in article.get("people") or [] if matches(key, [n])), key)
+        return next((n for n in article.get("people") or [] if matches(key, [n])), key.title() if key.isascii() else key)
     return ""
 
 
@@ -175,7 +197,7 @@ def queue_articles(store: Store, now: dt.datetime | None = None) -> int:
         _set_state(store, "articles", {"at": now.isoformat()})
         return 0
     rows = store.rows(select(published.c.story_id, published.c.updated_at, published.c.headline_en,
-                             published.c.headline_hi, published.c.payload_en)
+                             published.c.headline_hi, published.c.payload_en, published.c.payload_hi)
                       .where(published.c.updated_at > since).order_by(published.c.updated_at))
     if not rows:
         return 0
@@ -187,7 +209,7 @@ def queue_articles(store: Store, now: dt.datetime | None = None) -> int:
         p = r["payload_en"] or {}
         if not ((p.get("narrative") or {}).get("paragraphs")):
             continue
-        who = reasons(p, fl)
+        who = reasons(p, fl, article_text(p, r["payload_hi"]))
         langs = _reader_langs(store, list(who))
         bar = bar_counts((p.get("narrative") or {}).get("paragraphs"))
         n = (p.get("counts") or {}).get("independent_sources") or 0

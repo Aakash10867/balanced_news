@@ -126,7 +126,7 @@
   #sheet.on { visibility: visible; }
   #sheet.anim { transition: clip-path 460ms var(--ease), -webkit-clip-path 460ms var(--ease), background-color 460ms ease; }
   #sheet.open { background: var(--ground); }
-  .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y pinch-zoom; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .sheet-scroll::-webkit-scrollbar { display: none; }
   .col { max-width: 560px; margin: 0 auto; padding: 0 max(14px, env(safe-area-inset-right)) 48px max(14px, env(safe-area-inset-left)); }
   /* the article's top stays (owner, Oct 9 2026, canvas "Article · Calm + tiles + quotes + rail"): back | wordmark |
@@ -433,6 +433,14 @@
   .bfield:focus { outline: 2px solid #46549a; outline-offset: 1px; border-color: transparent; }
   .bgo { height: 50px; border: 0; border-radius: 14px; color: #fff; font-size: 17px; font-weight: 600; cursor: pointer; }
   .bgo[disabled] { opacity: 0.6; cursor: default; }
+  /* sign in / log in at work (owner, Oct 10 2026: it looked frozen, then suddenly signed in) */
+  .bgo.work, .bgo.done { opacity: 1; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .bgo .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; animation: bspin .8s linear infinite; }
+  @keyframes bspin { to { transform: rotate(360deg); } }
+  .bgo .tick { display: inline-flex; animation: bpop .28s cubic-bezier(.3,1.6,.6,1); }
+  @keyframes bpop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+  #authform.work label { opacity: .55; transition: opacity .2s; }
+  @media (prefers-reduced-motion: reduce) { .bgo .spin { animation-duration: 2.4s; } .bgo .tick { animation: none; } }
   .bnote { margin: 0; font-size: 13px; color: var(--muted); }
   .berr { margin: 0; font-size: 14px; color: #b2251c; }
   .blink { border: 0; background: none; font-size: 14px; color: #2f3a72; font-weight: 600; cursor: pointer; min-height: 44px; }
@@ -457,8 +465,54 @@
                    display: flex; align-items: center; justify-content: center; }
   .player input { flex: 1; min-width: 0; accent-color: #fff; }
   .player .tl { font-size: 12px; font-variant-numeric: tabular-nums; min-width: 72px; text-align: end; }
+  /* trial_version_2.2 (owner, Oct 10 2026): Following, Notifications, Daily recap */
+  .mbadge { position: absolute; top: -4px; right: -5px; min-width: 16px; height: 16px; border-radius: 999px; background: #c0392b; color: #fff;
+            font-size: 10px; font-weight: 700; line-height: 16px; padding: 0 4px; text-align: center; }
+  .mcount { min-width: 20px; height: 20px; border-radius: 999px; background: #c0392b; color: #fff; font-size: 12px; font-weight: 700; line-height: 20px;
+            text-align: center; padding: 0 6px; }
+  .bsheet.tall { height: 86vh; height: 86dvh; }
+  .fwrap { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+  .fpanes { display: flex; width: 200%; height: 100%; transition: transform 280ms var(--ease); }
+  .fpanes.sub { transform: translateX(-50%); }
+  .fpane { width: 50%; height: 100%; overflow-y: auto; padding: 4px 16px 20px; scrollbar-width: none; }
+  .fpane::-webkit-scrollbar { display: none; }
+  .flabel { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 16px 6px 4px; }
+  html.hi .flabel { letter-spacing: 0; text-transform: none; font-size: 13px; }
+  .frow { display: flex; align-items: center; border-radius: 14px; margin: 6px 0; background: #f6f6f9; transition: background 200ms ease, box-shadow 200ms ease; }
+  .frow.on { background: linear-gradient(135deg, #e7f6ed 0%, #cdebd9 100%); box-shadow: inset 0 0 0 1px #a9dcbf; }
+  .frow .pick { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; min-height: 52px; padding: 0 4px 0 12px; border: 0; background: none;
+                font-size: 16px; color: var(--ink); cursor: pointer; text-align: start; }
+  .frow.on .pick { font-weight: 600; }
+  .frow .go { flex: none; width: 48px; height: 52px; border: 0; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+              border-inline-start: 1px solid rgba(0,0,0,0.06); color: var(--muted); }
+  .frow .note { font-size: 13px; color: var(--est); font-weight: 600; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .circ { width: 24px; height: 24px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; border: 2px solid #b9bcc6;
+          background: #fff; transition: background 160ms ease, border-color 160ms ease; }
+  .circ.full { background: #2f8a5b; border-color: #2f8a5b; }
+  .circ.part { border-color: #2f8a5b; } .circ.part::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #2f8a5b; }
+  .circ.dash { border-style: dashed; background: transparent; }
+  .fchips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .fchip { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 6px 0 12px; border-radius: 999px; font-size: 14px; font-weight: 600;
+           background: linear-gradient(135deg, #e7f6ed, #cdebd9); color: var(--est); box-shadow: inset 0 0 0 1px #a9dcbf; }
+  .fchip button { width: 24px; height: 24px; border: 0; border-radius: 50%; background: rgba(29,106,69,0.12); color: var(--est); cursor: pointer;
+                  display: flex; align-items: center; justify-content: center; }
+  .naudio { display: flex; gap: 12px; align-items: center; padding: 10px 12px; margin: 6px 0; border-radius: 14px; background: #f6f6f9; }
+  .naudio .h { font-size: 15px; font-weight: 600; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .naudio button { width: 40px; height: 40px; border-radius: 50%; border: 0; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex: none; }
+  .nrow { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #eeeef1; width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
+          background: none; text-align: start; color: var(--ink); cursor: pointer; }
+  .nrow .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex: none; }
+  .rclock { border-radius: 18px; color: #fff; padding: 22px 20px; margin-top: 6px; }
+  .rclock b.big { display: block; font-family: var(--head); font-size: 40px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
+  .rnotify { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 14px; background: #f6f6f9; margin: 10px 0; }
+  .tog { width: 46px; height: 28px; border-radius: 999px; border: 0; cursor: pointer; position: relative; background: #c9cbd3; transition: background 180ms ease; flex: none; }
+  .tog i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: transform 180ms ease; }
+  .tog[aria-checked="true"] { background: #2f8a5b; } .tog[aria-checked="true"] i { transform: translateX(18px); }
+  .ritem { display: block; width: 100%; padding: 14px 0; border: 0; border-top: 1px solid #eeeef1; background: none; text-align: start; color: var(--ink); cursor: pointer; }
+  .ritem .h { font-family: var(--head); font-size: 19px; font-weight: 600; line-height: 1.25; }
+  .ritem p { margin: 6px 0 0; font-size: 15px; line-height: 1.55; }
   @media (prefers-reduced-motion: reduce) {
-    .mdrop, .bsheet, .player, .hpill, header.top .greeting, .bveil { transition: none; }
+    .mdrop, .bsheet, .player, .hpill, header.top .greeting, .bveil, .fpanes { transition: none; }
   }
 </style>
 </head>
@@ -1469,7 +1523,7 @@ Object.assign(T.en, {
   recap: "Daily recap", search: "Search", logout: "Log out", soon: "Coming soon", close: "Close",
   sorts: {newest: "Newest", verified: "Most established", contested: "Most disputed", developing: "Still developing", outlets: "Most outlets", shortest: "Shortest read"},
   loginTitle: "Log in", name: "Name", email: "Email", password: "Password", stay: "You stay signed in on this device until you log out.",
-  toLogin: "Already have an account? Log in", toSignup: "New here? Sign in", why: "Sign in so we can tell you when your audio is ready.",
+  signingUp: "Signing in…", loggingIn: "Logging in…", welcome: n => n ? `Welcome, ${n.split(" ")[0]}` : "Welcome", toLogin: "Already have an account? Log in", toSignup: "New here? Sign in", why: "Sign in so we can tell you when your audio is ready.",
   errs: {name: "Please give your name.", email: "That email does not look right.", password: "The password needs 6 or more characters.",
          taken: "This email already has an account. Log in instead.", wrong: "Wrong email or password.", too_many: "Too many new accounts from here. Try again in an hour.",
          net: "Could not reach Nishpaksh. Check your connection and try again."},
@@ -1485,7 +1539,7 @@ Object.assign(T.hi, {
   recap: "दिन का सार", search: "खोजें", logout: "लॉग आउट", soon: "जल्द आ रहा है", close: "बंद करें",
   sorts: {newest: "सबसे नई", verified: "सबसे अधिक स्थापित", contested: "सबसे अधिक मतभेद", developing: "अभी विकसित हो रही", outlets: "सबसे अधिक स्रोत", shortest: "सबसे छोटी"},
   loginTitle: "लॉग इन", name: "नाम", email: "ईमेल", password: "पासवर्ड", stay: "लॉग आउट करने तक आप इस डिवाइस पर साइन इन रहेंगे।",
-  toLogin: "पहले से खाता है? लॉग इन करें", toSignup: "नए हैं? साइन इन करें", why: "साइन इन करें, ताकि ऑडियो तैयार होने पर हम आपको बता सकें।",
+  signingUp: "साइन इन हो रहा है…", loggingIn: "लॉग इन हो रहा है…", welcome: n => n ? `स्वागत है, ${n.split(" ")[0]}` : "स्वागत है", toLogin: "पहले से खाता है? लॉग इन करें", toSignup: "नए हैं? साइन इन करें", why: "साइन इन करें, ताकि ऑडियो तैयार होने पर हम आपको बता सकें।",
   errs: {name: "कृपया अपना नाम दें।", email: "यह ईमेल सही नहीं लगता।", password: "पासवर्ड में 6 या अधिक अक्षर चाहिए।",
          taken: "इस ईमेल का खाता पहले से है। लॉग इन करें।", wrong: "ईमेल या पासवर्ड ग़लत है।", too_many: "यहां से बहुत सारे नए खाते बने। एक घंटे बाद कोशिश करें।",
          net: "निष्पक्ष से जुड़ नहीं सके। इंटरनेट जांचें और फिर कोशिश करें।"},
@@ -1538,6 +1592,7 @@ function myId() { try { return JSON.parse(b64url(me.access_token.split(".")[1]))
 function signedIn(d) {
   me = {name: d.name, email: d.email, ...d.session};
   saveMe(); paintMe();
+  setTimeout(() => { loadFollows(); countUnread(); }, 0);
 }
 const mbtn = $("mbtn");
 function paintMe() {
@@ -1635,12 +1690,13 @@ mdrop.className = "mdrop"; mdrop.setAttribute("role", "menu"); mveil.className =
 document.body.append(mveil, mdrop);
 function menuHtml() {
   const t = T[lang];
-  const soon = (icon, label) => `<button type="button" class="mrow" data-m="soon">${ICON[icon]}<span class="grow">${esc(label)}</span>${ICON.chev}</button>`;
   return `<div class="mpanes"><div class="mpane">
       ${me ? `<div class="mme"><div class="mav brand">${esc((me.name || "?").trim()[0].toUpperCase())}</div><div style="min-width:0"><div style="font-weight:600">${esc(me.name)}</div><div class="bnote" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(me.email)}</div></div></div>`
            : `<button type="button" class="mrow" data-m="signin" style="font-weight:600;color:#2f3a72">${ICON.user}<span class="grow">${esc(t.signIn)}</span>${ICON.chev}</button>`}
+      <button type="button" class="mrow" data-m="follow">${ICON.bell}<span class="grow">${esc(t.following)}</span><small>${me && follows.size ? follows.size - (isF("recap", "daily") ? 1 : 0) || "" : ""}</small>${ICON.chev}</button>
+      <button type="button" class="mrow" data-m="notes">${ICON.inbox}<span class="grow">${esc(t.notes)}</span>${unread > 0 ? `<span class="mcount">${unread > 9 ? "9+" : unread}</span>` : ""}${ICON.chev}</button>
+      <button type="button" class="mrow" data-m="recap">${ICON.recap}<span class="grow">${esc(t.recap)}</span><small>${esc(istNow().getUTCHours() >= 23 ? t.recapReadyHint : t.recapTimeHint)}</small>${ICON.chev}</button>
       <button type="button" class="mrow" data-m="sort">${ICON.sort}<span class="grow">${esc(t.sort)}</span><small>${esc(t.sorts[sortKey])}</small>${ICON.chev}</button>
-      ${soon("bell", t.following)}${soon("mark", t.later)}${soon("recap", t.recap)}${soon("search", t.search)}
       ${me ? `<div class="msep"><button type="button" class="mrow" data-m="logout" style="color:#b2251c">${ICON.out}<span class="grow">${esc(t.logout)}</span></button></div>` : ""}
     </div><div class="mpane">
       <button type="button" class="mrow" data-m="back" style="font-weight:600">${ICON.back}<span class="grow">${esc(t.sort)}</span></button>
@@ -1683,8 +1739,8 @@ mdrop.addEventListener("click", e => {
   if (m === "sort") { mdrop.classList.add("sub"); fitMenu(); }
   else if (m === "back") { mdrop.classList.remove("sub"); fitMenu(); }
   else if (m === "signin") { hideMenu(); openSheet("signin"); }
-  else if (m === "soon") toast(T[lang].soon);
-  else if (m === "logout") { me = null; saveMe(); paintMe(); closeMenu(); }
+  else if (m === "follow" || m === "notes" || m === "recap") asSheet(m);
+  else if (m === "logout") { me = null; saveMe(); follows = new Map(); unread = 0; paintMe(); paintBadge(); closeMenu(); }
 });
 
 /* cards from the bottom: sign in, audio, videos */
@@ -1708,6 +1764,16 @@ function frame(title, body) {
 function renderSheet() {
   const t = T[lang];
   bsheet.style.maxHeight = "";
+  bsheet.classList.toggle("tall", sheetKind === "follow" || sheetKind === "notes" || (sheetKind === "recap" && recapData && recapData.row));
+  if (sheetKind === "follow" || sheetKind === "notes" || sheetKind === "recap") {
+    const title = sheetKind === "follow" ? (followSub === "states" ? t.states : followSub === "words" ? t.words
+                  : followSub ? (SECTIONS[lang] || SECTIONS.en).primary[followSub] : t.following) : sheetKind === "notes" ? t.notes : t.recap;
+    const back = sheetKind === "follow" && followSub ? `<button type="button" class="bx" data-fback="1" aria-label="${esc(t.back)}" style="margin-inline-end:4px">${ICON.back}</button>` : "";
+    bsheet.innerHTML = `<div class="bgrab"><span></span></div><div class="bhead"><div style="display:flex;align-items:center;gap:8px;min-width:0">${back}<h2>${esc(title)}</h2></div>
+      <button type="button" class="bx" data-b="close" aria-label="${esc(t.close)}">${ICON.x}</button></div>` +
+      (sheetKind === "follow" ? followHtml() : sheetKind === "notes" ? notesHtml() : recapHtml());
+    return;
+  }
   if (sheetKind === "signin") {
     const up = authMode === "signup";
     bsheet.innerHTML = frame(up ? t.signIn : t.loginTitle, `<form class="bbody" id="authform" novalidate>
@@ -1753,8 +1819,13 @@ bsheet.addEventListener("submit", async e => {
   const t = T[lang], v = id => (($(id) || {}).value || "").trim();
   busy = true; sheetErr = "";
   const vals = {name: v("f-name"), email: v("f-email"), password: ($("f-pass") || {}).value || ""};
+  const form = $("authform"), go = form && form.querySelector(".bgo");
+  if (form) { form.classList.add("work"); form.querySelectorAll("input, .blink").forEach(x => { x.disabled = true; }); const er = form.querySelector(".berr"); if (er) er.remove(); }
+  if (go) { go.disabled = true; go.classList.add("work"); go.innerHTML = `<span class="spin" aria-hidden="true"></span>${esc(authMode === "signup" ? t.signingUp : t.loggingIn)}`; go.setAttribute("aria-busy", "true"); }
   try {
     const d = authMode === "signup" ? await callFn("signup", {...vals, lang}) : await callFn("login", {email: vals.email, password: vals.password});
+    if (go) { go.classList.replace("work", "done"); go.innerHTML = `<span class="tick">${ICON.tickw.replace(/width="14" height="14"/, 'width="20" height="20"')}</span>${esc(t.welcome(d.name || ""))}`; }
+    await new Promise(r => setTimeout(r, 550));
     signedIn(d);
     busy = false;
     if (afterSignin) { const f = afterSignin; afterSignin = null; f(); } else closeSheet();
@@ -1885,7 +1956,247 @@ function light(force) {
   if (el) { el.classList.add("lit"); if (!a.paused) el.scrollIntoView({block: "center", behavior: STILL.matches ? "auto" : "smooth"}); }
 }
 
+/* ---------- trial_version_2.2 (owner, Oct 10 2026): Following, Notifications, Daily recap; all need sign-in ---------- */
+Object.assign(ICON, {
+  inbox: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  tickw: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
+  clock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9a9ca3" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  xs: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  bellg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3d4043" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+});
+Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", noNotes: "Nothing yet. Follow a section, a state or a word and we will tell you when an article comes out.",
+  noAudio: "You have not asked for any audio yet.", ready: l => `${l} · ready`, making: l => `${l} · being made, usually within an hour`, failed: l => `${l} · could not be made`,
+  followIntro: "We tell you every time an article comes out in what you follow. Tap the circle for all of it, the arrow to choose inside.",
+  sectionsL: "Sections", placesL: "Places and names", states: "States", words: "Words and names", allOf: l => `All of ${l}`, all: "All",
+  of: (a, b) => `${a} of ${b}`, wordsIntro: "We tell you when an article names it.", wordPh: "A word or a name, e.g. Supreme Court", followBtn: "Follow",
+  recapAt: "Today's recap is made at", recapTime: "11:00 pm", recapIn: x => `in ${x}`, recapAbout: "Every article of the day, its headline and opening lines, in English and Hindi, with audio.",
+  recapMaking: "Today's recap is being made. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
+  articles: n => `${n} articles today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following"});
+Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
+  noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
+  followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
+  sectionsL: "खंड", placesL: "जगहें और नाम", states: "राज्य", words: "शब्द और नाम", allOf: l => `पूरा ${l}`, all: "सब",
+  of: (a, b) => `${b} में से ${a}`, wordsIntro: "जिस लेख में यह नाम आए, हम बताएंगे।", wordPh: "कोई शब्द या नाम, जैसे Supreme Court", followBtn: "फ़ॉलो",
+  recapAt: "आज का सार बनेगा", recapTime: "रात 11:00 बजे", recapIn: x => `${x} में`, recapAbout: "दिन का हर लेख, उसका शीर्षक और शुरुआती पंक्तियां, हिंदी और अंग्रेज़ी में, ऑडियो के साथ।",
+  recapMaking: "आज का सार बन रहा है। कुछ ही मिनटों में यहां होगा।", notifyMe: "तैयार होने पर मुझे बताएं", listenRecap: "सुनें",
+  articles: n => `आज ${n} लेख`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें"});
+const STATES = [["andhra-pradesh", "Andhra Pradesh", "आंध्र प्रदेश"], ["arunachal-pradesh", "Arunachal Pradesh", "अरुणाचल प्रदेश"], ["assam", "Assam", "असम"], ["bihar", "Bihar", "बिहार"], ["chhattisgarh", "Chhattisgarh", "छत्तीसगढ़"], ["goa", "Goa", "गोवा"], ["gujarat", "Gujarat", "गुजरात"], ["haryana", "Haryana", "हरियाणा"], ["himachal-pradesh", "Himachal Pradesh", "हिमाचल प्रदेश"], ["jharkhand", "Jharkhand", "झारखंड"], ["karnataka", "Karnataka", "कर्नाटक"], ["kerala", "Kerala", "केरल"], ["madhya-pradesh", "Madhya Pradesh", "मध्य प्रदेश"], ["maharashtra", "Maharashtra", "महाराष्ट्र"], ["manipur", "Manipur", "मणिपुर"], ["meghalaya", "Meghalaya", "मेघालय"], ["mizoram", "Mizoram", "मिज़ोरम"], ["nagaland", "Nagaland", "नगालैंड"], ["odisha", "Odisha", "ओडिशा"], ["punjab", "Punjab", "पंजाब"], ["rajasthan", "Rajasthan", "राजस्थान"], ["sikkim", "Sikkim", "सिक्किम"], ["tamil-nadu", "Tamil Nadu", "तमिलनाडु"], ["telangana", "Telangana", "तेलंगाना"], ["tripura", "Tripura", "त्रिपुरा"], ["uttar-pradesh", "Uttar Pradesh", "उत्तर प्रदेश"], ["uttarakhand", "Uttarakhand", "उत्तराखंड"], ["west-bengal", "West Bengal", "पश्चिम बंगाल"], ["andaman-nicobar", "Andaman and Nicobar Islands", "अंडमान और निकोबार"], ["chandigarh", "Chandigarh", "चंडीगढ़"], ["dadra-daman-diu", "Dadra and Nagar Haveli and Daman and Diu", "दादरा और नगर हवेली और दमन और दीव"], ["delhi", "Delhi", "दिल्ली"], ["jammu-kashmir", "Jammu and Kashmir", "जम्मू-कश्मीर"], ["ladakh", "Ladakh", "लद्दाख"], ["lakshadweep", "Lakshadweep", "लक्षद्वीप"], ["puducherry", "Puducherry", "पुडुचेरी"]];
+const stateLabel = k => { const s = STATES.find(x => x[0] === k); return s ? s[lang === "hi" ? 2 : 1] : k; };
+
+/* the reader's follows: "kind|key" -> label; saved straight to the database */
+let follows = new Map(), unread = 0, followSub = null, followBusy = false;
+async function loadFollows() {
+  if (!me) { follows = new Map(); return; }
+  try { follows = new Map((await rest("follows?select=kind,key,label")).map(r => [`${r.kind}|${r.key}`, r.label || r.key])); } catch (e) { /* offline */ }
+}
+const isF = (kind, key) => follows.has(`${kind}|${key}`);
+async function setFollow(kind, key, on, label) {
+  const k = `${kind}|${key}`;
+  if (on === follows.has(k)) return;
+  if (on) {
+    follows.set(k, label || key);
+    await rest("follows", {method: "POST", headers: {Prefer: "resolution=ignore-duplicates"}, body: JSON.stringify({reader: myId(), kind, key, label: label || key})});
+  } else {
+    follows.delete(k);
+    await rest(`follows?kind=eq.${encodeURIComponent(kind)}&key=eq.${encodeURIComponent(key)}`, {method: "DELETE"});
+  }
+}
+async function countUnread() {
+  if (!me) { unread = 0; paintBadge(); return; }
+  try { unread = (await rest("notifications?select=id&read_at=is.null&limit=99")).length; } catch (e) { /* offline */ }
+  paintBadge();
+}
+function paintBadge() {
+  const old = mbtn.querySelector(".mbadge"); if (old) old.remove();
+  if (unread > 0) mbtn.insertAdjacentHTML("beforeend", `<span class="mbadge">${unread > 9 ? "9+" : unread}</span>`);
+}
+function needSignin(then) { afterSignin = then; authMode = "signup"; openSheet("signin"); }
+function asSheet(kind) { hideMenu(); if (!me) { needSignin(() => { sheetKind = kind; openKind(kind); }); return; } openSheet(kind); openKind(kind); }
+function openKind(kind) {
+  if (kind === "follow") { followSub = null; loadFollows().then(() => { if (sheetKind === "follow") renderSheet(); }); }
+  else if (kind === "notes") loadNotes();
+  else if (kind === "recap") loadRecap();
+  renderSheet();
+}
+
+/* Following: sections (all of one by its circle, or inside by its arrow), states, words and names */
+function secRows() {
+  const S = SECTIONS[lang] || SECTIONS.en, t = T[lang];
+  return Object.entries(S.tree).map(([p, subs]) => {
+    const full = isF("section", p), n = subs.filter(s => isF("section", `${p}/${s}`)).length;
+    return {p, label: S.primary[p], full, part: !full && n > 0, note: full ? t.all : n ? t.of(n, subs.length) : ""};
+  });
+}
+function followHtml() {
+  const t = T[lang], S = SECTIONS[lang] || SECTIONS.en;
+  const row = (attrs, label, cls, note, go) => `<div class="frow${cls.includes("full") || cls.includes("part") || cls.includes("on") ? " on" : ""}">
+      <button type="button" class="pick" ${attrs}><span class="circ ${cls}">${cls.includes("full") ? ICON.tickw : ""}</span><span class="grow" style="flex:1;min-width:0">${esc(label)}</span>${note ? `<span class="note">${esc(note)}</span>` : ""}</button>
+      ${go ? `<button type="button" class="go" ${go} aria-label="${esc(label)}">${ICON.chev}</button>` : ""}</div>`;
+  const states = STATES.filter(s => isF("place", s[0])).map(s => s[lang === "hi" ? 2 : 1]);
+  const words = [...follows].filter(([k]) => k.startsWith("entity|")).map(([, l]) => l);
+  const main = `<p class="bnote" style="margin:0 4px 6px;font-size:14px;line-height:1.45">${esc(t.followIntro)}</p>
+    <div class="flabel">${esc(t.sectionsL)}</div>
+    ${secRows().map(r => row(`data-fall="${r.p}"`, r.label, r.full ? "full" : r.part ? "part" : "", r.note, `data-fsub="${r.p}"`)).join("")}
+    <div class="flabel">${esc(t.placesL)}</div>
+    ${row(`data-fsub="states"`, t.states, `dash${states.length ? " on" : ""}`, states.join(", "), `data-fsub="states"`)}
+    ${row(`data-fsub="words"`, t.words, `dash${words.length ? " on" : ""}`, words.length ? String(words.length) : "", `data-fsub="words"`)}`;
+  let sub = "";
+  if (followSub === "states") {
+    sub = STATES.map(([k, en, hi]) => { const on = isF("place", k); return row(`data-fone="place|${k}|${esc(en)}"`, lang === "hi" ? hi : en, on ? "full" : "", "", ""); }).join("");
+  } else if (followSub === "words") {
+    sub = `<p class="bnote" style="margin:4px 4px 12px;font-size:14px">${esc(t.wordsIntro)}</p>
+      <form id="wordform" style="display:flex;gap:8px"><input class="bfield" id="f-word" style="flex:1;min-width:0" placeholder="${esc(t.wordPh)}" maxlength="60" autocomplete="off">
+      <button type="submit" class="bgo brand" style="height:48px;padding:0 16px;font-size:16px">${esc(t.followBtn)}</button></form>
+      <div class="fchips">${words.map(w => `<span class="fchip">${esc(w)}<button type="button" data-fword="${esc(w)}" aria-label="${esc(t.stop)}">${ICON.xs}</button></span>`).join("")}</div>`;
+  } else if (followSub) {
+    const p = followSub, all = isF("section", p), label = S.primary[p];
+    sub = row(`data-fall="${p}"`, t.allOf(label), all ? "full" : "", "", "") +
+      (S.tree[p] || []).map(s => { const on = all || isF("section", `${p}/${s}`); return row(`data-fone="section|${p}/${s}|${esc(S.secondary[s] || s)}"`, S.secondary[s] || s, on ? "full" : "", "", ""); }).join("");
+  }
+  return `<div class="fwrap"><div class="fpanes${followSub ? " sub" : ""}"><div class="fpane">${main}</div><div class="fpane">${sub}</div></div></div>`;
+}
+async function followClick(b) {
+  if (followBusy) return;
+  const S = SECTIONS.en;
+  followBusy = true;
+  try {
+    if (b.dataset.fsub) { followSub = b.dataset.fsub; renderSheet(); return; }
+    if (b.dataset.fall) {                                   // the circle: all of the section, or nothing
+      const p = b.dataset.fall, on = !isF("section", p);
+      const jobs = [setFollow("section", p, on, S.primary[p])];
+      for (const s of S.tree[p] || []) jobs.push(setFollow("section", `${p}/${s}`, false));
+      renderSheet(); await Promise.all(jobs);
+    } else if (b.dataset.fone) {
+      const [kind, key, label] = b.dataset.fone.split("|");
+      if (kind === "section") {                             // one sub-section; all of them = the whole section
+        const p = key.split("/")[0], subs = S.tree[p] || [];
+        let chosen = isF("section", p) ? subs.slice() : subs.filter(s => isF("section", `${p}/${s}`));
+        const s = key.split("/")[1];
+        chosen = chosen.includes(s) ? chosen.filter(x => x !== s) : [...chosen, s];
+        const whole = chosen.length === subs.length;
+        const jobs = [setFollow("section", p, whole, S.primary[p])];
+        for (const x of subs) jobs.push(setFollow("section", `${p}/${x}`, !whole && chosen.includes(x), S.secondary[x]));
+        renderSheet(); await Promise.all(jobs);
+      } else { const job = setFollow(kind, key, !isF(kind, key), label); renderSheet(); await job; }
+    } else if (b.dataset.fword) { const w = b.dataset.fword; const job = setFollow("entity", w.toLowerCase(), false); renderSheet(); await job; }
+    askPermission().then(p => subscribePush(Promise.resolve(p)));
+  } catch (e) { toast(T[lang].error); await loadFollows(); renderSheet(); }
+  finally { followBusy = false; }
+}
+bsheet.addEventListener("submit", async e => {
+  if (e.target.id !== "wordform") return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const w = ($("f-word").value || "").replace(/\s+/g, " ").trim();
+  if (!w) return;
+  try { const job = setFollow("entity", w.toLowerCase(), true, w); renderSheet(); await job; askPermission().then(p => subscribePush(Promise.resolve(p))); }
+  catch (err) { toast(T[lang].error); }
+}, true);
+
+/* Notifications: my audio first, then every notification (opening marks them read) */
+let notesData = null;
+async function loadNotes() {
+  notesData = null;
+  try {
+    const [notes, reqs] = await Promise.all([
+      rest("notifications?select=id,kind,title,body,url,created_at,read_at&order=created_at.desc&limit=50"),
+      rest("audio_requests?select=story_id,lang,status,requested_at&order=requested_at.desc&limit=20")]);
+    const heads = {};
+    await Promise.all([...new Set(reqs.map(r => String(r.story_id)))].map(async id => {
+      const c = (pool || []).find(x => String(x.id) === id);
+      if (c) { heads[id] = c.h; return; }
+      const row = await loadStory(id).catch(() => null);
+      heads[id] = row ? ((lang === "hi" && row.headline_hi) || row.headline_en) : "";
+    }));
+    notesData = {notes, reqs: reqs.map(r => ({...r, h: heads[String(r.story_id)] || ""}))};
+    const ids = notes.filter(n => !n.read_at).map(n => n.id);
+    if (ids.length) rest(`notifications?id=in.(${ids.join(",")})`, {method: "PATCH", body: JSON.stringify({read_at: new Date().toISOString()})})
+      .then(() => { unread = 0; paintBadge(); }).catch(() => {});
+  } catch (e) { notesData = {notes: [], reqs: []}; }
+  if (sheetKind === "notes") renderSheet();
+}
+function notesHtml() {
+  const t = T[lang];
+  if (!notesData) return `<div class="bbody"><p class="bnote">…</p></div>`;
+  const ln = l => l === "hi" ? t.hindi : t.english;
+  const when = ts => { const d = new Date(ts); return d.toLocaleString(lang === "hi" ? "hi-IN" : "en-IN", {hour: "2-digit", minute: "2-digit", day: "numeric", month: "short", timeZone: "Asia/Kolkata"}); };
+  const audios = notesData.reqs.length ? notesData.reqs.map(r => `<div class="naudio"><div style="flex:1;min-width:0"><div class="h">${esc(r.h)}</div>
+      <div style="font-size:13px;font-weight:600;margin-top:3px;color:${r.status === "done" ? "var(--est)" : r.status === "failed" ? "var(--fal)" : "var(--dis)"}">${esc(r.status === "done" ? t.ready(ln(r.lang)) : r.status === "failed" ? t.failed(ln(r.lang)) : t.making(ln(r.lang)))}</div></div>
+      ${r.status === "done" ? `<button type="button" class="brand" data-nplay="${esc(r.story_id)}-${esc(r.lang)}" aria-label="${esc(t.play)}">${ICON.play}</button>` : r.status === "queued" ? `<span style="width:40px;display:flex;justify-content:center">${ICON.clock}</span>` : ""}</div>`).join("")
+    : `<p class="bnote" style="margin:6px 2px">${esc(t.noAudio)}</p>`;
+  const notes = notesData.notes.length ? notesData.notes.map(n => `<button type="button" class="nrow" data-nurl="${esc(n.url || "")}"><span class="dot" style="background:${n.read_at ? "transparent" : "#c0392b"}"></span>
+      <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:${n.read_at ? 400 : 600};line-height:1.3">${esc(n.title)}</span><span class="bnote" style="display:block;margin-top:3px">${esc(n.body || "")}</span></span>
+      <span style="font-size:12px;color:#9a9ca3;white-space:nowrap">${esc(when(n.created_at))}</span></button>`).join("")
+    : `<p class="bnote" style="margin:6px 2px">${esc(t.noNotes)}</p>`;
+  return `<div class="bbody" style="flex:1;min-height:0;gap:0"><div class="flabel" style="margin-top:4px">${esc(t.myAudio)}</div>${audios}<div class="flabel" style="margin-top:18px">${esc(t.notes)}</div>${notes}</div>`;
+}
+
+/* Daily recap: before 11 pm, when and how long; then the day's articles, Listen, and Notify me */
+let recapData = null;
+const istNow = () => new Date(Date.now() + 5.5 * 3600e3);
+const istDay = () => istNow().toISOString().slice(0, 10);
+async function loadRecap() {
+  recapData = null;
+  const day = istDay(), mins = istNow().getUTCHours() * 60 + istNow().getUTCMinutes();
+  let row = null, audio = [];
+  if (mins >= 23 * 60) {
+    try { row = (await api(`recaps?select=day,payload_en,payload_hi&day=eq.${day}`))[0] || null; } catch (e) { row = null; }
+    try { audio = (await api(`audio_files?select=lang&key=in.(recap-${day}-en,recap-${day}-hi)`)).map(a => a.lang); } catch (e) { audio = []; }
+  }
+  if (me) await loadFollows();
+  recapData = {day, mins, row, audio};
+  if (sheetKind === "recap") renderSheet();
+}
+function recapHtml() {
+  const t = T[lang];
+  if (!recapData) return `<div class="bbody"><p class="bnote">…</p></div>`;
+  const {mins, row, audio, day} = recapData, on = isF("recap", "daily");
+  const left = (23 * 60 - mins + 1440) % 1440;
+  const toggle = `<div class="rnotify">${ICON.bellg}<span style="flex:1;font-size:16px">${esc(t.notifyMe)}</span>
+    <button type="button" class="tog" role="switch" aria-checked="${on}" data-recapnotify="1" aria-label="${esc(t.notifyMe)}"><i></i></button></div>`;
+  if (mins < 23 * 60) return `<div class="bbody"><div class="rclock brand"><div style="font-size:14px;opacity:.85">${esc(t.recapAt)}</div><b class="big">${esc(t.recapTime)}</b>
+      <div style="font-size:16px;margin-top:8px">${esc(t.recapIn(t.hm(Math.floor(left / 60), left % 60)))}</div></div>
+      <p class="bnote" style="font-size:14px;line-height:1.5;margin:4px 2px">${esc(t.recapAbout)}</p>${toggle}</div>`;
+  if (!row) return `<div class="bbody"><div class="rclock brand"><div style="font-size:16px;line-height:1.5">${esc(t.recapMaking)}</div></div>${toggle}</div>`;
+  const p = (lang === "hi" && row.payload_hi) || row.payload_en || {}, items = p.stories || [];
+  const date = new Date(`${day}T12:00:00Z`).toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", {weekday: "long", day: "numeric", month: "long"});
+  return `<div class="bbody" style="flex:1;min-height:0;gap:0">
+    <div style="display:flex;align-items:center;gap:12px;margin:4px 0 6px"><div style="flex:1"><div class="bnote" style="font-size:14px">${esc(date)}</div><div style="font-weight:600">${esc(t.articles(items.length))}</div></div>
+      ${audio.includes(lang) ? `<button type="button" class="bgo brand" data-rplay="recap-${day}-${lang}" style="height:44px;padding:0 16px;border-radius:999px;font-size:15px;display:flex;align-items:center;gap:8px">${ICON.play}${esc(t.listenRecap)}</button>` : ""}</div>
+    ${toggle}
+    ${items.map(it => `<button type="button" class="ritem" data-rstory="${esc(it.id)}"><div class="h">${esc(it.h)}</div><p>${(it.lead || []).map(sentenceHtml).join("")}</p></button>`).join("")}</div>`;
+}
+
+bsheet.addEventListener("click", async e => {
+  const b = e.target.closest("button"); if (!b || !sheetKind) return;
+  if (sheetKind === "follow" && (b.dataset.fsub || b.dataset.fall || b.dataset.fone || b.dataset.fword)) { e.stopImmediatePropagation(); followClick(b); return; }
+  if (b.dataset.fback) { e.stopImmediatePropagation(); followSub = null; renderSheet(); return; }
+  if (b.dataset.nplay) { e.stopImmediatePropagation(); const k = b.dataset.nplay; closeSheet(); playAudio(k); return; }
+  if (b.dataset.nurl !== undefined) {
+    e.stopImmediatePropagation();
+    const m = (b.dataset.nurl || "").match(/#\/story\/(\d+)/);
+    closeSheet();
+    if (m) setTimeout(() => { history.pushState({story: m[1]}, "", `#/story/${m[1]}`); openedFromDeck = true; openStory(m[1], null, {instant: true, noHistory: true}); }, 80);
+    else if (/#\/recap/.test(b.dataset.nurl || "")) setTimeout(() => asSheet("recap"), 320);
+    return;
+  }
+  if (b.dataset.recapnotify) {
+    e.stopImmediatePropagation();
+    const on = !isF("recap", "daily");
+    try { const job = setFollow("recap", "daily", on, "recap"); renderSheet(); await job; if (on) askPermission().then(p => subscribePush(Promise.resolve(p))); }
+    catch (err) { toast(T[lang].error); }
+    return;
+  }
+  if (b.dataset.rplay) { e.stopImmediatePropagation(); const k = b.dataset.rplay; playAudio(k); return; }
+  if (b.dataset.rstory) {
+    e.stopImmediatePropagation();
+    const id = b.dataset.rstory; closeSheet();
+    setTimeout(() => { history.pushState({story: id}, "", `#/story/${id}`); openedFromDeck = true; openStory(id, null, {instant: true, noHistory: true}); }, 80);
+  }
+}, true);
+
 paintMe();
+if (me) { loadFollows(); countUnread(); }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) countUnread(); });
 // a signed-in reader whose browser already allows notifications is (re)registered on every visit
 if (me && "Notification" in window && Notification.permission === "granted") setTimeout(() => subscribePush(Promise.resolve("granted")), 3000);
 applyLang();

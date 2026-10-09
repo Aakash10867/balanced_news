@@ -210,3 +210,14 @@ def test_section_paths_cover_every_level():
     assert notify.section_paths({"primary": ["business"], "secondary": ["domains"], "tertiary": ["hr"]}) == \
         {"business", "business/domains", "business/domains/hr"}
     assert "business/domains/hr" in notify.section_paths({"primary": ["business"], "secondary": ["jobs"]})  # old key
+
+
+def test_a_followed_word_matches_anywhere_in_the_article_in_either_language():
+    en = {"headline": "Monsoon floods in Bihar", "narrative": {"paragraphs": [[{"text": "The Kosi river rose overnight."}]]},
+          "people": []}
+    hi = {"headline": "बिहार में बाढ़", "narrative": {"paragraphs": [[{"text": "कोसी नदी उफान पर।"}]]}}
+    text = notify.article_text(en, hi)
+    rows = [{"reader": "a", "kind": "entity", "key": "kosi"}, {"reader": "b", "kind": "entity", "key": "बाढ़"},
+            {"reader": "c", "kind": "entity", "key": "kos"}, {"reader": "d", "kind": "entity", "key": "kosi river"}]
+    who = notify.reasons(en, rows, text)
+    assert set(who) == {"a", "b", "d"}            # whole words only: "kos" is not "Kosi"
