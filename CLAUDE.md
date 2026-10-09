@@ -347,6 +347,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   measured, one font size for every row, equal space between labels; sections with no story yet are lighter and open
   an empty card ("Nothing in X yet" + Show all news). The cards fade and restart at the section's newest. The bar
   slides down off the page while an article is open. Filtering is client-side over every card in the feed.
+  **Back to the latest (owner, Oct 9 2026, canvas "Latest 3b"):** two cards or more from the latest (one, in a section
+  of two or three; either way round the loop), the CHOSEN button (All, ‹ section, or a sub-section) grows a little and
+  shows an arrow at its right end, pointing to where the latest is (down when swiped up past it). Its left half does
+  what it always does (back; a sub-section turns off); its right half goes to the latest (`#sb-latest`, a touch area
+  over it); All: the whole button. Tapping the wordmark also goes to the latest. Bar classes are prefixed `sb-`: a
+  class named "back" once picked up the article back button's shadow. Share: a button at the right of the article's
+  sources and time line (the phone's share sheet, else the link is copied).
 - **No internal notes for readers (owner, Oct 8 2026):** the article page no longer shows "Nothing in this
   story is confirmed by independent sources yet" (read as "this story is fake"; the colours already say which
   parts are supported) nor "Which outlets form different perspectives is not yet known" (internal state, not
