@@ -1649,8 +1649,19 @@ function openMenu() {
   mdrop.style.top = `${r.bottom + 12}px`; mdrop.style.left = `${Math.max(8, r.left - 2)}px`;
   mdrop.classList.remove("sub"); mdrop.innerHTML = menuHtml(); fitMenu();
   mdrop.classList.add("on"); mveil.classList.add("on"); mbtn.setAttribute("aria-expanded", "true");
+  overlayOpen();
 }
-function closeMenu() { mdrop.classList.remove("on"); mveil.classList.remove("on"); mbtn.setAttribute("aria-expanded", "false"); }
+function hideMenu() { mdrop.classList.remove("on"); mveil.classList.remove("on"); mbtn.setAttribute("aria-expanded", "false"); }
+function closeMenu() { const was = mdrop.classList.contains("on"); hideMenu(); if (was && !sheetKind) overlayClose(); }
+/* the phone's back closes an open menu or card instead of leaving the site (owner, Oct 10 2026): opening one adds a
+   history entry; back pops it and closes what is open; closing it by tap or Escape takes the entry away again */
+let overlay = false, ignorePop = false;
+function overlayOpen() { if (!overlay) { overlay = true; history.pushState({...(history.state || {}), npo: 1}, ""); } }
+function overlayClose() { if (!overlay) return; overlay = false; if (history.state && history.state.npo) { ignorePop = true; history.back(); } }
+window.addEventListener("popstate", e => {
+  if (ignorePop) { ignorePop = false; e.stopImmediatePropagation(); return; }
+  if (overlay) { overlay = false; hideMenu(); hideSheet(); e.stopImmediatePropagation(); }
+}, true);
 mbtn.addEventListener("click", () => mdrop.classList.contains("on") ? closeMenu() : openMenu());
 mveil.addEventListener("click", closeMenu);
 mdrop.addEventListener("click", e => {
@@ -1667,7 +1678,7 @@ mdrop.addEventListener("click", e => {
   const m = b.dataset.m;
   if (m === "sort") { mdrop.classList.add("sub"); fitMenu(); }
   else if (m === "back") { mdrop.classList.remove("sub"); fitMenu(); }
-  else if (m === "signin") { closeMenu(); openSheet("signin"); }
+  else if (m === "signin") { hideMenu(); openSheet("signin"); }
   else if (m === "soon") toast(T[lang].soon);
   else if (m === "logout") { me = null; saveMe(); paintMe(); closeMenu(); }
 });
@@ -1682,8 +1693,10 @@ function openSheet(kind) {
   renderSheet();
   bveil.classList.add("on");
   requestAnimationFrame(() => bsheet.classList.add("on"));
+  overlayOpen();
 }
-function closeSheet() { bsheet.classList.remove("on"); bveil.classList.remove("on"); sheetKind = null; }
+function hideSheet() { bsheet.classList.remove("on"); bveil.classList.remove("on"); sheetKind = null; }
+function closeSheet() { const was = !!sheetKind; hideSheet(); if (was) overlayClose(); }
 bveil.addEventListener("click", closeSheet);
 function frame(title, body) {
   return `<div class="bgrab"><span></span></div><div class="bhead"><h2>${esc(title)}</h2><button type="button" class="bx" data-b="close" aria-label="${esc(T[lang].close)}">${ICON.x}</button></div>${body}`;
