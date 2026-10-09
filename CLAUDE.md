@@ -368,9 +368,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (`paintDepth`, on the slots, only the 3 or 4 near the view; at rest nothing is moved; off for reduced motion). Back to
   the latest RUNS through the cards in between (at most five, from five out when further; 260 ms + 90 ms a card,
   the short way round the loop), so it is seen to go there (`toLatest`). **The phone's back in a section** steps out
-  one level (sub-section → section → all) instead of leaving the site: entering a section adds one history entry
-  (`{np: "sec"}`), each step out adds it again while still in one; leaving through the bar takes it away; an open
-  article is closed first.
+  one level (tertiary → secondary → primary → all) instead of leaving the site: every level gets its own history
+  entry WHEN TAPPED INTO (`{np: "sec", level, sec, ter}`; deeper = push, sideways = replace, shallower through the bar =
+  `history.go(-n)`), and back restores the section of the entry it lands on. Entries added while going back were
+  skipped by Chrome on Android (no tap = no entry) and the site closed. An open article is closed first.
 - **Pictures: collected first, shown later (owner, Oct 9 2026).** Principles agreed: (1) only the outlet's own
   SHARE picture (og:image / twitter:image, else the feed's media:content / thumbnail / image enclosure), LINKED from
   the outlet and credited to it, never copied to us; (2) chosen by a SIMPLE code rule, no image analysis (owner, Oct 9 2026: "we

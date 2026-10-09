@@ -576,7 +576,7 @@ function renderDeck(keepId) {
       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#7d84b0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
       <h2>${esc(t.secEmpty(secLabel(fKey)))}</h2><p>${esc(t.secBody)}</p>
       <button type="button" class="brand" id="showall">${esc(t.showAll)}</button></div></div></div>`;
-    $("showall").onclick = () => { goSection(null, null); sectionHistory(); };
+    $("showall").onclick = () => { const d0 = secDepth(); goSection(null, null); syncHistory(d0); };
     return;
   }
   if (!cards.length) { track.innerHTML = `<div class="slot"><div class="state">${esc(T[lang].empty)}</div></div>`; return; }
@@ -952,9 +952,10 @@ $("back").addEventListener("click", () => {
   else { history.replaceState(null, "", location.pathname + location.search); closeStory(true); }
 });
 window.addEventListener("popstate", () => {
-  if (ignorePop) { ignorePop = false; return; }
-  if (!openId && !/^#\/story\//.test(location.hash) && level !== null) { stepOut(); return; }
-  route(true);
+  if (openId || /^#\/story\//.test(location.hash)) { route(true); return; }
+  const st = history.state;                          // the section this entry was made for
+  if (st && st.np === "sec") { if (st.level !== level || st.sec !== sec || st.ter !== ter) goSection(st.level, st.sec, st.ter); }
+  else if (level !== null) goSection(null, null);
 });
 
 // source numbers and thread links work inside the sheet without leaving it
@@ -1144,24 +1145,22 @@ function goSection(l, s, t) {
     track.classList.remove("swap");
   }, 170);
 }
-// in a section, the phone's back steps out of it one level at a time (sub-section, section, all) instead of
-// leaving the site: entering a section adds one history entry; each back out of it adds it again while still in one
-let ignorePop = false;
-function sectionHistory() {
-  const marked = history.state && history.state.np === "sec";
-  if (level !== null && !marked) history.pushState({np: "sec"}, "", location.href);
-  else if (level === null && marked) { ignorePop = true; history.back(); }
-}
-function stepOut() {
-  if (ter) goSection(level, sub, null);
-  else if (sec) goSection(level, null);
-  else goSection(null, null);
-  if (level !== null) history.pushState({np: "sec"}, "", location.href);
+// in a section, the phone's back steps out one level at a time (tertiary, secondary, primary, all) instead of leaving
+// the site. Each level gets its own history entry WHEN IT IS TAPPED INTO: Chrome on Android skips entries a page
+// adds without a tap, so entries added while going back (as before, Oct 9 2026) were skipped and the site closed.
+function secDepth() { return ter ? 3 : sec ? 2 : level ? 1 : 0; }
+function secState() { return {np: "sec", level, sec, ter}; }
+function syncHistory(d0) {
+  const d1 = secDepth();
+  if (d1 > d0) history.pushState(secState(), "", location.href);
+  else if (d1 === d0 && d1 > 0) history.replaceState(secState(), "", location.href);
+  else if (d1 < d0) history.go(d1 - d0);            // back through the entries of the levels left
 }
 sbar.addEventListener("click", e => {
   const b = e.target.closest("button.sb");
   if (!b || b.classList.contains("hide")) return;
-  queueMicrotask(sectionHistory);
+  const d0 = secDepth();
+  queueMicrotask(() => syncHistory(d0));
   const kind = b.dataset.kind, key = b.dataset.key;
   if (kind === "all") goSection(null, null);
   else if (kind === "primary") goSection(level === key ? null : key, null);
