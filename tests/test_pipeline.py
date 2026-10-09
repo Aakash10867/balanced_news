@@ -2855,3 +2855,16 @@ def test_lead_is_the_best_reported_fact_story_13792():
              it(3, "The GST Council approved a set of changes to GST rules.", ["NDTV"])]
     lead = lead_news(items)
     assert lead[0] == 2 and lead[1:] in ([], [1])
+
+
+def test_separate_is_written_only_when_the_statements_say_it():
+    """Owner, Oct 9 2026 (story 16000): "In a separate case" printed for the story's own case; the word
+    must be the outlets', the Related events heading says the rest."""
+    from nishpaksh.narrative import _no_separate
+    assert _no_separate("In a separate case, Sonia Kumar filed a petition.", "Sonia Kumar filed a petition.") \
+        == "Sonia Kumar filed a petition."
+    assert _no_separate("Separately, the court heard the plea.", "") == "The court heard the plea."
+    assert _no_separate("Police arrested two men in a separate incident.", "") == "Police arrested two men."
+    kept = "In a separate case, the court heard the plea."
+    assert _no_separate(kept, "In a separate case, the court heard a plea.") == kept
+    assert _no_separate("The two cases are separate.", "") == "The two cases are separate."

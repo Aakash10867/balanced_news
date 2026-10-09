@@ -71,7 +71,9 @@ coherent story. The statements below are already sorted into sections; write eac
   happened    what happened, in time order (the statements of the news are not repeated here)
   numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
   say         what each person or body says: claims, allegations, positions, and the responses to them
-  related     separate events the reports connect to this one, each clearly SEPARATE, with its time
+  related     other events the reports connect to this one, each with its own time and its own people;
+              never blended into the story's event. Do not write "separately" or "in a separate case":
+              the section's heading says it (unless a statement itself says so)
   next        what happens next: hearings, deadlines, required steps
 Write only the sections that have statements (and "news"); skip the others.
 A disagreement is written where its subject is, in the same paragraph as the rest of that subject, with
@@ -924,6 +926,33 @@ def _one_hedge(text: str) -> str:
     return t[:1].upper() + t[1:] if t else text
 
 
+SEPARATE = [
+    (re.compile(r"(?i)^(?:in|on) (?:a|an|another) (?:separate|unrelated)(?: \w+)?,\s*"), ""),
+    (re.compile(r"(?i)^(?:separately|in a separate development|unrelatedly),\s*"), ""),
+    (re.compile(r"(?i),\s*(?:in|on) (?:a|an|another) (?:separate|unrelated)(?: \w+)?,\s*"), " "),
+    (re.compile(r"(?i)\s+(?:in|on) (?:a|an|another) (?:separate|unrelated)(?: (?:case|incident|matter|development|event))?(?=[.,;]?$)"), ""),
+    (re.compile(r"(?i),\s*separately,\s*"), " "),
+    (re.compile(r"(?i)\bseparately\s+"), ""),
+]
+SEPARATE_WORD = re.compile(r"(?i)\b(?:separate(?:ly)?|unrelated)\b")
+
+
+def _no_separate(text: str, source_text: str, inner: bool = False) -> str:
+    """"In a separate case", "Separately," only when the statements say it (owner, Oct 9 2026, story 16000: a
+    line reading filed as a related event was the story's own case, and the writer, told to write related
+    events as separate, printed "In a separate case"). Like an act verb, the word must be the outlets':
+    the "Related events" heading already tells a reader it is another event."""
+    if not SEPARATE_WORD.search(text) or SEPARATE_WORD.search(source_text or ""):
+        return text
+    t = text
+    for pat, rep in SEPARATE:
+        t = pat.sub(rep, t)
+    t = t.strip()
+    if not t:
+        return text
+    return t if inner else t[:1].upper() + t[1:]
+
+
 def _drop_repeats(paragraphs: list, by_id: dict) -> tuple[list, list[int]]:
     """The last net against repetition, by code on the written article (owner, Oct 7 2026): a sentence
     that says nothing an earlier sentence has not said (relate.py: the same, or covered by it) is
@@ -970,6 +999,8 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
             if not any(by_id[i]["verdict"] == "disputed" or by_id[i].get("conflicts_with") or by_id[i].get("update_of")
                        or by_id[i].get("updated_by") for i in x["ids"]):
                 map_text(x, _one_hedge, _one_hedge_inner)
+            src = " ".join(by_id[i].get("text") or "" for i in x["ids"] if i in by_id)
+            map_text(x, lambda t: _no_separate(t, src), lambda t: _no_separate(t, src, inner=True))
     paragraphs, kept = _drop_repeats(paragraphs, by_id)
     if meta.get("section_keys"):
         meta = dict(meta, section_keys=[meta["section_keys"][k] for k in kept if k < len(meta["section_keys"])])

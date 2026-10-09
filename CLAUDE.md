@@ -206,6 +206,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   before writing: a line saying something "is scheduled / set / expected to", "will be held / take place ...",
   dated before today (IST), is left out; dated today, only when another line reports a decisive act with the same
   names. A line with no date is kept (code never guesses).
+- **"Separate" only when the outlets say it (owner, Oct 9 2026, story 16000: "In a separate case, ..." printed for
+  the story's own case, a line reading had filed as a related event).** Like an act verb, the word is the outlets':
+  `narrative._no_separate` (in `_finish`) removes "In a separate case,", "Separately,", "in an unrelated incident"
+  unless the statements behind the sentence use "separate"/"unrelated"; the "Related events" heading tells the reader
+  it is another event, and the writer is no longer told to mark related events as separate.
 - **"Explained" keeps what reading labels explanation (owner, Oct 9 2026):** a decision filed there is not moved
   ("better more than less").
 - **A sentence is a sentence (Oct 9 2026, story 13792: lead "An unnamed source said on Thursday."; "... on
