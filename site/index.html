@@ -571,7 +571,7 @@ function renderDeck(keepId) {
       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#7d84b0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
       <h2>${esc(t.secEmpty(secLabel(fKey)))}</h2><p>${esc(t.secBody)}</p>
       <button type="button" class="brand" id="showall">${esc(t.showAll)}</button></div></div></div>`;
-    $("showall").onclick = () => goSection(null, null);
+    $("showall").onclick = () => { goSection(null, null); sectionHistory(); };
     return;
   }
   if (!cards.length) { track.innerHTML = `<div class="slot"><div class="state">${esc(T[lang].empty)}</div></div>`; return; }
@@ -595,7 +595,7 @@ function jumpTo(i) {   // i: index in cards; no animation
 }
 function onSettle() {
   const n = cards.length;
-  if (!n) return;
+  if (!n || running) return;
   const k = Math.round(track.scrollTop / slotHeight());
   if (n > 1 && k === 0) return jumpTo(n - 1);
   if (n > 1 && k === n + 1) return jumpTo(0);
@@ -603,7 +603,27 @@ function onSettle() {
   prefetchAround();
   awayChanged();
 }
-track.addEventListener("scroll", () => { clearTimeout(settleTimer); settleTimer = setTimeout(onSettle, 130); }, {passive: true});
+// the card leaving tips back and shrinks a little, the next rises from slightly behind; at rest nothing is moved
+const STILL = matchMedia("(prefers-reduced-motion: reduce)");
+let painted = new Set(), paintQueued = false;
+function paintDepth() {
+  paintQueued = false;
+  const slots = track.children, h = slotHeight(), top = track.scrollTop, k = Math.floor(top / h), now = new Set();
+  if (!STILL.matches) for (let i = Math.max(0, k - 1); i <= Math.min(slots.length - 1, k + 2); i++) {
+    const el = slots[i], o = Math.max(-1, Math.min(1, (el.offsetTop - top) / h)), a = Math.abs(o);
+    if (a < 0.002 || a > 0.999) continue;
+    el.style.transformOrigin = o < 0 ? "center bottom" : "center top";
+    el.style.transform = `perspective(1000px) translateZ(${(-120 * a).toFixed(1)}px) rotateX(${(o * -10).toFixed(2)}deg) scale(${(1 - 0.06 * a).toFixed(4)})`;
+    el.style.opacity = (1 - 0.35 * a).toFixed(3);
+    now.add(el);
+  }
+  for (const el of painted) if (!now.has(el)) { el.style.transform = ""; el.style.opacity = ""; }
+  painted = now;
+}
+track.addEventListener("scroll", () => {
+  if (!paintQueued) { paintQueued = true; requestAnimationFrame(paintDepth); }
+  clearTimeout(settleTimer); settleTimer = setTimeout(onSettle, 130);
+}, {passive: true});
 if ("onscrollend" in window) track.addEventListener("scrollend", () => { clearTimeout(settleTimer); onSettle(); });
 function prefetchAround() {
   if (!cards.length) return;
@@ -906,7 +926,11 @@ $("back").addEventListener("click", () => {
   if (openedFromDeck && history.state && history.state.story) history.back();
   else { history.replaceState(null, "", location.pathname + location.search); closeStory(true); }
 });
-window.addEventListener("popstate", () => route(true));
+window.addEventListener("popstate", () => {
+  if (ignorePop) { ignorePop = false; return; }
+  if (!openId && !/^#\/story\//.test(location.hash) && level !== null) { stepOut(); return; }
+  route(true);
+});
 
 // source numbers and thread links work inside the sheet without leaving it
 $("rise").addEventListener("click", e => {
@@ -1053,11 +1077,31 @@ function awayChanged() {
   wasAway = a; wasBelow = b;
   if (sbar.childElementCount) layoutBar();
 }
+let running = false, runFrame = 0;
 function toLatest() {
-  if (!cards.length || current === 0) return;
-  clearTimeout(swapTimer);
-  track.classList.add("swap");
-  swapTimer = setTimeout(() => { jumpTo(0); track.classList.remove("swap"); }, 170);
+  const n = cards.length;
+  if (!n || current === 0 || running) return;
+  if (STILL.matches || n < 2) { jumpTo(0); return; }
+  // the latest lies above, or below when we swiped up past it round the loop; at most five cards are run through
+  const h = slotHeight(), below = isBelow(), target = below ? n + 1 : 1;
+  let from = Math.round(track.scrollTop / h);
+  if (Math.abs(target - from) > 5) from = below ? target - 5 : target + 5;
+  const d0 = from * h, d1 = target * h, dur = 260 + 90 * Math.abs(target - from), t0 = performance.now();
+  const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  running = true;
+  track.style.scrollSnapType = "none";
+  track.scrollTop = d0;
+  const step = now => {
+    const x = Math.min(1, (now - t0) / dur);
+    track.scrollTop = d0 + (d1 - d0) * ease(x);
+    paintDepth();
+    if (x < 1) { runFrame = requestAnimationFrame(step); return; }
+    running = false;
+    jumpTo(0);
+    paintDepth();
+  };
+  cancelAnimationFrame(runFrame);
+  runFrame = requestAnimationFrame(step);
 }
 $("wm").addEventListener("click", toLatest);
 // the bar moves at once; the cards fade out, change to the section's, start at its newest, and fade in
@@ -1075,9 +1119,24 @@ function goSection(l, s, t) {
     track.classList.remove("swap");
   }, 170);
 }
+// in a section, the phone's back steps out of it one level at a time (sub-section, section, all) instead of
+// leaving the site: entering a section adds one history entry; each back out of it adds it again while still in one
+let ignorePop = false;
+function sectionHistory() {
+  const marked = history.state && history.state.np === "sec";
+  if (level !== null && !marked) history.pushState({np: "sec"}, "", location.href);
+  else if (level === null && marked) { ignorePop = true; history.back(); }
+}
+function stepOut() {
+  if (ter) goSection(level, sub, null);
+  else if (sec) goSection(level, null);
+  else goSection(null, null);
+  if (level !== null) history.pushState({np: "sec"}, "", location.href);
+}
 sbar.addEventListener("click", e => {
   const b = e.target.closest("button.sb");
   if (!b || b.classList.contains("hide")) return;
+  queueMicrotask(sectionHistory);
   const kind = b.dataset.kind, key = b.dataset.key;
   if (kind === "all") goSection(null, null);
   else if (kind === "primary") goSection(level === key ? null : key, null);
