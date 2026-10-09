@@ -673,7 +673,11 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     from .categories import for_payload
     cat = for_payload(router, payload)     # the site's sections; never holds the article back
     if cat is not None:                     # not asked (quota): categories.fill_live asks on a later run
+        from .categories import take_places
+        payload["places"] = take_places(cat, payload)   # where it happens, checked by code (places.py)
         payload["category"] = cat
+    from .people import from_payload as people_of
+    payload["people"] = people_of(payload)   # who it is about, by code (people.py): readers follow them
     now = utcnow()
     payload["written_at"] = now.isoformat(timespec="seconds")
     hi = translate_payload(store, router, payload)

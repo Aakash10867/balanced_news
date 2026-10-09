@@ -388,6 +388,7 @@
     </div>
   </div>
 </div>
+<script src="features.js" defer></script>
 <script>
 "use strict";
 const SUPABASE_URL = "https://mmjojuccdgmmiwyzypvh.supabase.co";
@@ -730,7 +731,7 @@ function essayHtml(nar, t) {
       ? x.parts.map(p => `<span class="s ${esc(cls(p.class))}">${esc(p.text)}</span>`).join(" ")
       : `<span class="s ${esc(cls(x.class))}">${esc(x.text)}</span>`);
   };
-  const sent = x => body(x) + sup(x);
+  const sent = x => `<span class="sent">${body(x)}${sup(x)}</span>`;   // one per sentence: features.js lights it while read aloud
   const paras = nar.paragraphs || [], keys = nar.section_keys || [], who = nar.who || [];
   if (!keys.length) return `<div class="paper essay">${paras.map(p => "<p>" + p.map(sent).join(" ") + "</p>").join("")}</div>`;
   // group paragraphs into sections in the order they come
@@ -874,6 +875,7 @@ function fillSheet(row, card) {
     $("sheet-meta").textContent = `${t.sources(n, (p.counts || {}).outlets)} · ${ago(row.updated_at)}`;
     $("rise").innerHTML = articleHtml(row);
     buildRail();
+    if (window.NPX) window.NPX.onArticle(row);
     document.title = `${head} · Nishpaksh`;
   } else if (card) {
     $("sheet-h").textContent = card.h;
@@ -1033,7 +1035,10 @@ function inSection(c, k) {
   const cat = c.cat || {};
   return (cat.primary || []).includes(k) || (cat.secondary || []).includes(k) || (cat.tertiary || []).includes(k);
 }
-function sectionCards() { return pool.filter(c => inSection(c, fKey)).slice(0, MAX_CARDS); }
+function sectionCards() {   // reader's sort, filters and search (features.js) shape the deck when set
+  const X = window.NPX, list = pool.filter(c => inSection(c, fKey) && (!X || X.keep(c, fKey)));
+  return (X ? X.order(list) : list).slice(0, MAX_CARDS);
+}
 const CHEV = `<svg class="chev" height="12" viewBox="0 0 10 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2L2 7l5 5"/></svg>`;
 function buildBar() {   // the buttons, once per language; layoutBar() moves them
   if (barLang === lang && sbar.childElementCount) { layoutBar(); return; }
@@ -1236,6 +1241,7 @@ async function setLang(l) {
   lang = l; safeSet("np-lang", l);
   const u = new URL(location); u.searchParams.set("lang", l); history.replaceState(history.state, "", u);
   applyLang();
+  if (window.NPX) window.NPX.onLang(l);
   const keep = cards[current] && cards[current].id;
   if (openId) { const row = await loadStory(openId); if (row) fillSheet(row, null); }
   showDeck(openId || keep);
@@ -1255,6 +1261,7 @@ document.addEventListener("keydown", e => {
 
 /* ---------- routing: #/ is the deck, #/story/<id> an article ---------- */
 function route(animate) {
+  if (window.NPX && window.NPX.route(location.hash)) return;
   const m = location.hash.match(/^#\/story\/([^/?#]+)/);
   if (m) { const id = decodeURIComponent(m[1]); if (id !== openId) openStory(id, null, {instant: true, noHistory: true}); }
   else if (openId) { openedFromDeck = false; closeStory(animate); }
@@ -1302,6 +1309,14 @@ function revealPage() {
     setTimeout(greetSoon, 520);
   }, Math.max(0, 500 - (performance.now() - started)));
 }
+// for features.js (accounts, follows, notifications, audio, videos, sorting, search, saved, share card)
+window.NP = {
+  get lang() { return lang; }, get pool() { return pool; }, get fKey() { return fKey; }, get openId() { return openId; },
+  refresh() { if (!pool.length) return; cards = sectionCards(); renderDeck(null); },
+  openStory: id => { history.pushState({story: String(id)}, "", `#/story/${encodeURIComponent(id)}`); openedFromDeck = true;
+                     openStory(id, null, {instant: true, noHistory: true}); },
+  loadStory, loadCards, toast, esc, safeUrl, secLabel, normCat, cls, sentenceHtml, T, SECTIONS,
+};
 applyLang();
 track.innerHTML = loadingHtml();
 showDeck().finally(revealPage);

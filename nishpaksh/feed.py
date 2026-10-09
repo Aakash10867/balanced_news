@@ -89,7 +89,8 @@ def _item(i: dict) -> dict:
 
 
 PAGE_KEYS = ("story_id", "headline", "counts", "has_established", "qualified_by", "perspective_mode",
-             "perspectives", "framing", "suicide", "thread", "parents", "children", "written_at", "category")
+             "perspectives", "framing", "suicide", "thread", "parents", "children", "written_at", "category",
+             "places", "people")
 
 
 def slim_payload(p: dict | None, who: list | None = None) -> dict | None:
@@ -121,11 +122,18 @@ def card(row: dict, lang: str) -> dict | None:
             "h": head, "paras": _card_text(paras),
             "bar": bar_counts((pe.get("narrative") or {}).get("paragraphs")),
             "n": (pe.get("counts") or {}).get("independent_sources") or 0,
-            "cat": normalize(pe.get("category"))}   # the site's sections, keys (labels in en.json / hi.json)
+            "cat": normalize(pe.get("category")),   # the site's sections, keys (labels in en.json / hi.json)
+            "w": words(paras),                      # length, for "shortest read" (owner, Oct 9 2026)
+            "pl": pe.get("places") or [],          # states (places.py), for the place filter
+            "pp": (pe.get("people") or [])[:6]}    # people and bodies (people.py), for the people filter
+
+
+def words(paragraphs: list) -> int:
+    return sum(len((s.get("text") or "").split()) for para in paragraphs or [] for s in para or [])
 
 
 MANIFEST = "manifest.json"
-FEED_VERSION = 2          # part of every article's stamp: raising it rewrites every article file once
+FEED_VERSION = 3          # part of every article's stamp: raising it rewrites every article file once
 NOT_SPEAKERS = {"", "article", "-", "none", "unknown", "reporter", "the article"}
 
 
@@ -195,6 +203,24 @@ def pictures(store: Store, manifest: dict) -> dict[str, dict]:
     return out
 
 
+def extras(store: Store, manifest: dict) -> dict[str, dict]:
+    """Per live article: the languages its audio exists in (`au`) and how many videos it has (`vd`)."""
+    from .db import audio_files, videos
+    ids = [int(k) for k in manifest]
+    out: dict[str, dict] = {}
+    if not ids:
+        return out
+    try:
+        for r in store.rows(select(audio_files.c.story_id, audio_files.c.lang).where(audio_files.c.story_id.in_(ids))):
+            out.setdefault(str(r["story_id"]), {}).setdefault("au", []).append(r["lang"])
+        for r in store.rows(select(videos.c.story_id, videos.c.items).where(videos.c.story_id.in_(ids))):
+            if r["items"]:
+                out.setdefault(str(r["story_id"]), {})["vd"] = len(r["items"])
+    except Exception as e:  # noqa: BLE001 - the reader tables are optional for the feed
+        log.info("feed extras skipped: %s", e)
+    return out
+
+
 def export(store: Store, root: str | pathlib.Path) -> int:
     """Write the home-page files and one file per live article into `root`, a checkout of the feed
     branch. Only articles whose content changed since the last export are read from the database
@@ -248,10 +274,13 @@ def export(store: Store, root: str | pathlib.Path) -> int:
     now = utcnow().isoformat(timespec="seconds")
     order = [str(r["story_id"]) for r in rows if str(r["story_id"]) in manifest]
     pics = pictures(store, manifest)      # every export: a picture found later still reaches its card
+    extra = extras(store, manifest)       # audio made and videos found since (not in the article's payload)
     for lang in ("en", "hi"):
-        cards = [dict(manifest[sid][lang], **({"img": pics[sid]} if sid in pics else {}))
+        cards = [dict(manifest[sid][lang], **({"img": pics[sid]} if sid in pics else {}), **extra.get(sid, {}))
                  for sid in order if manifest[sid].get(lang)]
-        (root / f"{lang}.json").write_text(json.dumps({"generated_at": now, "sections": labels(lang), "stories": cards},
+        from .places import labels as place_labels
+        (root / f"{lang}.json").write_text(json.dumps({"generated_at": now, "sections": labels(lang),
+                                                       "places": place_labels(lang), "stories": cards},
                                                       ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (root / MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (root / "README.md").write_text(

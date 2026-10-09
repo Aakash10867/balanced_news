@@ -1,0 +1,82 @@
+name: audio
+
+# Articles read aloud on request, and the day's recap (nishpaksh/audio.py, owner Oct 9 2026). Started by the
+# writing desk when something is waiting (writer.yml), with a GitHub schedule as a backup. Makes the audio with
+# Gemini's text-to-speech models, keeps it on the `audio` branch (one commit, force-pushed: only live articles and
+# recent recaps), publishes the site with it under /audio/, then tells the readers who asked (nishpaksh/notify.py).
+on:
+  schedule:
+    - cron: "35 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "who started this run"
+        default: "manual"
+
+concurrency:
+  group: nishpaksh-audio
+  cancel-in-progress: false
+
+permissions:
+  contents: write          # the audio branch
+  pages: write
+  id-token: write
+
+jobs:
+  audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Anything waiting?
+        id: check
+        run: |
+          if python -m nishpaksh.audio --dir audio-out --check; then echo "go=true" >> "$GITHUB_OUTPUT"; else echo "go=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Make the audio
+        id: make
+        if: steps.check.outputs.go == 'true'
+        run: |
+          set -euo pipefail
+          which ffmpeg || (sudo apt-get update -q && sudo apt-get install -y -q ffmpeg)
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          rm -rf audio-out
+          git clone --quiet --depth 1 --branch audio "$REMOTE" audio-out 2>/dev/null || mkdir -p audio-out
+          rm -rf audio-out/.git
+          python -m nishpaksh.audio --dir audio-out --minutes 25
+          if ! grep -q "changed=true" "$GITHUB_OUTPUT"; then echo "nothing new"; exit 0; fi
+          git init --quiet -b audio audio-out
+          git -C audio-out add -A
+          git -C audio-out -c user.name="nishpaksh-audio" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet --allow-empty -m "Audio $(date -u '+%Y-%m-%d %H:%M')"
+          git -C audio-out push --quiet --force "$REMOTE" HEAD:audio
+      - name: The site with its audio
+        if: steps.make.outputs.changed == 'true'
+        run: |
+          rm -rf _site && cp -r site _site && mkdir -p _site/audio
+          cp audio-out/*.m4a audio-out/*.json _site/audio/ 2>/dev/null || true
+      - uses: actions/configure-pages@v5
+        if: steps.make.outputs.changed == 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.make.outputs.changed == 'true'
+        with:
+          path: _site
+      - id: deployment
+        if: steps.make.outputs.changed == 'true'
+        uses: actions/deploy-pages@v4
+      - name: Tell the readers
+        if: steps.check.outputs.go == 'true'
+        run: python -m nishpaksh.notify --send-only

@@ -472,6 +472,38 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (`public.dispatch_pipeline()`, token in Vault `github_dispatch_token`); the pipeline has no GitHub
   schedule (removed Oct 8 2026). The writer (`writer.yml`) keeps its :55 GitHub schedule as backup.
 
+- **Reader features (owner, Oct 9 2026; built functional and plain, the owner designs them later; never ask him UI
+  questions).** Guiding rule: personalise by TOPIC, never by viewpoint; perspective sorts were refused ("our project is
+  exactly against this"). Supabase migration `20261009000200_readers.sql` (applied): profiles, follows, push_subscriptions,
+  notifications, audio_requests, audio_files, recaps, videos, saved, notify_state, account_events; RLS = a reader's own
+  rows; `request_audio()` RPC; Web Push key in Vault (`vapid_private_key`, read by `public.vapid_private_key()`, pipeline
+  role only; public key in `site/features.js` and `notify.py`).
+  - **Accounts:** edge function `supabase/functions/account` (verify_jwt off, checks tokens itself): a NAME gives a login id
+    ("aakash-4821") + password; skip = a guest on that device (random password kept by the browser), which can claim a
+    name later. Users made with the admin API (internal emails `<uuid>@readers.nishpaksh.invalid`), so no Auth settings
+    were changed. Optional real email only for a forgotten password: reset mails need custom SMTP in Supabase (not set).
+  - **Follows are for notifications only** (owner): sections at any level, primary or secondary both count ("any");
+    states (`places.py`: the section call names states, code keeps one only if the article names it or a city of it; "New
+    Delhi" alone is not Delhi); people/bodies (`people.py`, code only, titles stripped); a single story (a follow-up
+    published = notified); the daily recap. EVERY match is notified: no cap, no quiet hours (owner). `notify.py` runs at
+    the end of every desk run (queue, then push), one row per reader+kind+ref, which is also the site's inbox.
+  - **Daily recap** (`notify.make_recap`, desk run from 23:00 IST): every article since the last recap, headline + its lead
+    AS WRITTEN (code only, no new prose), both languages, `#/recap/<day>` on the site, audio made automatically.
+  - **Audio on request** (`audio.py`, workflow `audio.yml`, started by the desk when something waits; GitHub schedule every
+    3 h as backup): language chosen by the reader; 1 new request per reader per IST day, audio already made is free; every
+    "tts" model on every key (10/day each); headline + article as written + section headings; one voice; the site lights
+    each sentence in its own colour while it is read (timing file per audio; owner: highlighting only). Files on the
+    `audio` branch (force-pushed, live articles and 7 days of recaps), published under /audio/ by audio.yml and site.yml.
+  - **Videos** (`videos.py`, desk): once per new article, two YouTube searches (English and Hindi headline), YouTube's own
+    order (owner), max 2 per channel, uploaded after the story's first report, "Primary footage" badge, "not checked"
+    note. Needs the `YOUTUBE_API_KEY` secret (owner adds it after the design pass); without it nothing runs.
+  - **Sorting, filters, search, read later, share card:** client-side in `site/features.js` over live cards (owner: live
+    only). Cards carry `w` (words), `pl` (states), `pp` (people), `au` (audio languages), `vd` (videos). Skipped by the
+    owner: "what changed since you last read", corrections log, outlet pages, perspective sorts. Not features (left for a
+    pipeline discussion): search grounding for sources, transcripts as evidence, Embedding 2.
+  - `index.html` hooks: `window.NP` (what features.js may use), `NPX.keep/order` in `sectionCards`, `NPX.onArticle` in
+    `fillSheet`, `NPX.route` in `route`, `NPX.onLang`; each sentence is wrapped in `<span class="sent">`.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →

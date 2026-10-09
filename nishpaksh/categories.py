@@ -159,12 +159,17 @@ Examples:
 - "Two arrested in Assam for passing secrets to Pakistan" -> ["justice/terror"]
 - "Rain and strong winds forecast in 24 states" -> ["life/environment"]
 
+Also give the Indian states or union territories where the news HAPPENS, at most 3, main first: where the event
+took place, or the state of a High Court or of a state government acting; NOT the city a central minister or the
+Centre speaks from, and not a person's home state when the news is elsewhere. Use [] for news abroad or for news
+about all of India. Keys: {states}
+
 HEADLINE: {headline}
 THE ARTICLE OPENS: {lead}
 OTHER FACTS:
 {facts}
 
-Reply with JSON only: {{"sections": ["...", "..."]}}"""
+Reply with JSON only: {{"sections": ["...", "..."], "states": ["..."]}}"""
 
 
 def _key(x: str) -> str:
@@ -213,7 +218,8 @@ def classify(router: Router | None, headline: str, lead: str, facts: list[str]) 
     not be asked (quota, errors). Either way the article is published, without a section."""
     if router is None or not headline:
         return None
-    prompt = PROMPT.format(menu=_menu(), headline=headline, lead=lead or headline,
+    from .places import menu as state_menu
+    prompt = PROMPT.format(menu=_menu(), states=state_menu(), headline=headline, lead=lead or headline,
                            facts="\n".join(f"- {f}" for f in facts[:5]) or "- (none)")
     for _ in range(2):                     # a second call only when the first gave nothing usable
         try:
@@ -224,6 +230,7 @@ def classify(router: Router | None, headline: str, lead: str, facts: list[str]) 
         data = res.data if isinstance(res.data, dict) else {}
         got = parse(data.get("sections"))
         if got:
+            got["states"] = data.get("states") or []   # taken off by `take_places`, checked by code there
             return got
         prompt += '\n\nThat answer used no listed section. Use only the keys above, like "life/health".'
     return {}
@@ -237,6 +244,15 @@ def for_payload(router: Router | None, payload: dict) -> dict | None:
     items = [i for i in ordered_items(payload) if (i.get("role") or "core") == "core"]
     items.sort(key=lambda i: -(i.get("n_sources") or 0))
     return classify(router, payload.get("headline") or "", lead, [i["text"] for i in items if i.get("text")])
+
+
+def take_places(cat: dict | None, payload: dict) -> list[str] | None:
+    """The states the model named, taken off the section record and kept only where the article names them
+    (places.confirm). None when the model was not asked."""
+    if cat is None:
+        return None
+    from .places import article_text, confirm
+    return confirm(cat.pop("states", []) or [], article_text(payload))
 
 
 def fill_live(store, router: Router, limit: int = 5) -> list[int]:
@@ -259,9 +275,45 @@ def fill_live(store, router: Router, limit: int = 5) -> list[int]:
         cat = for_payload(router, pe)
         if cat is None:
             break                          # the page models cannot be asked now: the next run tries again
+        pl = take_places(cat, pe)
         pe["category"] = cat               # {} is kept too: asked, no section, not asked again
+        pe["places"] = pl
+        from .people import from_payload
+        pe["people"] = from_payload(pe)
         ph = dict(r["payload_hi"] or {})
         ph["category"] = cat
+        ph["places"] = pl
+        ph["people"] = pe["people"]
+        store.exec(update(published).where(published.c.story_id == r["story_id"]).values(payload_en=pe, payload_hi=ph))
+        done.append(r["story_id"])
+    return done
+
+
+def fill_places(store, router: Router, limit: int = 5) -> list[int]:
+    """Live articles published before places existed (Oct 9 2026) get theirs, and their people (by code). The
+    section question is asked again for the states only; the article's sections, text and colours are untouched."""
+    from .db import published, select, update
+    from .people import from_payload
+    from sqlalchemy import text as sql_text
+    done: list[int] = []
+    pg = store.engine.dialect.name == "postgresql"
+    q = select(published.c.story_id, published.c.payload_en, published.c.payload_hi)
+    if pg:
+        q = q.where(sql_text("payload_en -> 'places' IS NULL"))
+    for r in store.rows(q.order_by(published.c.updated_at.desc()).limit(limit * 4 if pg else 10_000)):
+        if len(done) >= limit:
+            break
+        pe = dict(r["payload_en"] or {})
+        if "places" in pe:
+            continue
+        cat = for_payload(router, pe)
+        if cat is None:
+            break                          # the page models cannot be asked now
+        pl = take_places(cat, pe)
+        ppl = from_payload(pe)
+        ph = dict(r["payload_hi"] or {})
+        pe["places"] = ph["places"] = pl
+        pe["people"] = ph["people"] = ppl
         store.exec(update(published).where(published.c.story_id == r["story_id"]).values(payload_en=pe, payload_hi=ph))
         done.append(r["story_id"])
     return done

@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write          # replace the feed branch (ready-made files for the reading site)
+      actions: write           # start the audio job when a reader asked for audio (audio.yml)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,6 +38,7 @@ jobs:
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           RUN_TRIGGER: ${{ github.event.inputs.reason || github.event_name }}
         run: python -m nishpaksh.desk --minutes 20
       - name: Publish the feed for the reading site
@@ -47,3 +49,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/publish_feed.sh
+      - name: Start the audio job if a reader is waiting
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if python -m nishpaksh.audio --dir audio-out --check; then gh workflow run audio.yml -f reason=desk; fi

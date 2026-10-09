@@ -180,6 +180,18 @@ def main() -> None:
     stats["translated"] = finish_translations(store, router)    # half-translated Hindi pages (story 15429)
     from .categories import fill_live
     stats["sectioned"] = fill_live(store, router)                # live articles from before sections (Oct 9 2026)
+    # readers (owner, Oct 9 2026): places and people of older live articles, videos of new ones, then notifications
+    # and the day's recap. None of these may stop the desk's record from being written.
+    from . import notify, videos
+    from .categories import fill_places
+    for name, step in (("placed", lambda: fill_places(store, router)),
+                       ("videos", lambda: videos.fetch_new(store)),
+                       ("notify", lambda: notify.run(store))):
+        try:
+            stats[name] = step()
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s failed: %s", name, e)
+            stats[name] = f"failed: {str(e)[:200]}"
     stats.update(seconds=round(time.time() - t0), trigger=os.environ.get("RUN_TRIGGER", "manual"),
                  tier_calls={k: dict(v) for k, v in sorted(router.tier_log.items())},
                  dropped=sorted(router.dropped), skipping=sorted(skipping))

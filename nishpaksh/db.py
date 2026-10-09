@@ -162,6 +162,93 @@ diagnostics = Table(  # reports from tools and periodic checks (created by supab
 )
 
 
+# Readers (owner, Oct 9 2026; supabase/migrations/20261009000200_readers.sql). Accounts live in Supabase Auth; the
+# pipeline reads follows and push subscriptions and writes notifications, audio, recaps and videos. `reader` is a
+# uuid on Supabase (a string here).
+profiles = Table(
+    "profiles", md,
+    Column("id", String(36), primary_key=True),
+    Column("login", Text),
+    Column("name", Text),
+    Column("guest", Boolean, default=False),
+    Column("email", Text),
+    Column("lang", String(4), default="en"),
+    Column("created_at", DateTime),
+)
+follows = Table(
+    "follows", md,
+    Column("reader", String(36), primary_key=True),
+    Column("kind", String(10), primary_key=True),     # section | place | entity | story | recap
+    Column("key", Text, primary_key=True),
+    Column("label", Text),
+    Column("created_at", DateTime),
+)
+push_subscriptions = Table(
+    "push_subscriptions", md,
+    Column("endpoint", Text, primary_key=True),
+    Column("reader", String(36)),
+    Column("p256dh", Text),
+    Column("auth", Text),
+    Column("lang", String(4), default="en"),
+    Column("created_at", DateTime),
+    Column("last_ok_at", DateTime),
+    Column("failures", Integer, default=0),
+)
+notifications = Table(
+    "notifications", md,
+    Column("id", Integer, primary_key=True),
+    Column("reader", String(36)),
+    Column("kind", String(12)),                       # article | followup | audio | recap
+    Column("ref", Text),                              # one notification per reader, kind and ref
+    Column("story_id", Integer),
+    Column("title", Text),
+    Column("body", Text),
+    Column("url", Text),
+    Column("created_at", DateTime),
+    Column("sent_at", DateTime),
+    Column("read_at", DateTime),
+)
+audio_requests = Table(
+    "audio_requests", md,
+    Column("id", Integer, primary_key=True),
+    Column("reader", String(36)),
+    Column("story_id", Integer),
+    Column("lang", String(4)),
+    Column("requested_at", DateTime),
+    Column("status", String(10), default="queued"),   # queued | done | failed
+    Column("done_at", DateTime),
+)
+audio_files = Table(
+    "audio_files", md,
+    Column("key", Text, primary_key=True),            # "16197-hi", "recap-2026-10-09-en"
+    Column("story_id", Integer),
+    Column("lang", String(4)),
+    Column("url", Text),
+    Column("seconds", Float),
+    Column("model", Text),
+    Column("made_at", DateTime),
+)
+recaps = Table(
+    "recaps", md,
+    Column("day", String(10), primary_key=True),      # IST day, "2026-10-09" (a date on Supabase)
+    Column("cutoff", DateTime),
+    Column("made_at", DateTime),
+    Column("payload_en", JSON),
+    Column("payload_hi", JSON),
+)
+videos = Table(
+    "videos", md,
+    Column("story_id", Integer, primary_key=True),
+    Column("fetched_at", DateTime),
+    Column("items", JSON),
+)
+notify_state = Table(
+    "notify_state", md,
+    Column("key", Text, primary_key=True),
+    Column("value", JSON),
+)
+
+
 def utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
