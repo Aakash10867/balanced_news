@@ -293,7 +293,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   `lead`): the best-reported one, and when that is not today's, the best decisive fact dated today (not the
   same act in other words), told in the second sentence; the lead must cite the first. "The same act in other
   words" (`news._same_act`): same decisive verb AND a shared number, or a shared name and most of the smaller
-  line's words; a shared name alone made every "the GST Council approved ..." line tie (13792 replay). Checked on the 30 latest
+  line's words; a shared name alone made every "the GST Council approved ..." line tie (13792 replay). A line one
+  outlet tells never leads over a fact 2+ outlets tell, whatever its verb (story 13058, Oct 9 2026: "Nana Patekar ...
+  won millions of hearts", one outlet, led the India Mobile Congress story); among 2+ the act still ranks before the
+  count (outlets first lost deaths and a bounty on the 30 latest articles). "inaugurated", "unveiled", "issued" are acts. Checked on the 30 latest
   articles. The writer gets it as SECTION news; the lead must cite it (`narrative.lead_ok`, else the news
   fill rewrites the lead). The headline is written after the article (`news.write_headline`): one call
   gives three candidates; code rejects (>12 words, any "reportedly"/"reports say", bare name, loaded word,

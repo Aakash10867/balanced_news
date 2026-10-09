@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 DECISIVE = re.compile(
     r"(?i)\b(arrested|arrests|detained|detains|nabbed|killed|kills|died|dies|shot dead|murdered|ordered|orders|"
     r"directed|directs|convicted|acquitted|sentenced|granted|grants|rejected|rejects|dismissed|dismisses|quashed|"
-    r"quashes|banned|bans|resigned|resigns|sacked|sacks|suspended|suspends|removed|appointed|appoints|signed|"
+    r"quashes|inaugurated|inaugurates|unveiled|unveils|issued|issues|banned|bans|resigned|resigns|sacked|sacks|suspended|suspends|removed|appointed|appoints|signed|"
     r"signs|approved|approves|passed|announced|announces|launched|launches|declared|declares|won|wins|elected|"
     r"collapsed|collapses|injured|registered|charged|booked|raided|seized|seizes|recovered|struck|attacked|"
     r"condemned|condemns|accepted|accepts|fined|demolished|evacuated|rescued|crashed|caught|flooded|submerged|"
@@ -96,6 +96,7 @@ def lead_news(items: list[dict]) -> list[int]:
 def _pick(items: list[dict]) -> tuple[list[int], int | None]:
     """The ids of the news, best first (the first is THE news). Code only. Ranked:
       not old    never told as the past ("previously", an older year)
+      2 outlets  a fact two or more outlets tell over a one-outlet line, whatever its verb
       act        a decisive act over process or setting
       carried    how many outlets tell this act: the statement's own outlets (folded lines' included,
                  compose.fold_covered runs first) and those of statements telling the same act in other words
@@ -147,7 +148,9 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
             recent = 0
         c = carried(i)
         p = prof[i["id"]]
-        return (recent > 0, act_score(i["text"]), c, recent, central(i), len(p.names) + len(p.nums),
+        # one outlet's line never leads over a fact two or more outlets tell (Oct 9 2026, story 13058: "Nana
+        # Patekar ... won millions of hearts", one outlet, led a story four outlets told; "won" read as an act)
+        return (recent > 0, min(c, 2), act_score(i["text"]), c, recent, central(i), len(p.names) + len(p.nums),
                 i.get("n_articles") or 0, -i["id"])
     ranked = sorted(core, key=key, reverse=True)
     out = [i["id"] for i in ranked]
@@ -157,7 +160,7 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
     if newest is not None and day(first) != newest:
         def same_act(j) -> bool:
             return bool(verbs[first["id"]] & verbs[j["id"]]) and _same_act(prof[first["id"]], prof[j["id"]])
-        today = next((j for j in ranked[1:] if day(j) == newest and key(j)[0] and act_score(j["text"]) > 0
+        today = next((j for j in ranked[1:] if day(j) == newest and key(j)[:2] >= key(first)[:2] and act_score(j["text"]) > 0
                       and not same_act(j)), None)
         if today is not None:
             out.remove(today["id"])

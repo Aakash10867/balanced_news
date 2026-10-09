@@ -2868,3 +2868,19 @@ def test_separate_is_written_only_when_the_statements_say_it():
     kept = "In a separate case, the court heard the plea."
     assert _no_separate(kept, "In a separate case, the court heard a plea.") == kept
     assert _no_separate("The two cases are separate.", "") == "The two cases are separate."
+
+
+def test_one_outlet_line_never_leads_over_a_fact_more_outlets_tell():
+    """Story 13058 (Oct 9 2026): "Nana Patekar ... won millions of hearts" (one outlet, "won" read as an act)
+    led a story whose inauguration three outlets told."""
+    from nishpaksh.news import pick_news
+    src = lambda *o: [{"outlet": x, "url": x} for x in o]
+    items = [
+        {"id": 1, "kind": "event", "text": "Nana Patekar was an extraordinary artist who won millions of hearts.",
+         "sources": src("A")},
+        {"id": 2, "kind": "event", "text": "Prime Minister Narendra Modi inaugurated the India Mobile Congress in New Delhi.",
+         "sources": src("A", "B", "C")},
+        {"id": 3, "kind": "event", "text": "There are more than 5.5 lakh 5G base stations in India.",
+         "sources": src("B", "C", "D", "E")},
+    ]
+    assert pick_news(items)[0] == 2
