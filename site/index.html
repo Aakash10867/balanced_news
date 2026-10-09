@@ -699,7 +699,9 @@ async function loadCards(l) {
   if (cardCache[l]) return cardCache[l];
   let stories = null;
   try {
-    const d = await getJSON(`${FEED_URL}/${l}.json`, {cache: "no-cache"}, 5000);
+    // the minute in the address: GitHub's cache keeps a file up to 5 minutes, so a new article showed up to 5
+    // minutes after its notification (owner, Oct 10 2026); now at most a minute, and every reader shares that minute
+    const d = await getJSON(`${FEED_URL}/${l}.json?m=${Math.floor(Date.now() / 60000)}`, {cache: "no-cache"}, 5000);
     if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
     if (d && d.sections && d.sections.tree3) SECTIONS[l] = d.sections;   // a feed from before Domains: the built-in names
   } catch (e) { /* the feed is missing or slow: read the database */ }
@@ -1490,7 +1492,7 @@ let hiddenAt = 0;
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hiddenAt = Date.now(); return; }
   if (greeted) $("greet").textContent = greeting();
-  if (hiddenAt && Date.now() - hiddenAt > 15 * 60000) {
+  if (hiddenAt && Date.now() - hiddenAt > 2 * 60000) {
     const keep = cards[current] && cards[current].id;
     delete cardCache.en; delete cardCache.hi;
     showDeck(keep);

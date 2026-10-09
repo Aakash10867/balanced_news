@@ -497,7 +497,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     states (`places.py`: the section call names states, code keeps one only if the article names it or a city of it; "New
     Delhi" alone is not Delhi); people/bodies (`people.py`, code only, titles stripped); a single story (a follow-up
     published = notified); the daily recap. EVERY match is notified: no cap, no quiet hours (owner). `notify.py` runs at
-    the end of every desk run (queue, then push), one row per reader+kind+ref, which is also the site's inbox.
+    the end of every desk run (queue only), one row per reader+kind+ref, which is also the site's inbox; writer.yml SENDS
+    the pushes in its own step after the feed is published, and the site asks for en.json/hi.json with the minute in the
+    address (`?m=`) to step past GitHub's 5-minute cache (owner, Oct 10 2026: the home page showed an article 5 minutes
+    after its notification). Coming back to the page after 2 minutes away reloads the cards.
   - **Daily brief** (owner, Oct 10 2026, option B; `recap.py`, called by `notify.make_recap` on the desk run from 23:00
     IST): the day's stories section by section (Politics, Justice, Business, World, Life, then "Also today"), ONE short
     sentence per story (its main section only; a thread told twice in the day once, by its newest), most outlets first.

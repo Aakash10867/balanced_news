@@ -351,7 +351,9 @@ def _webpush(private_key: str):
     return push
 
 
-def run(store: Store, now: dt.datetime | None = None, router=None) -> dict:
+def run(store: Store, now: dt.datetime | None = None, router=None, send: bool = True) -> dict:
+    """Queue the notifications (and the day's brief); send them unless `send` is False: the desk sends them in its
+    own step after the feed is published, so a reader who taps one finds the article on the home page (Oct 10 2026)."""
     now = now or utcnow()
     out = {"queued": queue_articles(store, now)}
     try:
@@ -359,7 +361,8 @@ def run(store: Store, now: dt.datetime | None = None, router=None) -> dict:
     except Exception as e:  # noqa: BLE001 - the recap never stops notifications
         log.warning("recap failed: %s", e)
         out["recap"] = f"failed: {e}"
-    out.update(send_pending(store, now))
+    if send:
+        out.update(send_pending(store, now))
     log_push(store, out)
     return out
 

@@ -49,6 +49,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/publish_feed.sh
+      - name: Send notifications
+        # after the feed, so the article is on the home page when the reader taps (owner, Oct 10 2026)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m nishpaksh.notify --send-only
       - name: Start the audio job if a reader is waiting
         if: ${{ !cancelled() }}
         continue-on-error: true
