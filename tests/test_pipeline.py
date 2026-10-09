@@ -2458,7 +2458,7 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
     assert not any("payload" in q for q in reads if "FROM published" not in q)  # pictures: links only
     assert json.loads((out / "en.json").read_text(encoding="utf-8"))["stories"][0]["id"] == row["story_id"]
     assert feed.bar_counts([[{"class": "single"}, {"class": "disputed", "parts": [
-        {"class": "established"}, {"class": "disputed"}]}]]) == {"e": 1, "o": 1, "d": 1, "r": 0, "u": 0}
+        {"class": "established"}, {"class": "disputed"}]}]]) == {"e": 1, "v": 0, "o": 1, "d": 1, "r": 0, "u": 0}
 
 
 def test_feed_card_picture_is_the_lead_reports_and_never_an_outlets_default(store, tmp_path):

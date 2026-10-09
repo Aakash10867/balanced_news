@@ -11,8 +11,8 @@ One readable essay, every sentence coloured by how well it is supported, with nu
 | Colour | Meaning | Who decides |
 |---|---|---|
 | Green: established | 3+ independent outlets (owners merged, wire copies merged) that were actually read report it; it traces to 2+ **independent origins**; nobody denies it; it is a checkable fact, not a characterisation; and it has stood 6 hours since all of that first held. Once perspectives exist, it must also be reported across 2+ of them. | Code |
-| Grey, dotted: developing | Meets the green rule but has not stood 6 hours yet | Code |
-| Grey: not yet cross-checked | Anything below the green bar, always written with attribution ("X reported that…") | Code |
+| Teal, dotted: developing | Meets the green rule but has not stood 6 hours yet | Code |
+| Brown: not yet cross-checked | Anything below the green bar, always written with attribution ("X reported that…") | Code |
 | Amber: sources disagree | Someone reports it and someone denies or contradicts it | Code; contradictions found by a model |
 | Red, tagged FALSE | Primary evidence (FIR, court record, official data, video) shows it is false | Two model families must agree; grounded search |
 

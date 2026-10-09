@@ -31,8 +31,9 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   `config/ownership.yaml`), 2+ **independent origins** (`origins.py`: named sources; officials of one
   government = one origin; an outlet's own voice counts only as original reporting; unattributed /
   unnamed = pool, never counts), no denial, a checkable fact (not a characterisation), standing 6 h
-  from when the rule was first met (before that: "developing", dotted grey).
-- Grey = not yet cross-checked; amber = sources disagree; red with a FALSE tag = primary evidence
+  from when the rule was first met (before that: "developing", dotted teal).
+- Brown = not yet cross-checked (owner, Oct 9 2026: teal for developing and clay brown for unchecked, so
+  neither is grey and the two cannot be confused; the colour bar has a teal segment of its own); amber = sources disagree; red with a FALSE tag = primary evidence
   (FIR, court record, official data, video) shows it false, two model families agreeing.
   **Purple = one outlet only (owner, Oct 7 2026):** a statement only one independent outlet reports
   (and not disputed or false) goes INTO the article, shown purple ("one outlet only": an exclusive,
@@ -337,8 +338,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   the story's first report (`story_before_hours`) is never asked in (an earlier event).
 - **Reading site nishpaksh_version_1.0 (owner, Oct 8 2026; `site/`, the main address; `/v1/` redirects there).** Designed on a canvas
   (trial versions 0.1-0.6) and approved: one card at a time (swipe up/down, snap, loops newest <-> oldest),
-  the card shows the headline then the article itself fading out, a colour bar (green / purple / amber / red /
-  grey shares of the article's coloured pieces) with the time beside it. **Version 1.1 (owner, Oct 8 2026, after
+  the card shows the headline then the article itself fading out, a colour bar (green / teal / purple / amber / red /
+  brown shares of the article's coloured pieces) with the time beside it. **Version 1.1 (owner, Oct 8 2026, after
   reviews said the multicolour sweep and the rounded sans looked like Instagram):** header and article headline
   box = one indigo gradient, light to deep (#46549a -> #161a38); headlines Newsreader (Hindi: Noto Serif
   Devanagari); greeting upright Newsreader / Tiro Devanagari by IST time; wordmark Alfa Slab One / Rozha One

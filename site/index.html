@@ -47,9 +47,9 @@
     --muted: #5f6368;
     --edge: #d3d3cf;
     /* sentence colours (text on white) */
-    --est: #1d6a45; --unv: #5f6368; --one: #6a3d9a; --dis: #8a6100; --fal: #b2251c;
+    --est: #1d6a45; --dev: #13857a; --unv: #8a5a3c; --one: #6a3d9a; --dis: #8a6100; --fal: #b2251c;
     /* the colour bar */
-    --bar-e: #2f8a5b; --bar-o: #7a4bb0; --bar-d: #d39a12; --bar-r: #c0392b; --bar-u: #a3a6aa;
+    --bar-e: #2f8a5b; --bar-v: #2aa197; --bar-o: #7a4bb0; --bar-d: #d39a12; --bar-r: #c0392b; --bar-u: #b0835f;
     /* version 1.1 (owner, Oct 8 2026): one indigo, light to deep; the multicolour sweep read as Instagram */
     --brand: radial-gradient(120% 130% at 0% 0%, rgba(140,160,255,0.22) 0%, rgba(140,160,255,0) 55%),
              linear-gradient(135deg, #46549a 0%, #2f3a72 45%, #1f2550 75%, #161a38 100%);
@@ -113,7 +113,7 @@
 
   /* sentence colours */
   .s.established, .s.corroborated, .s.confirmed { color: var(--est); }
-  .s.developing { color: var(--unv); text-decoration: underline dotted #9aa0a6; text-underline-offset: 4px; }
+  .s.developing { color: var(--dev); text-decoration: underline dotted #7fc4bb; text-underline-offset: 4px; }
   .s.unverified, .s.pending { color: var(--unv); }
   .s.single { color: var(--one); }
   .s.disputed { color: var(--dis); }
@@ -415,7 +415,7 @@ const T = {
     missing: "This story is no longer available.", loading: "Loading…",
     sections: {happened: "What happened", numbers: "By the numbers", say: "What they say", background: "Background",
                related: "Related events", explained: "Explained", next: "What next"},
-    bar: (c) => `${c.e} established, ${c.o} one outlet only, ${c.d} disputed, ${c.r} shown false, ${c.u} not yet cross-checked`,
+    bar: (c) => `${c.e} established, ${c.v || 0} developing, ${c.o} one outlet only, ${c.d} disputed, ${c.r} shown false, ${c.u} not yet cross-checked`,
     all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`, secUp: (l, p) => `Back from ${l} to ${p}`,
     secEmpty: (l) => `Nothing in ${l} yet.`, secBody: "Articles get their sections when they are published, so this one will fill up as new stories come in.",
     showAll: "Show all news", photo: "Photo", share: "Share", copied: "Link copied", latest: "Go to the latest story",
@@ -436,18 +436,18 @@ const T = {
     missing: "यह ख़बर अब उपलब्ध नहीं है।", loading: "लोड हो रहा है…",
     sections: {happened: "क्या हुआ", numbers: "आँकड़ों में", say: "किसने क्या कहा", background: "पृष्ठभूमि",
                related: "जुड़ी घटनाएँ", explained: "समझिए", next: "आगे क्या"},
-    bar: (c) => `${c.e} स्थापित, ${c.o} केवल एक स्रोत, ${c.d} मतभेद, ${c.r} असत्य, ${c.u} अभी पुष्टि नहीं`,
+    bar: (c) => `${c.e} स्थापित, ${c.v || 0} विकसित हो रही, ${c.o} केवल एक स्रोत, ${c.d} मतभेद, ${c.r} असत्य, ${c.u} अभी पुष्टि नहीं`,
     all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`, secUp: (l, p) => `${l} से ${p} पर लौटें`,
     secEmpty: (l) => `${l} में अभी कोई ख़बर नहीं।`, secBody: "हर लेख को छपते समय उसका खंड मिलता है, इसलिए नई ख़बरों के साथ यह खंड भरता जाएगा।",
     showAll: "सारी ख़बरें देखें", photo: "फ़ोटो", share: "शेयर करें", copied: "लिंक कॉपी हो गया", latest: "सबसे ताज़ा ख़बर पर जाएँ",
   },
 };
-const KEYCOLOR = {established: "var(--est)", developing: "var(--unv)", unverified: "var(--unv)", single: "var(--one)", disputed: "var(--dis)", false: "var(--fal)"};
+const KEYCOLOR = {established: "var(--est)", developing: "var(--dev)", unverified: "var(--unv)", single: "var(--one)", disputed: "var(--dis)", false: "var(--fal)"};
 const VERDICT = {corroborated: "established", confirmed: "established", established: "established", developing: "developing",
                  disputed: "disputed", false: "false", single: "single", unverified: "unverified", pending: "unverified"};
 // the sections' names (nishpaksh/categories.py labels); the feed's en.json / hi.json carry the same
 const SECTIONS = {"en": {"primary": {"politics": "Politics", "justice": "Justice", "business": "Business", "world": "World", "life": "Life"}, "secondary": {"elections": "Elections", "parties": "Parties", "government": "Government", "parliament": "Parliament", "protests": "Protests", "crime": "Crime", "police": "Police", "courts": "Courts", "corruption": "Corruption", "terror": "Terror", "economy": "Economy", "companies": "Companies", "markets": "Markets", "money": "Your money", "domains": "Domains", "diplomacy": "Diplomacy", "indians-abroad": "Indians abroad", "conflicts": "Conflicts", "defence": "Defence", "abroad": "Abroad", "health": "Health", "education": "Education", "accidents": "Accidents", "environment": "Environment", "sport-films": "Sport & films"}, "tertiary": {"hr": "HR", "finance": "Finance", "marketing": "Marketing", "analytics": "Analytics", "operations": "Operations"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}, "hi": {"primary": {"politics": "राजनीति", "justice": "न्याय", "business": "बिज़नेस", "world": "दुनिया", "life": "जीवन"}, "secondary": {"elections": "चुनाव", "parties": "दल", "government": "सरकार", "parliament": "संसद", "protests": "प्रदर्शन", "crime": "अपराध", "police": "पुलिस", "courts": "अदालत", "corruption": "भ्रष्टाचार", "terror": "आतंक", "economy": "अर्थव्यवस्था", "companies": "कंपनियां", "markets": "बाज़ार", "money": "आपका पैसा", "domains": "क्षेत्र", "diplomacy": "कूटनीति", "indians-abroad": "विदेश में भारतीय", "conflicts": "संघर्ष", "defence": "रक्षा", "abroad": "विदेश", "health": "सेहत", "education": "शिक्षा", "accidents": "हादसे", "environment": "पर्यावरण", "sport-films": "खेल और फ़िल्में"}, "tertiary": {"hr": "एचआर", "finance": "फ़ाइनेंस", "marketing": "मार्केटिंग", "analytics": "एनालिटिक्स", "operations": "ऑपरेशंस"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}};
-const BARKEY = {established: "e", corroborated: "e", confirmed: "e", single: "o", disputed: "d", false: "r", unverified: "u", pending: "u", developing: "u"};
+const BARKEY = {established: "e", corroborated: "e", confirmed: "e", single: "o", disputed: "d", false: "r", unverified: "u", pending: "u", developing: "v"};
 
 /* ---------- small helpers ---------- */
 function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -507,7 +507,7 @@ function cardText(paras, limit = 9) {       // as nishpaksh/feed.py _card_text
   return out;
 }
 function barCounts(paras) {                   // as nishpaksh/feed.py bar_counts
-  const c = {e: 0, o: 0, d: 0, r: 0, u: 0};
+  const c = {e: 0, v: 0, o: 0, d: 0, r: 0, u: 0};
   for (const para of paras || []) for (const s of para || []) {
     const ks = s.parts && s.parts.length > 1 ? s.parts.map(p => p.class) : [s.class];
     for (const k of ks) c[BARKEY[k] || "u"] += 1;
@@ -577,7 +577,7 @@ function sentenceHtml(x) {
   return `${tag}<span class="s ${esc(cls(x.c))}">${esc(x.t)}</span> `;
 }
 function cardHtml(c, i) {
-  const b = c.bar || {e: 0, o: 0, d: 0, r: 0, u: 0};
+  const b = c.bar || {e: 0, v: 0, o: 0, d: 0, r: 0, u: 0};
   const seg = (k, v) => v ? `<span style="flex-grow:${v};background:var(--bar-${k})"></span>` : "";
   const pic = c.img && safeUrl(c.img.src) ? c.img : null;
   const picHtml = pic ? `<div class="pic"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async">
@@ -586,7 +586,7 @@ function cardHtml(c, i) {
   return `<div class="slot" data-i="${i}"><a class="card${pic ? " has-pic" : ""}" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
       ${picHtml}<h2>${esc(c.h)}</h2>
       <div class="text">${(c.paras || []).map(p => `<p>${p.map(sentenceHtml).join("")}</p>`).join("")}</div>
-      <div class="foot"><div class="bar" role="img" aria-label="${esc(T[lang].bar(b))}">${seg("e", b.e)}${seg("o", b.o)}${seg("d", b.d)}${seg("r", b.r)}${seg("u", b.u)}</div>
+      <div class="foot"><div class="bar" role="img" aria-label="${esc(T[lang].bar(b))}">${seg("e", b.e)}${seg("v", b.v)}${seg("o", b.o)}${seg("d", b.d)}${seg("r", b.r)}${seg("u", b.u)}</div>
       <span class="ago">${esc(ago(c.at))}</span></div></a></div>`;
 }
 function renderDeck(keepId) {
