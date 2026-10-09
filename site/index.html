@@ -150,10 +150,10 @@
   html.hi .hbox h1 { font-size: 24px; line-height: 1.45; letter-spacing: 0; }
   .hbox .meta { position: relative; margin-top: 10px; font-size: 13px; opacity: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   /* share (owner, Oct 9 2026): at the right of the sources and time line */
-  .share { flex: none; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin: -8px -6px -8px 0;
-           border: 1px solid rgba(255,255,255,0.28); border-radius: 50%; background: rgba(255,255,255,0.12); color: #fff; cursor: pointer;
-           transition: background-color 160ms ease, transform 120ms ease; }
-  .share:active { transform: scale(0.94); background: rgba(255,255,255,0.24); }
+  /* the size of the line's text: a bare icon; the touch area stays 36px through padding and negative margins */
+  .share { flex: none; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin: -10px -10px -10px 0;
+           border: 0; border-radius: 50%; background: transparent; color: #fff; cursor: pointer; transition: background-color 160ms ease; }
+  .share:active { background: rgba(255,255,255,0.16); }
   .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 20; transform: translate(-50%, 12px); opacity: 0;
            background: #1f2550; color: #fff; font-size: 14px; font-weight: 600; padding: 10px 16px; border-radius: 999px; pointer-events: none;
            box-shadow: 0 6px 18px rgba(22,26,56,0.25); transition: opacity 200ms ease, transform 260ms var(--ease); }
@@ -303,7 +303,7 @@
           <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिं</button>
         </div>
       </div>
-      <div class="hbox" id="hbox"><div class="layer brand"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
+      <div class="hbox" id="hbox"><div class="layer brand"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
       <div class="rise" id="rise"></div>
     </div>
