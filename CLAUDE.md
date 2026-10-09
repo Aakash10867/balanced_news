@@ -360,6 +360,15 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   over it); All: the whole button. Tapping the wordmark also goes to the latest. Bar classes are prefixed `sb-`: a
   class named "back" once picked up the article back button's shadow. Share: a button at the right of the article's
   sources and time line (the phone's share sheet, else the link is copied).
+- **Pictures: collected first, shown later (owner, Oct 9 2026).** Principles agreed: (1) only the outlet's own
+  SHARE picture (og:image / twitter:image, else the feed's media:content / thumbnail / image enclosure), LINKED from
+  the outlet and credited to it, never copied to us; (2) chosen by code, never by taste: the picture most outlets
+  used (wire photos repeat), then an agency or official handout, then the lead's outlet; an outlet's default logo
+  picture (the same link across its unrelated stories) is never used; (3) a picture that does not load leaves the
+  card as it is. Stored in `articles.image` (migration `20261009000100`; "" = looked, none; NULL = not looked):
+  `ingest.page_image` / `entry_image` at reading, `discover` for search finds, `ingest.fill_images` looks once at up
+  to 60 articles of the last 36 h in a story that have none yet (run stats `images`: with / without / filled).
+  The choice per story and the design come next, once the data shows how many articles carry one.
 - **No internal notes for readers (owner, Oct 8 2026):** the article page no longer shows "Nothing in this
   story is confirmed by independent sources yet" (read as "this story is fake"; the colours already say which
   parts are supported) nor "Which outlets form different perspectives is not yet known" (internal state, not

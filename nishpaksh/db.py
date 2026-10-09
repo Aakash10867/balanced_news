@@ -49,6 +49,7 @@ articles = Table(
     Column("embed_model", String(60)),           # vectors from different models are not comparable
     Column("story_id", Integer, index=True),
     Column("found_by", String(10)),              # feed | search  (None = feed, before this existed)
+    Column("image", String(1500)),               # the outlet's share picture (og:image); "" none, NULL not looked
 )
 
 stories = Table(
