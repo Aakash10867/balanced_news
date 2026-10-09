@@ -200,12 +200,17 @@
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
   .tile { background: #fff; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 3px 0 var(--edge); display: flex; flex-direction: column; gap: 6px; }
   .tile.wide { grid-column: 1 / -1; }
+  .tile.lone { grid-column: 1 / -1; flex-direction: row; align-items: baseline; gap: 14px; }
+  .tile.lone b { flex: none; max-width: 45%; }
   .tile b { font-family: var(--head); font-size: 26px; font-weight: 700; line-height: 1.05; color: #1f2550; overflow-wrap: anywhere; }
   .tile div { font-size: 14px; line-height: 1.45; }
   .quote .who { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #46549a; margin-bottom: 6px; }
-  .quote p { position: relative; padding-left: 28px; margin: 0 0 8px; font-size: 16.5px; line-height: 1.6; }
+  /* one quote mark per card, the section's symbol (owner, Oct 9 2026), not one per line: the lines are reported speech */
+  .paper.quote { position: relative; padding-left: 46px; }
+  .quote::before { content: "\201C"; position: absolute; left: 14px; top: 8px; font-family: "Newsreader", Georgia, serif; font-size: 46px;
+                   line-height: 1; color: #46549a; }
+  .quote p { margin: 0 0 10px; font-size: 17px; line-height: 1.65; }
   .quote p:last-child { margin-bottom: 0; }
-  .quote p::before { content: "\201C"; position: absolute; left: 0; top: -6px; font-family: "Newsreader", Georgia, serif; font-size: 44px; line-height: 1; color: #46549a; }
   /* pictures on the cards (owner, Oct 9 2026, canvas "Pictures A"): sharp at the top, softly blurred and washed to
      white where the headline begins; a card without a picture is as before */
   .card.has-pic { padding-top: 0; }
@@ -555,8 +560,8 @@ function cardHtml(c, i) {
   const b = c.bar || {e: 0, o: 0, d: 0, r: 0, u: 0};
   const seg = (k, v) => v ? `<span style="flex-grow:${v};background:var(--bar-${k})"></span>` : "";
   const pic = c.img && safeUrl(c.img.src) ? c.img : null;
-  const picHtml = pic ? `<div class="pic"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async">
-      <img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async"><div class="wash"></div>
+  const picHtml = pic ? `<div class="pic"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async">
+      <img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="wash"></div>
       <span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span></div>` : "";
   return `<div class="slot" data-i="${i}"><a class="card${pic ? " has-pic" : ""}" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
       ${picHtml}<h2>${esc(c.h)}</h2>
@@ -571,7 +576,7 @@ function renderDeck(keepId) {
       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#7d84b0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
       <h2>${esc(t.secEmpty(secLabel(fKey)))}</h2><p>${esc(t.secBody)}</p>
       <button type="button" class="brand" id="showall">${esc(t.showAll)}</button></div></div></div>`;
-    $("showall").onclick = () => goSection(null, null);
+    $("showall").onclick = () => { const d0 = secDepth(); goSection(null, null); syncHistory(d0); };
     return;
   }
   if (!cards.length) { track.innerHTML = `<div class="slot"><div class="state">${esc(T[lang].empty)}</div></div>`; return; }
@@ -595,7 +600,7 @@ function jumpTo(i) {   // i: index in cards; no animation
 }
 function onSettle() {
   const n = cards.length;
-  if (!n) return;
+  if (!n || running) return;
   const k = Math.round(track.scrollTop / slotHeight());
   if (n > 1 && k === 0) return jumpTo(n - 1);
   if (n > 1 && k === n + 1) return jumpTo(0);
@@ -603,11 +608,48 @@ function onSettle() {
   prefetchAround();
   awayChanged();
 }
-track.addEventListener("scroll", () => { clearTimeout(settleTimer); settleTimer = setTimeout(onSettle, 130); }, {passive: true});
+// the card leaving tips back and shrinks a little, the next rises from slightly behind; at rest nothing is moved
+const STILL = matchMedia("(prefers-reduced-motion: reduce)");
+let painted = new Set(), paintQueued = false;
+function paintDepth() {
+  paintQueued = false;
+  const slots = track.children, h = slotHeight(), top = track.scrollTop, k = Math.floor(top / h), now = new Set();
+  // the tilt goes on the card INSIDE the slot: the slot is what the browser snaps to, and a tilting snap target
+  // moved under the snap and stopped swiping down midway (Oct 9 2026)
+  if (!STILL.matches) for (let i = Math.max(0, k - 1); i <= Math.min(slots.length - 1, k + 2); i++) {
+    const slot = slots[i], el = slot.firstElementChild, o = Math.max(-1, Math.min(1, (slot.offsetTop - top) / h)), a = Math.abs(o);
+    if (!el) continue;
+    if (a < 0.002 || a > 0.999) continue;
+    el.style.transformOrigin = o < 0 ? "center bottom" : "center top";
+    el.style.transform = `perspective(1000px) translateZ(${(-120 * a).toFixed(1)}px) rotateX(${(o * -10).toFixed(2)}deg) scale(${(1 - 0.06 * a).toFixed(4)})`;
+    el.style.opacity = (1 - 0.35 * a).toFixed(3);
+    if (!painted.has(el)) { el.style.willChange = "transform, opacity"; el.style.transition = "none"; }   // the card's tap transition would lag the tilt
+    now.add(el);
+  }
+  for (const el of painted) if (!now.has(el)) { el.style.transform = ""; el.style.opacity = ""; el.style.willChange = ""; el.style.transition = ""; }
+  painted = now;
+}
+track.addEventListener("scroll", () => {
+  if (!paintQueued) { paintQueued = true; requestAnimationFrame(paintDepth); }
+  clearTimeout(settleTimer); settleTimer = setTimeout(onSettle, 130);
+}, {passive: true});
 if ("onscrollend" in window) track.addEventListener("scrollend", () => { clearTimeout(settleTimer); onSettle(); });
+// the stories and pictures of the cards around the one in view are fetched and decoded before they are swiped in
+// (a picture decoded mid-swipe made swiping down stutter, Oct 9 2026)
+const decoded = new Set();
 function prefetchAround() {
   if (!cards.length) return;
-  for (const d of [0, 1, 2, -1]) { const c = cards[(current + d + cards.length) % cards.length]; if (c) loadStory(c.id); }
+  for (const d of [0, 1, 2, 3, -1, -2]) {
+    const c = cards[(current + d + cards.length) % cards.length];
+    if (!c) continue;
+    if (d <= 2 && d >= -1) loadStory(c.id);
+    const src = c.img && safeUrl(c.img.src) ? c.img.src : null;
+    if (src && !decoded.has(src)) {
+      decoded.add(src);
+      const im = new Image(); im.referrerPolicy = "no-referrer"; im.src = src;
+      if (im.decode) im.decode().catch(() => {});
+    }
+  }
 }
 function step(d) { track.scrollBy({top: d * slotHeight(), behavior: "smooth"}); }
 
@@ -657,7 +699,7 @@ function ranges(nums) {
   return out;
 }
 // the first figure in a "By the numbers" sentence becomes the tile's big number (the sentence stays under it)
-const FIGURE = /(?:[$₹€£]\s?\d[\d,.]*(?:\s?(?:lakh|crore|million|billion|trillion|bn|mn|cr|लाख|करोड़))?|(?:Rs\.?|INR|USD)\s?\d[\d,.]*(?:\s?(?:lakh|crore|million|billion))?|\d[\d,.]*\s?(?:%|per\s?cent|percent|lakh|crore|million|billion|trillion|dollars|rupees|लाख|करोड़|प्रतिशत|फीसदी|डॉलर|रुपये|रुपए)|\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)/i;
+const FIGURE = /(?<![\w.])(?:(?:[$₹€£]|Rs\.?\s?|INR\s?|USD\s?)\d[\d,]*(?:\.\d+)?(?:\s?(?:lakh|crore|million|billion|trillion|bn|mn|cr|लाख|करोड़))?|\d[\d,]*(?:\.\d+)?\s?(?:%|per\s?cent|percent|lakh|crore|million|billion|trillion|dollars|rupees|लाख|करोड़|प्रतिशत|फीसदी|डॉलर|रुपये|रुपए)|\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?!(?:19|20)\d\d\b)\d{2,}(?:\.\d+)?)(?![\w-])/i;
 function essayHtml(nar, t) {
   const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
   const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
@@ -685,8 +727,11 @@ function essayHtml(nar, t) {
     no += 1;
     const head = `<div class="sechead" data-sec="${esc(g.key)}"><span>${String(no).padStart(2, "0")}</span><h3>${esc(t.sections[g.key] || "")}</h3></div>`;
     if (g.key === "numbers") {
-      const tiles = ps.flat().map(x => {
-        const m = (x.text || "").match(FIGURE);
+      const items = ps.flat(), withFig = items.map(x => (x.text || "").match(FIGURE));
+      const lastFig = withFig.reduce((a, m, i) => m ? i : a, -1), nFig = withFig.filter(Boolean).length;
+      const tiles = items.map((x, i) => {
+        const m = withFig[i];
+        if (m && nFig % 2 === 1 && i === lastFig) return `<div class="tile lone"><b>${esc(m[0].trim().replace(/[.,]+$/, ""))}</b><div>${sent(x)}</div></div>`;
         return m ? `<div class="tile"><b>${esc(m[0].trim().replace(/[.,]+$/, ""))}</b><div>${sent(x)}</div></div>`
                  : `<div class="tile wide"><div>${sent(x)}</div></div>`;
       }).join("");
@@ -748,7 +793,7 @@ function articleHtml(row) {
   const thread = (title, list) => list && list.length ? `<div class="sec">${esc(title)}</div><div class="paper"><ul class="thread">${list.map(x =>
       `<li><a href="#/story/${encodeURIComponent(x.story_id)}" data-story="${esc(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul></div>` : "";
   return `<div class="key">${keyHtml(t, nar)}</div>
-    <div class="paper essay">${essayHtml(nar, t)}</div>
+    ${essayHtml(nar, t)}
     ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
     ${thread(t.earlier, p.parents)}${thread(t.next, p.children)}
     ${sources ? `<div class="sec">${esc(t.sourcesTitle)}</div><div class="paper"><ol class="sources">${sources}</ol></div>` : ""}
@@ -906,7 +951,12 @@ $("back").addEventListener("click", () => {
   if (openedFromDeck && history.state && history.state.story) history.back();
   else { history.replaceState(null, "", location.pathname + location.search); closeStory(true); }
 });
-window.addEventListener("popstate", () => route(true));
+window.addEventListener("popstate", () => {
+  if (openId || /^#\/story\//.test(location.hash)) { route(true); return; }
+  const st = history.state;                          // the section this entry was made for
+  if (st && st.np === "sec") { if (st.level !== level || st.sec !== sec || st.ter !== ter) goSection(st.level, st.sec, st.ter); }
+  else if (level !== null) goSection(null, null);
+});
 
 // source numbers and thread links work inside the sheet without leaving it
 $("rise").addEventListener("click", e => {
@@ -1053,11 +1103,31 @@ function awayChanged() {
   wasAway = a; wasBelow = b;
   if (sbar.childElementCount) layoutBar();
 }
+let running = false, runFrame = 0;
 function toLatest() {
-  if (!cards.length || current === 0) return;
-  clearTimeout(swapTimer);
-  track.classList.add("swap");
-  swapTimer = setTimeout(() => { jumpTo(0); track.classList.remove("swap"); }, 170);
+  const n = cards.length;
+  if (!n || current === 0 || running) return;
+  if (STILL.matches || n < 2) { jumpTo(0); return; }
+  // the latest lies above, or below when we swiped up past it round the loop; at most five cards are run through
+  const h = slotHeight(), below = isBelow(), target = below ? n + 1 : 1;
+  let from = Math.round(track.scrollTop / h);
+  if (Math.abs(target - from) > 5) from = below ? target - 5 : target + 5;
+  const d0 = from * h, d1 = target * h, dur = 260 + 90 * Math.abs(target - from), t0 = performance.now();
+  const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  running = true;
+  track.style.scrollSnapType = "none";
+  track.scrollTop = d0;
+  const step = now => {
+    const x = Math.min(1, (now - t0) / dur);
+    track.scrollTop = d0 + (d1 - d0) * ease(x);
+    paintDepth();
+    if (x < 1) { runFrame = requestAnimationFrame(step); return; }
+    running = false;
+    jumpTo(0);
+    paintDepth();
+  };
+  cancelAnimationFrame(runFrame);
+  runFrame = requestAnimationFrame(step);
 }
 $("wm").addEventListener("click", toLatest);
 // the bar moves at once; the cards fade out, change to the section's, start at its newest, and fade in
@@ -1075,9 +1145,22 @@ function goSection(l, s, t) {
     track.classList.remove("swap");
   }, 170);
 }
+// in a section, the phone's back steps out one level at a time (tertiary, secondary, primary, all) instead of leaving
+// the site. Each level gets its own history entry WHEN IT IS TAPPED INTO: Chrome on Android skips entries a page
+// adds without a tap, so entries added while going back (as before, Oct 9 2026) were skipped and the site closed.
+function secDepth() { return ter ? 3 : sec ? 2 : level ? 1 : 0; }
+function secState() { return {np: "sec", level, sec, ter}; }
+function syncHistory(d0) {
+  const d1 = secDepth();
+  if (d1 > d0) history.pushState(secState(), "", location.href);
+  else if (d1 === d0 && d1 > 0) history.replaceState(secState(), "", location.href);
+  else if (d1 < d0) history.go(d1 - d0);            // back through the entries of the levels left
+}
 sbar.addEventListener("click", e => {
   const b = e.target.closest("button.sb");
   if (!b || b.classList.contains("hide")) return;
+  const d0 = secDepth();
+  queueMicrotask(() => syncHistory(d0));
   const kind = b.dataset.kind, key = b.dataset.key;
   if (kind === "all") goSection(null, null);
   else if (kind === "primary") goSection(level === key ? null : key, null);
