@@ -27,7 +27,9 @@ import logging
 import re
 import threading
 
-from . import voice
+from . import grammar, voice
+from .grammar import (ATTRIBUTION_VERBS, CONNECTIVE, DISPUTE_MARKERS, FALSE_MARKERS,  # noqa: F401 (moved to grammar.py)
+                      HEDGE_MARKERS)
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -57,6 +59,8 @@ You may use ONLY the statements given. Each has an id and a status, may say who 
 when it happened, which statements contradict it, and which statements are a party's response to it.
 Statements marked CONTEXT are not the story's own event: background, a separate related event,
 an explanation, a reaction, or what happens next.
+A statement may carry a SHAPE: the form of sentence to write it in (who is named, with which verb, what
+is added). Follow it; a statement with no SHAPE is stated plainly.
 
 Structure: the article is written in SECTIONS, in this order, so that a reader who knows nothing about
 the story first learns why it matters today, then how it came about, and then follows it as one
@@ -155,7 +159,7 @@ sections named below so that they carry EVERY statement listed for them (each wh
 paragraph if needed) and fix each failed sentence (or drop it if it cannot pass). Keep good sentences as
 they are. The rest of the article is shown so you continue it: do not repeat what it already says, and
 do not introduce again a person it already introduced.
-Rules as before: only the statements given; no outlet named as a source; no number or speaker the
+Rules as before (a SHAPE on a statement is the form to write it in): only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
 disputes give both versions and whose they are; a sentence joining statements of different statuses is
 written in two or three "parts", each with only its own ids (as before); a speaker is named once, then the surname or role
@@ -304,20 +308,12 @@ def _by_speaker(items: list[dict]) -> list[tuple[str | None, list[dict]]]:
 
 
 
-FALSE_MARKERS = ("false", "untrue", "not true", "contradict", "evidence shows", "disproved", "incorrect",
-                 "no evidence", "refut")
-HEDGE_MARKERS = ("reportedly", "according to report", "according to one report", "report", "it is said", "was said to", "were said to",
-                 "accounts differ", "according to early", "unconfirmed", "allegedly")
-ATTRIBUTION_VERBS = ("said", "say", "says", "alleg", "claim", "accus", "denied", "deny", "denies", "demand",
-                     "told", "stated", "according to", "maintain", "insist", "assert")
 SPEECH = re.compile(r"(?i)\b(said|says|stated|told|claimed|claims|denied|denies|alleged that|alleges|accused|"
                     r"according to (?!(?:early |some |other )?reports?\b))")
 REPORTED = re.compile(r"(?i)\b(said|stated|told|claimed|alleged|announced|added|noted|denied)\s+that\b")
 SPEECH_ANY = re.compile(r"(?i)\b(said|says|stated|states|told|claimed|claims|alleged|alleges|announced|added|noted|"
                         r"denied|denies|according to|reportedly|reports? (?:said|say|stated))\b")
 CAUSAL = ("because", "due to", "led to", "as a result", "resulted in", "caused", "triggered")
-DISPUTE_MARKERS = ("differ", "disput", "contradict", "others", "while", "however", "but ", "conflicting",
-                   "versions", "other reports")
 
 
 def _word_set(s: str) -> set[str]:
@@ -437,6 +433,9 @@ def _statement_line(i: dict) -> str:
     if i.get("adds_to"):
         line += (f" | says all of #{i['adds_to']} and more: write the two as ONE sentence in two parts, "
                  f"#{i['adds_to']}'s fact first, then what this adds")
+    shape = grammar.shape_line(i, CLASS[RANK.get(shade(i), 2)])
+    if shape:
+        line += f" | SHAPE: {shape}"
     when = english_when(i.get("time") or {})
     if when:
         line += f" | when: {when}"
@@ -563,6 +562,10 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
     # "threatened" for what the statements only say someone said
     if style and voice.unsupported_acts(text, source_text):
         return _no("verb the statements do not use")
+    # a sentence that cites statements and says nothing of them ("Kabir set out his position.") carries none
+    # of them: refused, so the fill pass writes the statements themselves (grammar.empty_setup)
+    if style and grammar.empty_setup(text):
+        return _no("empty set-up")
     # never link events by cause unless a statement does
     for c in CAUSAL:
         if re.search(rf"\b{c}\b", low) and c not in source_text.lower():
@@ -805,7 +808,6 @@ def _pronoun_ok(text: str, ids: list[int], by_id: dict, near: str) -> bool:
 FULL_START = re.compile(r"^[\"“'‘(]?[A-Z0-9\u0900-\u097f]")
 FULL_END = re.compile(r"[.!?][\"”'’)]*$")
 FRAGMENT_END = re.compile(r"[,;:–—-]\s*$")
-CONNECTIVE = re.compile(r"(?i)^(and|but|or|while|whereas|which|who|whom|whose|as well as|with|although|though)\b")
 
 
 def _pieces(sent: dict) -> list[dict]:
@@ -846,6 +848,46 @@ def _join_fragments(para: list) -> list:
     return out
 
 
+def _check_one(sent, by_id, banned, outlets, scope: set[str], style: bool, near: str):
+    """(sentence, ids) for one sentence: the checks, then (grammar.py) the one safe code repair for the fault
+    found, checked again by EVERY check. A repair that still fails leaves the original failure standing, so
+    a repair can turn a dropped sentence into a published one that passes, never relax a check. The counters
+    show it: the fault is not counted as a rejection but as "fixed: <reason>" (owner, Oct 10 2026)."""
+    def run(s_):
+        _TL.last = None
+        got = _validate(s_, by_id, banned, outlets, scope, style) if isinstance(s_, dict) else None
+        if got is not None and style and not _pronoun_ok(s_["text"], got, by_id, near):
+            got = _no("pronoun without evidence")
+        return got
+    ids = run(sent)
+    first = getattr(_TL, "last", None)
+    if ids is not None or not style or not isinstance(sent, dict) or not first:
+        return sent, ids
+    base = dict(_reasons())                      # the counters with the original failure in them
+    cur, reason = sent, first
+    for _ in range(3):                           # a repair can expose the next fault (false claim, then its speaker)
+        fixed = grammar.repair(cur, reason or "", by_id, scope)
+        if fixed is None:
+            break
+        got = run(fixed)
+        if got is not None:
+            r = _reasons()
+            r.clear()
+            r.update(base)
+            r[first] = r.get(first, 1) - 1
+            if r[first] <= 0:
+                r.pop(first, None)
+            r[f"fixed: {first}"] = r.get(f"fixed: {first}", 0) + 1
+            _TL.last = None
+            return fixed, got
+        cur, reason = fixed, getattr(_TL, "last", None)
+    r = _reasons()
+    r.clear()
+    r.update(base)
+    _TL.last = first
+    return sent, None
+
+
 def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool = True,
                       keys: list[str] | None = None) -> tuple[list[list[dict]], list[dict], int]:
     """Validated sentences only. Sentences that depend on each other stand or fall together
@@ -875,10 +917,9 @@ def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool =
             scope, near = set(), ""
         if same_section and idx > 0 and isinstance(sent, dict) and LEANS_BACK.search(str(sent.get("text") or "")):
             leans_on[idx] = idx - 1
-        _TL.last = None
-        ids = _validate(sent, by_id, banned, outlets, scope, style) if isinstance(sent, dict) else None
-        if ids is not None and style and not _pronoun_ok(sent["text"], ids, by_id, near):
-            ids = _no("pronoun without evidence")
+        sent, ids = _check_one(sent, by_id, banned, outlets, scope, style, near)
+        if ids is not None:
+            flat[idx] = (p, k, sent)             # the sentence as repaired, if it was
         if ids is None:
             failed.append({"p": p, "k": k, "sentence": sent if isinstance(sent, dict) else {},
                            "reason": getattr(_TL, "last", None) or "not a sentence"})

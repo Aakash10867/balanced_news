@@ -117,10 +117,37 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   now owns every mention by code: the FIRST mention is the full introduction (title + full name, the title taken from
   the statements), a bare surname or "Title Surname" before that is expanded to it, every LATER mention is the surname
   alone, whatever the writer wrote; full names come from the statements too, not only from the article text.
-  Not yet built (next phases, in this order): measure which rules fail most on stored data (`tools/replay.py`); status
-  tables and sentence-shape checks by code; paragraph plan in code (one call per paragraph group, with the previous
-  paragraph's last sentence); titles learned from outlets (a title seen before a name in 2+ independent outlets enters
-  the registry, with dates; needs a migration if stored in the database).
+  **Phase 2, done (owner: "yes let's build", Oct 10 2026): grammar by statement status** (`grammar.py`, no model in it).
+  One table `STATUS` (established / developing / unverified = not cross-checked / single = one outlet / disputed /
+  false): what the colour already says, what the words may carry (the four plain statuses: plain declarative,
+  attribution only for the statement's own named speaker; disputed: both versions each with its holder; false: the
+  claim, who made it, what the evidence shows) and the markers required. The marker lists (`FALSE_MARKERS`,
+  `DISPUTE_MARKERS`, `ATTRIBUTION_VERBS`, `HEDGE_MARKERS`) and `CONNECTIVE` moved there; `narrative.py` re-exports them
+  (`recap.py` imports them). Three uses: (1) GIVEN to the writer: `_statement_line` adds `| SHAPE: ...` to a statement
+  that is not plain (`grammar.shape_line`: "<content>, X said.", the statement's own act verb, the false-claim form
+  with its evidence, the two-version form); a plain statement gets nothing; both prompts say a SHAPE is the form to
+  use. (2) APPLIED by code: when a sentence fails a check and the fault has ONE safe fix, `narrative._check_one` applies
+  `grammar.repair` and runs EVERY check again; the repair is kept only if the sentence then passes, otherwise the original
+  failure stands (a repair can turn a dropped sentence into a published one that passes, never relax a check). Repairs:
+  `not a full sentence` -> add the full stop (never on a fragment: a joining word first, cut off on one, or under 4
+  words); `claim without its speaker` -> ", X said." after the claim (one speaker, no other speaker among the
+  statements, and the sentence has no speech verb of its own: a wrongly attributed sentence is not given a second
+  speaker; for a false claim it goes before the evidence); `false without saying so` -> "The evidence shows this is false:
+  <the statement's evidence>." (only when the false claim is the sentence's only statement); `verb the statements do
+  not use` -> "said that" for claimed/insisted/warned/threatened/conceded/admitted/confessed/vowed that, NEVER for a verb that
+  negates (denied/refused/rejected/dismissed that); `pronoun without evidence` -> the speaker's name for "He/She said"
+  (the names pass writes it as full name or surname). A repaired sentence loses its colour parts (one colour, the
+  weakest). The counters show it: a repaired fault is counted as `fixed: <reason>` in `reject_reasons` /
+  `first_draft_reasons`, not as a rejection (read them with `tools/replay.py`: a high `fixed:` count means the writer
+  keeps making that fault and the prompt shape is still not holding). (3) one new check: `empty set-up` ("X set out his
+  position.": cites a statement, says nothing of it; short, no figure) is refused so the fill pass writes the statement.
+  `WRITER_VERSION` was NOT raised: old pages keep their text (a raise rewrites every page once, a quota cost); new and
+  rewritten pages get the shapes and repairs. Not run on real stories (no data in the repo); the unit tests ran as plain
+  Python (the sandbox had no pytest / sqlalchemy), see `tests/test_pipeline.py` (grammar tests at the end).
+  Not yet built (next phases, in this order): measure which rules fail most on stored data (`tools/replay.py`; now
+  `fixed:` counts show what the repairs catch); paragraph plan in code (one call per paragraph group, with the previous
+  paragraph's last sentence; sections' own templates); titles learned from outlets (a title seen before a name in 2+
+  independent outlets enters the registry, with dates; needs a migration if stored in the database).
 - **Story layers (Oct 5 2026, owner):** a story has its own event (core) and CONTEXT: background,
   related events (a separate event the reports connect to this one: written as separate, never
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),

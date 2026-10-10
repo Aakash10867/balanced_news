@@ -1178,10 +1178,11 @@ def test_speaker_named_once_carries_through_the_paragraph():
     assert rejected == 0
     paras, failed, rejected = _check_paragraphs(two, by, set(), [], keys=["say", "next"])
     assert rejected == 1 and failed[0]["reason"] == "claim without its speaker"
-    # "he" for someone no outlet calls "he" is refused (owner, Oct 8 2026: code never guesses a gender)
+    # "he" for someone no outlet calls "he" is never written (owner, Oct 8 2026: code never guesses a gender); since
+    # Oct 10 2026 (grammar.py) the sentence is not dropped but written with the speaker's name
     he = [[para[0], {"text": "He added that Ukraine is ready for an energy truce.", "ids": [2]}]]
     paras, failed, rejected = _check_paragraphs(he, by, set(), [])
-    assert rejected == 1 and failed[0]["reason"] == "pronoun without evidence"
+    assert rejected == 0 and paras[0][1]["text"].startswith("Andrii Sybiha added that")
 
 
 def test_dispute_must_say_what_the_other_side_is():
@@ -3263,3 +3264,95 @@ def test_a_bodys_run_of_lines_reads_like_a_newspaper():
     assert t[3].endswith(", it said.")
     assert t[5].endswith(", they said.")
     assert "the union" not in t[7].lower() and "it said" not in t[7]
+
+
+# ------------------------------------------------------------------ grammar by status (phase 2, Oct 10 2026)
+def test_status_grammar_table_covers_every_colour():
+    from nishpaksh.grammar import STATUS, missing_marker
+    from nishpaksh.narrative import CLASS
+    assert set(STATUS) == set(CLASS.values())          # established developing unverified single disputed false
+    assert all(STATUS[k].plain for k in ("established", "developing", "unverified", "single"))
+    assert missing_marker("false", "the claim was made") and not missing_marker("false", "the evidence shows this is false")
+    assert missing_marker("disputed", "the toll is 40") and not missing_marker("disputed", "police say 40; families say 50")
+    assert not missing_marker("single", "anything at all")
+
+
+def test_each_statement_carries_the_one_sentence_shape_that_applies_to_it():
+    from nishpaksh.narrative import _statement_line
+    mk = lambda *a, **k: dict(_item(*a), n_sources=3, **k)  # noqa: E731
+    plain = mk(1, "The protest began at noon")
+    said = mk(2, "Voting was disrupted in several booths", speaker="Humayun Kabir")
+    acc = mk(3, "Humayun Kabir accused police of interfering with voting", speaker="Humayun Kabir")
+    false = mk(4, "The water was poisoned by the factory", "false", speaker="A viral post",
+               check={"reasons": ["Lab tests found it safe."]})
+    dis = mk(5, "The toll is 40", "disputed", speaker="the police", conflicts_with=[6])
+    assert "SHAPE" not in _statement_line(plain)                                  # plain: nothing to decide
+    assert 'SHAPE: "<the content>, Humayun Kabir said."' in _statement_line(said)
+    assert 'with the statement\'s own verb "accused"' in _statement_line(acc)
+    assert "The evidence shows this is false: <the evidence given>" in _statement_line(false)
+    assert "A viral post said" in _statement_line(false)
+    assert "both versions, each pinned on its holder" in _statement_line(dis)
+
+
+def test_predictable_faults_are_repaired_by_code_not_dropped():
+    from nishpaksh.narrative import _check_paragraphs, _reasons
+    by = {1: _item(1, "Voting was disrupted in several booths on Sunday", speaker="Humayun Kabir"),
+          2: dict(_item(2, "The water was poisoned by the factory", "false", speaker="A viral post"),
+                  check={"reasons": ["Lab tests found it safe."]}),
+          3: _item(3, "The minister met the protesters on Monday after the protest began"),
+          4: _item(4, "Ukraine is ready for an energy truce", speaker="Andrii Sybiha")}
+    S = lambda text, ids: {"text": text, "ids": ids}  # noqa: E731
+    _reasons().clear()
+    paras, failed, rejected = _check_paragraphs([[
+        S("Voting was disrupted in several booths on Sunday.", [1]),                    # speaker left out
+        S("The water was poisoned by the factory.", [2]),                               # false, no evidence, no speaker
+        S("The minister met the protesters on Monday after the protest began", [3]),    # no full stop
+        S("Andrii Sybiha warned that Ukraine is ready for an energy truce.", [4])]], by, set(), [])
+    assert rejected == 0 and not failed
+    assert [s["text"] for s in paras[0]] == [
+        "Voting was disrupted in several booths on Sunday, Humayun Kabir said.",
+        "The water was poisoned by the factory, A viral post said. The evidence shows this is false: Lab tests found it safe.",
+        "The minister met the protesters on Monday after the protest began.",
+        "Andrii Sybiha said that Ukraine is ready for an energy truce."]
+    r = _reasons()      # counted as repairs, not as rejections
+    assert r.get("fixed: claim without its speaker") == 1 and r.get("fixed: false without saying so") == 1
+    assert r.get("fixed: not a full sentence") == 1 and r.get("fixed: verb the statements do not use") == 1
+    assert not any(k for k in r if not k.startswith("fixed: "))
+
+
+def test_a_repair_never_relaxes_a_check_and_unsafe_faults_stay_refused():
+    from nishpaksh.narrative import _check_paragraphs, _reasons
+    by = {1: _item(1, "Voting was disrupted in several booths", speaker="Humayun Kabir"),
+          2: dict(_item(2, "The water was poisoned by the factory", "false", speaker="A viral post"),
+                  check={"reasons": ["Lab tests found it safe."]}),
+          3: _item(3, "The toll is 40 in the building collapse", speaker="Asha Rao"),
+          4: _item(4, "Ukraine is ready for an energy truce", speaker="Andrii Sybiha")}
+    S = lambda text, ids: {"text": text, "ids": ids}  # noqa: E731
+
+    def run(text, ids, banned=frozenset()):
+        _reasons().clear()
+        paras, failed, rejected = _check_paragraphs([[S(text, ids)]], by, set(banned), [])
+        return rejected, [f["reason"] for f in failed], dict(_reasons())
+    # the repaired false sentence would use a loaded word: the loaded-word check still refuses it
+    rej, why, counts = run("The water was poisoned by the factory.", [2], {"safe"})
+    assert rej == 1 and why == ["false without saying so"] and counts == {"false without saying so": 1}
+    # two speakers in one sentence: code does not guess whose claim it is
+    assert run("Voting was disrupted and the toll is 40.", [1, 3])[1] == ["claim without its speaker"]
+    # a sentence that already names someone else as the speaker is not re-pinned
+    assert run("The toll is 40, the police said.", [3])[1] == ["claim without its speaker"]
+    # a verb that negates is never turned into \"said\": \"denied that X\" must not become \"said that X\"
+    assert run("Andrii Sybiha denied that Ukraine is ready for an energy truce.", [4])[1] == ["verb the statements do not use"]
+    # a sentence cut off on a joining word, or opening with one, is a fragment, not a missing full stop
+    assert run("The minister met the protesters and", [4])[1] == ["not a full sentence"]
+    assert run("And is held in New Delhi on Thursday", [4])[1] == ["not a full sentence"]
+
+
+def test_a_sentence_that_cites_statements_and_says_nothing_is_refused():
+    from nishpaksh.grammar import empty_setup
+    from nishpaksh.narrative import _check_paragraphs
+    assert empty_setup("Andrii Sybiha set out his position.") and empty_setup("Kabir made a statement.")
+    assert not empty_setup("Andrii Sybiha set out his position on the energy truce and on sanctions.")
+    assert not empty_setup("Kabir made a statement on the toll of 40.")
+    by = {4: _item(4, "Ukraine is ready for an energy truce", speaker="Andrii Sybiha")}
+    paras, failed, rejected = _check_paragraphs([[{"text": "Andrii Sybiha set out his position.", "ids": [4]}]], by, set(), [])
+    assert rejected == 1 and failed[0]["reason"] == "empty set-up"
