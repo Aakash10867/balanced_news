@@ -3356,3 +3356,154 @@ def test_a_sentence_that_cites_statements_and_says_nothing_is_refused():
     by = {4: _item(4, "Ukraine is ready for an energy truce", speaker="Andrii Sybiha")}
     paras, failed, rejected = _check_paragraphs([[{"text": "Andrii Sybiha set out his position.", "ids": [4]}]], by, set(), [])
     assert rejected == 1 and failed[0]["reason"] == "empty set-up"
+
+
+# ---------------------------------------------------------------- phase 3: the paragraph plan (plan.py)
+
+def _plan_items():
+    """A story with every kind of section: a lead, events out of order, two speakers whose lines are
+    interleaved, a response, a figure, background, a related event and what comes next."""
+    def mk(i, text, **k):
+        return dict(_item(i, text, k.pop("verdict", "unverified"), k.pop("speaker", None)),
+                    n_sources=3, n_articles=3, minor=False, role=k.pop("role", "core"), kind=k.pop("kind", "event"),
+                    responds_to=k.pop("responds_to", []), responded_by=k.pop("responded_by", []), **k)
+    t = lambda d: {"start": f"2026-10-{d:02d}T10:00:00", "when_text": f"{d} October"}  # noqa: E731
+    return [mk(1, "The Supreme Court stayed the order", verdict="corroborated", time=t(9)),
+            mk(2, "Police arrested the engineer", time=t(7)),
+            mk(3, "A flyover section collapsed near the market", verdict="corroborated", time=t(5)),
+            mk(4, "Two workers died in the collapse", time=t(5)),
+            mk(5, "The bridge repair budget was 40 crore rupees", kind="claim", frame={"value": "40 crore"}),
+            mk(6, "The contractor used substandard cement", kind="claim", speaker="Asha Rao", responded_by=[9]),
+            mk(7, "The inquiry should be handed to the CBI", kind="claim", speaker="Vikram Sethi"),
+            mk(8, "The cement failed no test", kind="claim", speaker="Asha Rao"),
+            mk(9, "The company denied using substandard cement", kind="claim", speaker="Orion Builders",
+               responds_to=[6]),
+            mk(10, "The flyover was opened in 2019", role="background", time=t(1)),
+            mk(11, "A bridge in Rampur also cracked last month", role="related", related_event="Rampur"),
+            mk(12, "The inquiry report is due on Friday", role="next")]
+
+
+def test_the_plan_gives_every_section_its_own_paragraphs():
+    """Owner, Oct 10 2026, phase 3: code decides which statements share a paragraph and in what order."""
+    from nishpaksh import plan
+    from nishpaksh.narrative import assign_sections
+    items = _plan_items()
+    sec = assign_sections(items)
+    sec[3] = "news"
+    pl = plan.build(items, sec)
+    assert [p.section for p in pl] == ["news", "background", "happened", "numbers", "say", "say", "say", "related", "next"]
+    assert [p.n for p in pl] == list(range(1, len(pl) + 1))
+    by = {p.n: p for p in pl}
+    assert by[3].ids == [4, 2, 1]                                  # what happened, in time order (5, 7, 9 October)
+    # one speaker's argument together; the response right after what it answers; every statement once
+    say = [p for p in pl if p.section == "say"]
+    assert [(p.speaker, p.ids, p.link) for p in say] == [("Asha Rao", [6, 8], "new"), ("Orion Builders", [9], "answers"),
+                                                         ("Vikram Sethi", [7], "new")]
+    assert sorted(i for p in pl for i in p.ids) == list(range(1, 13))
+    assert all(len(p.ids) <= plan.MAX_STATEMENTS for p in pl)
+    # a paragraph's opening is code's decision: its time, its speaker, or who it answers
+    assert "5 October" in pl[2].opens or "7 October" in pl[2].opens
+    assert "#6" in say[1].opens and "Orion Builders" in say[1].opens
+    # the writer is given the plan, not a heap of statements
+    text = plan.block(pl, {i["id"]: i for i in items}, lambda i: f"#{i['id']} line")
+    assert text.count("PARAGRAPH") == len(pl) and "SECTION say" in text and "opens with" in text
+
+
+def test_a_response_and_what_it_answers_are_one_unit_whatever_the_speakers():
+    from nishpaksh import plan
+    items = _plan_items()
+    sec = {i["id"]: "say" for i in items if i["id"] in (6, 7, 8, 9)}
+    pl = plan.build([i for i in items if i["id"] in sec], sec)
+    flat = [i for p in pl for i in p.ids]
+    assert flat == [6, 8, 9, 7]                                   # Rao's argument, the answer right after it, then Sethi
+    assert sorted(flat) == [6, 7, 8, 9]
+
+
+def test_a_lone_statement_is_not_left_as_its_own_paragraph():
+    """Story 13792: seven one-sentence paragraphs in "Explained". A paragraph of one statement takes the next."""
+    from nishpaksh import plan
+    items = [dict(_item(n, f"Term{n} means something about topic{n}"), role="explanation") for n in range(1, 8)]
+    pl = plan.build(items, {n: "explained" for n in range(1, 8)})
+    assert all(len(p.ids) >= 2 for p in pl) and sum(len(p.ids) for p in pl) == 7
+
+
+def test_conform_puts_the_writers_sentences_back_into_the_plan():
+    """The writer made one block with the speakers scattered and a sentence leaning on another; code puts every
+    sentence in the paragraph it was planned in, in plan order, and never changes a sentence."""
+    from nishpaksh import plan
+    from nishpaksh.narrative import assign_sections
+    items = _plan_items()
+    sec = assign_sections(items)
+    sec[3] = "news"
+    pl = plan.build(items, sec)
+    s = lambda i, t: {"text": t, "ids": [i]}  # noqa: E731
+    block = [s(7, "Sethi said the inquiry should go to the CBI."), s(6, "Rao said the contractor used bad cement."),
+             s(9, "The company denied it."), s(8, "She added that the cement failed no test."),
+             s(2, "Police arrested the engineer."), s(4, "Two workers died."), s(1, "Judges stayed the order."),
+             s(5, "The repair budget was 40 crore rupees."), s(12, "A report is due on Friday.")]
+    lead = [s(3, "A flyover section collapsed near the market.")]
+    texts = {x["text"] for x in block + lead}
+    out, keys, stats = plan.conform([block, lead], ["say", "news"], pl)
+    assert keys[0] == "news" and out[0][0]["ids"] == [3]                       # the lead first, whatever order it came in
+    assert keys == sorted(keys, key=["news", "background", "happened", "numbers", "say", "related", "next"].index)
+    assert {x["text"] for p in out for x in p} == texts                       # sentences never changed or lost
+    paras = [[x["ids"][0] for x in p] for p, k in zip(out, keys) if k == "say"]
+    assert paras == [[6, 8], [9], [7]]                                       # one speaker per paragraph, the answer after
+    assert not any(p[0]["text"].startswith("She added") for p in out)        # leaning sentence never opens a paragraph
+    happened = next(p for p, k in zip(out, keys) if k == "happened")
+    assert [x["ids"][0] for x in happened] == [4, 2, 1]
+    assert stats["moved"] >= 1 and stats["planned"] == len(pl)
+
+
+def test_conform_keeps_a_lead_that_cites_the_news_and_the_writers_own_lead_when_no_news_was_chosen():
+    from nishpaksh import plan
+    items = _plan_items()[:4]
+    pl = plan.build(items, {1: "happened", 2: "happened", 3: "news", 4: "happened"})
+    lead = [{"text": "A flyover section collapsed and two workers died.", "ids": [3, 4]}]
+    out, keys, _ = plan.conform([lead], ["news"], pl)
+    assert keys == ["news"] and out[0][0]["ids"] == [3, 4]
+    pl2 = plan.build(items, {1: "happened", 2: "happened", 3: "happened", 4: "happened"})     # no news planned
+    out, keys, _ = plan.conform([[{"text": "A flyover collapsed.", "ids": [3]}], [{"text": "Police arrested him.", "ids": [2]}]],
+                                ["news", "happened"], pl2)
+    assert keys[0] == "news" and out[0][0]["ids"] == [3] and keys[1] == "happened"
+
+
+def test_the_writer_is_given_the_plan_and_the_article_follows_it():
+    """End to end with a writer that ignores the plan (one block, speakers scattered): the article that comes out
+    has one paragraph per planned subject, the lead first, every statement carried."""
+    from nishpaksh.narrative import essay_ok, write_narrative
+    items = _plan_items()
+    payload = _payload(items)
+    payload["context"] = [i for i in items if i["role"] != "core"]
+    payload["contested"] = [i for i in payload["contested"] if i["role"] == "core"]
+    payload["news"] = [3]
+    seen = {}
+
+    class Careless(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            if "Write the story below as ONE news article" in prompt:
+                seen["prompt"] = prompt
+                sents = [{"text": f"Statement {i['id']} was reported on the record.", "ids": [i["id"]]}
+                         for i in reversed(items)]
+                return json.dumps({"paragraphs": [sents]}), [], 100
+            return super().generate(model, prompt, json_mode, grounded)
+    nar = write_narrative(_router(None, Careless()), payload, set())
+    assert "PARAGRAPH 1" in seen["prompt"] and "opens with" in seen["prompt"]
+    keys = nar["section_keys"]
+    assert keys[0] == "news" and nar["paragraphs"][0][0]["ids"] == [3]
+    assert [k for k in dict.fromkeys(keys)] == ["news", "background", "happened", "numbers", "say", "related", "next"]
+    assert set(nar["covers"]) == set(range(1, 13)) and essay_ok(nar, payload)
+    assert nar["plan"]["planned"] >= 7 and nar["plan"]["written"] >= 7
+    # the speakers' lines sit together: Rao's two lines, then the company's answer, then Sethi
+    say = [[x for s in p for x in s["ids"]] for p, k in zip(nar["paragraphs"], keys) if k == "say"]
+    assert say == [[6, 8], [9], [7]]
+
+
+def test_a_planned_article_is_not_joined_again_by_length():
+    """The plan already decided what shares a paragraph: shape_paragraphs only cuts a long one when planned."""
+    from nishpaksh.narrative import shape_paragraphs
+    by = {i: _item(i, f"Statement {i} about subject{i}") for i in range(1, 6)}
+    s = lambda i: {"text": f"Subject{i} fact.", "ids": [i]}  # noqa: E731
+    paras = [[s(1)], [s(2)], [s(3)]]
+    assert len(shape_paragraphs(paras, ["explained"] * 3, by)[0]) == 1          # old behaviour: short ones are joined
+    assert len(shape_paragraphs(paras, ["explained"] * 3, by, join=False)[0]) == 3

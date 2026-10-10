@@ -144,10 +144,40 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   `WRITER_VERSION` was NOT raised: old pages keep their text (a raise rewrites every page once, a quota cost); new and
   rewritten pages get the shapes and repairs. Not run on real stories (no data in the repo); the unit tests ran as plain
   Python (the sandbox had no pytest / sqlalchemy), see `tests/test_pipeline.py` (grammar tests at the end).
-  Not yet built (next phases, in this order): measure which rules fail most on stored data (`tools/replay.py`; now
-  `fixed:` counts show what the repairs catch); paragraph plan in code (one call per paragraph group, with the previous
-  paragraph's last sentence; sections' own templates); titles learned from outlets (a title seen before a name in 2+
-  independent outlets enters the registry, with dates; needs a migration if stored in the database).
+  **Phase 3, done (owner: "continue and build the next phase", Oct 10 2026): the paragraph plan in code** (`plan.py`, no
+  model in it). The writer used to receive every statement sorted into sections and decide the paragraphs itself; code
+  regrouped afterwards. Now code decides, the writer phrases. (1) `plan.build(items, sec)`: article > sections >
+  paragraphs, each section with its own rule (`plan.RULES`: how its statements are ordered, what makes a paragraph, how
+  it opens). news = one paragraph (the lead, chosen by `news.py`); background / happened / next in TIME order;
+  explained and numbers in the order given; related one paragraph per `related_event` label; say = one paragraph per
+  speaker (`_by_speaker`: speakers in order of first appearance, an answer right after what it answers, a long argument
+  cut by subject). A statement and its contradiction / response / updated figure are one unit (`_links`, never split). A
+  paragraph takes at most 4 statements (`MAX_STATEMENTS`) and changes subject (no shared name or key word with it) only
+  after 2 (`MIN_STATEMENTS`): a paragraph of one statement takes the next whatever it is about, a lone last statement
+  joins the one before (story 13792: seven one-sentence paragraphs). Each paragraph also carries HOW IT OPENS (the
+  link to the paragraph before, `plan._open`): its time when the time changes ("opens with its time (5 October)"), its
+  speaker, "the one who answers (X), saying what is answered (#6)", "the same speaker as the paragraph before: do not
+  introduce them again", "the thing being explained, then what it means". (2) GIVEN to the writer: `plan.block` replaces
+  `_section_block` in `WRITER_PROMPT` (SECTION, then PARAGRAPH n with how it opens, then its statements; the prompt says
+  write exactly one paragraph per PARAGRAPH, from only its statements); the fill prompt tags each statement
+  `| paragraph: n`. (3) APPLIED by code after writing and the coherence rewrite: `plan.conform` puts every sentence
+  back into the paragraph most of its statements were planned in (a tie: the section the writer used, then the
+  earlier one), paragraphs in plan order, sentences in the statements' own order inside a paragraph; a sentence leaning
+  on the one before ("He added ...", `LEANS_BACK`) goes where that one went, so a paragraph never opens with it; a lead
+  sentence citing a news statement stays the lead; when no news was chosen the writer's own "news" paragraph stays. A
+  sentence is never changed or lost. The news fallback ("first What happened paragraph becomes the lead") now runs
+  after `conform`. `shape_paragraphs(join=False)` when a plan exists (it only cuts a paragraph over 6 sentences; it used
+  to join neighbouring short ones regardless of subject). Stats in the article's `narrative.plan`:
+  `{planned, written, moved, orphans}` (`moved` = sentences the writer put in another section than the plan's; a high
+  number means the prompt is still not holding, read it with `tools/replay.py`). No new model call: the plan is in the
+  same draft and fill prompts, so the free-tier call count is unchanged. `WRITER_VERSION` not raised (old pages keep
+  their text). NOT RUN ON REAL STORIES (no data in the repo, no pytest / sqlalchemy in the sandbox): the unit tests
+  and 6 new plan tests ran as plain Python; the 72 database-backed tests did not run.
+  Not yet built (next, in this order): measure which rules fail most on stored data (`tools/replay.py`: the `fixed:`
+  counts of phase 2 and `narrative.plan.moved` of phase 3 now say where the writer still goes wrong); sentence-level
+  grammar (one claim per sentence, repeated subjects, connection between consecutive sentences); titles learned from
+  outlets (a title seen before a name in 2+ independent outlets enters the registry, with dates; needs a migration if
+  stored in the database).
 - **Story layers (Oct 5 2026, owner):** a story has its own event (core) and CONTEXT: background,
   related events (a separate event the reports connect to this one: written as separate, never
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),

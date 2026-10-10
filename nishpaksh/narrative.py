@@ -28,6 +28,7 @@ import re
 import threading
 
 from . import grammar, voice
+from . import plan as planning
 from .grammar import (ATTRIBUTION_VERBS, CONNECTIVE, DISPUTE_MARKERS, FALSE_MARKERS,  # noqa: F401 (moved to grammar.py)
                       HEDGE_MARKERS)
 from .router import QuotaExhausted, Router
@@ -64,8 +65,12 @@ is added). Follow it; a statement with no SHAPE is stated plainly.
 
 Structure: the article is written in SECTIONS, in this order, so that a reader who knows nothing about
 the story first learns why it matters today, then how it came about, and then follows it as one
-coherent story. The statements below are already sorted into sections; write each from its own:
-  news        1-2 sentences: THE NEWS, the thing that makes this a story today, with who, where and
+coherent story. The newsroom has already sorted the statements into sections AND into PARAGRAPHS, one
+subject each, in the order they belong: write EXACTLY ONE paragraph for each PARAGRAPH below, in that
+order, from ONLY its statements. Never move a statement to another paragraph, never join two
+paragraphs, never split one. A PARAGRAPH says how it opens ("opens with ..."): begin it that way.
+Within a paragraph write 2-4 sentences, the main point first, then what supports it. The sections:
+  news        1-2 sentences, the thing that makes this a story today, with who, where and
               when, written from the statements in SECTION news (chosen for you): the first sentence
               tells the first of them (it must be cited in the lead); if there is a second, it is what
               happened today, told in the second sentence. Never the setting or background ("Donald Trump said 125 million people voted in
@@ -75,9 +80,9 @@ coherent story. The statements below are already sorted into sections; write eac
   happened    what happened, in time order (the statements of the news are not repeated here)
   numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
   say         what each person or body says: claims, allegations, positions, and the responses to them.
-              The statements come grouped by [speaker]: write each speaker's statements TOGETHER, in one
-              paragraph (the main claim first, then its details), then the next speaker; a response right
-              after what it answers. Name each speaker as given; never give one speaker's line to another
+              Each PARAGRAPH is one speaker's argument (the main claim first, then its details); a
+              response paragraph names who answers and what is answered. Name each speaker as given;
+              never give one speaker's line to another
   related     other events the reports connect to this one, each with its own time and its own people;
               never blended into the story's event. Do not write "separately" or "in a separate case":
               the section's heading says it (unless a statement itself says so)
@@ -85,9 +90,8 @@ coherent story. The statements below are already sorted into sections; write eac
 Write only the sections that have statements (and "news"); skip the others.
 A disagreement is written where its subject is, in the same paragraph as the rest of that subject, with
 both versions and whose they are; never collected into a paragraph or section about differing accounts.
-Organise paragraphs by SUBJECT: one subject per paragraph, 2-4 sentences. Never group statements
-because they share a status, and never join two statements in one sentence unless they are about the
-same person, body, place or thing. Say each fact ONCE: if two statements say the same thing, write it
+Never join two statements in one sentence unless they are about the same person, body, place or
+thing. Say each fact ONCE: if two statements say the same thing, write it
 once and cite both ids. Length: about {length} sentences, as the material allows; do not pad.
 
 Write as ONE author telling the story to a reader, not as a summary of reports. The page colours every
@@ -146,7 +150,7 @@ Every sentence lists in "ids" every statement it uses. Use EVERY statement at le
 those only one outlet reports: the reader gets everything known about the story, the past (CONTEXT
 background), the present and what happens next.
 
-{people}{background}Statements, by section:
+{people}{background}Statements, by section and paragraph:
 {statements}
 
 Reply with JSON only, the sections in this order (news, background, explained, happened, numbers, say,
@@ -157,7 +161,8 @@ related, next), each with its paragraphs:
 FILL_PROMPT = """You are completing a news article written in sections from numbered statements. Rewrite ONLY the
 sections named below so that they carry EVERY statement listed for them (each where it belongs; a new
 paragraph if needed) and fix each failed sentence (or drop it if it cannot pass). Keep good sentences as
-they are. The rest of the article is shown so you continue it: do not repeat what it already says, and
+they are. Each statement says which planned paragraph it belongs to ("paragraph: n"): write the statements of
+one paragraph number together, one paragraph per number, and never mix numbers. The rest of the article is shown so you continue it: do not repeat what it already says, and
 do not introduce again a person it already introduced.
 Rules as before (a SHAPE on a statement is the form to write it in): only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
@@ -1315,16 +1320,17 @@ def _topic(sent: dict, by_id: dict) -> tuple[set, set]:
     return sp, _subject_words(sent["text"])
 
 
-def shape_paragraphs(paragraphs: list, keys: list, by_id: dict) -> tuple[list, list]:
+def shape_paragraphs(paragraphs: list, keys: list, by_id: dict, join: bool = True) -> tuple[list, list]:
     """Paragraphs of a readable length, by code (owner, Oct 9 2026, story 13792: "Explained" was seven
     one-sentence paragraphs, "What they say" one block of 14). Within a section: neighbouring short
     paragraphs (up to 2 sentences each) are joined, up to 4 sentences; a paragraph of more than 6 is cut into
     paragraphs of 2 to 5, where the speaker or the subject changes, never before a sentence that leans on the
-    one before ("He added ..."). The lead (news) is left as written. Sentences are never changed."""
+    one before ("He added ..."). The lead (news) is left as written. Sentences are never changed. With a paragraph
+    plan (plan.py) `join` is False: the plan already decided what shares a paragraph."""
     out_p: list = []
     out_k: list = []
     for para, key in zip(paragraphs, keys):
-        if (out_p and key == out_k[-1] and key != "news" and len(para) <= SHORT and len(out_p[-1]) <= SHORT
+        if (join and out_p and key == out_k[-1] and key != "news" and len(para) <= SHORT and len(out_p[-1]) <= SHORT
                 and len(out_p[-1]) + len(para) <= JOIN_MAX):
             out_p[-1] = out_p[-1] + para
             continue
@@ -1474,6 +1480,10 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
             if x in sec:
                 sec[x] = "news"
 
+    # the paragraph plan: code decides which statements share a paragraph, in what order, how each opens (plan.py)
+    pl = planning.build(items + background, sec)
+    at = {i: n for n, p_ in enumerate(pl) for i in p_.ids}
+
     def lead_ok(paragraphs_, keys_) -> bool:
         if "news" not in keys_:
             return False
@@ -1493,7 +1503,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
             bg = ("This story is a later development of an earlier story on the site. The section "
                   "\"background\" holds facts from the earlier story: give at most TWO sentences of them.\n\n")
         prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg,
-                                      statements=_section_block(items + background, sec),
+                                      statements=planning.block(pl, by_id, _statement_line),
                                       length=_target_length(items), people=_people(items))
         drafted, model, failure = _call_writer(router, prompt)
 
@@ -1523,7 +1533,8 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         prompt = FILL_PROMPT.format(
             banned=", ".join(sorted(banned)) or "(none)", article=_article_with_sections(drafted), people=_people(items),
             keys=", ".join(k for k in group if k == "news" or any(sec.get(i["id"]) == k for i in mine)),
-            statements="\n".join(f"[{sec[i['id']]}] " + _statement_line(i) for i in mine),
+            statements="\n".join(f"[{sec[i['id']]}] " + _statement_line(i) + f" | paragraph: {at[i['id']] + 1}"
+                                 for i in mine),
             failed="\n".join(f'- "{str(f["sentence"].get("text") or "")}" | problem: {f["reason"]}' for f in bad) or "(none)")
         try:
             res = router.call("writer", prompt, json_out=True, max_output_tokens=6000, max_attempts=8)
@@ -1569,8 +1580,17 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         k = keys.index("happened")
         paragraphs = [paragraphs[k]] + paragraphs[:k] + paragraphs[k + 1:]
         keys = ["news"] + keys[:k] + keys[k + 1:]
+    # the writer's sentences go back into the plan, whatever paragraphs it made (plan.conform); then the news
+    # fallback above again, for a lead the writer did not write
+    plan_stats: dict = {}
+    if pl and paragraphs:
+        paragraphs, keys, plan_stats = planning.conform(paragraphs, keys, pl)
+        if "news" not in keys and "happened" in keys:
+            k = keys.index("happened")
+            paragraphs = [paragraphs[k]] + paragraphs[:k] + paragraphs[k + 1:]
+            keys = ["news"] + keys[:k] + keys[k + 1:]
     paragraphs, keys = group_speakers(paragraphs, keys, by_id)
-    paragraphs, keys = shape_paragraphs(paragraphs, keys, by_id)
+    paragraphs, keys = shape_paragraphs(paragraphs, keys, by_id, join=not pl)
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     if rejected:
@@ -1578,7 +1598,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     return _finish(payload, paragraphs, also, by_id,
                    {"model": model, "rejected": rejected, "reject_reasons": dict(_reasons()), "failure": failure,
                     "first_draft_reasons": first_reasons, "repaired": bool(filled), "filled": filled,
-                    "section_keys": keys, "resumed": resumed,
+                    "section_keys": keys, "resumed": resumed, "plan": plan_stats,
                     # the sections as drafted, kept with the story if the article falls short (not published)
                     "drafted": [[k, p] for k, p in drafted]})
 
