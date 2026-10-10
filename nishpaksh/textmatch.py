@@ -40,7 +40,8 @@ def skeleton(word: str) -> str:
 
 def key_tokens(statement: str) -> list[str]:
     """Numbers and proper names: what any report of this fact would have to contain."""
-    nums = re.findall(r"\d+(?:\.\d+)?", statement)
+    from . import figures       # a figure is the same whether the statement or the outlet wrote 26 or twenty-six
+    nums = [figures.canon(f.value) for f in figures.find(statement, spoken_min=figures.SPOKEN_MIN)]
     words = re.findall(r"\b[A-Z][a-zA-Z]{3,}\b", statement)
     names = [w for i, w in enumerate(words) if w.lower() not in STOP]
     return list(dict.fromkeys(nums + names))
@@ -62,12 +63,13 @@ class Text:
     def __init__(self, text: str):
         t = (text or "").translate(DEVA_DIGITS)
         self.lower = t.lower()
-        self.nums = set(re.findall(r"\d+(?:\.\d+)?", t))
+        from . import figures
+        self.nums = figures.canon_set(t)
         self.skels = {skeleton(w) for w in re.findall(r"[A-Za-zऀ-ॿ]{3,}", t)}
         self.skels.discard("")
 
     def has(self, token: str) -> bool:
-        if re.fullmatch(r"\d+(?:\.\d+)?", token):
+        if re.fullmatch(r"\d+(?:\.\d+)?", token):     # a figure (figures.canon): found by value, as written in the text
             return token in self.nums
         if token.lower() in self.lower:
             return True

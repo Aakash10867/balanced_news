@@ -27,7 +27,8 @@ import json
 import re
 
 from .frames import LOWER, UPPER, date_of
-from .relate import NEGATION, WORD_NUM, Profile, numbers_close
+from . import figures
+from .relate import NEGATION, Profile, numbers_close
 
 MONTH_DAY = re.compile(r"(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b|"
                        r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b")
@@ -41,7 +42,7 @@ def _question(p: Profile, text: str) -> tuple[frozenset, frozenset]:
     from .frames import _stem
     drop = {_stem(w.lower()) for w in re.findall(r"[A-Za-z]+", " ".join(m.group(0) for m in MONTH_DAY.finditer(text)))}
     drop |= {_stem(w.lower()) for w in NEGATION.findall(text) if isinstance(w, str)}
-    drop |= {_stem(w) for w in re.findall(r"[a-z]+", text.lower()) if w in WORD_NUM}     # "forty"
+    drop |= {_stem(w) for w in re.findall(r"[a-z]+", text.lower()) if w in figures.NUMBER_WORDS}     # "forty"
     return p.roots - drop - p.names, p.names - drop
 
 

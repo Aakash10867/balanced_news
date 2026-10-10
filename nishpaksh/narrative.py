@@ -27,7 +27,7 @@ import logging
 import re
 import threading
 
-from . import grammar, sentences, voice
+from . import figures, grammar, sentences, voice
 from . import plan as planning
 from .grammar import (ATTRIBUTION_VERBS, CONNECTIVE, DISPUTE_MARKERS, FALSE_MARKERS,  # noqa: F401 (moved to grammar.py)
                       HEDGE_MARKERS)
@@ -210,11 +210,12 @@ def _is_figure(i: dict) -> bool:
     from .frames import date_of
     val = str((i.get("frame") or {}).get("value") or "")
     if val:
-        return bool(NUMBER.search(val)) and not date_of(val) and not re.fullmatch(r"\D*(19|20)\d\d\D*", val)
+        return ((bool(NUMBER.search(val)) or bool(figures.value_set(val, spoken_min=figures.SPOKEN_MIN)))
+                and not date_of(val) and not re.fullmatch(r"\D*(19|20)\d\d\D*", val))
     months = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
     text = re.sub(rf"(?i)\b\d{{1,2}}(?:st|nd|rd|th)?\s+{months}|{months}\s+\d{{1,2}}(?:st|nd|rd|th)?\b|\b(19|20)\d\d\b",
                   "", i["text"])
-    return bool(re.search(r"\d", text))
+    return bool(re.search(r"\d", text)) or bool(figures.value_set(text, spoken_min=figures.SPOKEN_MIN))
 
 
 def assign_sections(items: list[dict], background: list[dict] | None = None) -> dict[int, str]:
@@ -464,8 +465,13 @@ def english_when(t: dict) -> str:
         return ""
 
 
-def _numbers(s: str) -> set[str]:
-    return set(re.findall(r"\d+(?:[.,]\d+)?", s))
+def _numbers(s: str, written: bool = False) -> frozenset[float]:
+    """The figures of a text as VALUES (figures.py): 26 = twenty-six = twenty six = 1.2 lakh = 120,000 where it
+    applies. Only identifies; nothing is rewritten. `written`: the text is a sentence the writer wrote, checked
+    against its sources: a spelled number below two ("one of", "no one") is not a figure there, but "two" is,
+    and it may not appear unless the sources have 2."""
+    from . import figures
+    return figures.value_set(s, spoken_min=figures.SPOKEN_MIN if written else None)
 
 
 _TL = threading.local()   # essays are written in parallel: reasons are kept per thread
@@ -521,7 +527,7 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
     source_text = " ".join(by_id[i]["text"] + " " + ((by_id[i].get("time") or {}).get("when_text") or "")
                            + " " + " ".join(by_id[i]["check"]["reasons"] if by_id[i].get("check") else [])
                            for i in ids)
-    if not _numbers(text) <= _numbers(source_text):
+    if not _numbers(text, written=True) <= _numbers(source_text):
         return _no("number not in statements")
     if re.search(r"[\u0900-\u097f]", text) and not re.search(r"[\u0900-\u097f]", source_text):
         return _no("Hindi words in English text")
@@ -751,7 +757,7 @@ def _part_ok(part: dict, ids: list[int], by_id: dict) -> bool:
     src = " ".join(by_id[i]["text"] + " " + str(by_id[i].get("speaker") or "") + " "
                    + str(((by_id[i].get("time") or {}).get("when_text")) or "") for i in ids)
     text = str(part.get("text") or "")
-    if not _numbers(text) <= _numbers(src):
+    if not _numbers(text, written=True) <= _numbers(src):
         return False
     pt, ps = Profile(text), Profile(src)
     if not pt.names <= ps.names | ps.roots:

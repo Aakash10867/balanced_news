@@ -273,7 +273,8 @@ def headline_problem(h: str, source: str, banned: set[str], disputed: set[str] =
     bad = [l for l in LINKS if re.search(rf"\b{l}\b", low) and l not in source]
     if bad:
         return f"it links events with '{bad[0]}', which no statement does"
-    if not set(re.findall(r"\d+", h)) <= set(re.findall(r"\d+", source)):
+    from . import figures
+    if not figures.value_set(h, spoken_min=figures.SPOKEN_MIN) <= figures.value_set(source):
         return "it has a number that is not in the statements"
     words = h.split()
     if sum(w[0].isupper() for w in words if w[0].isalpha()) < 0.7 * len(words):   # not Title Case

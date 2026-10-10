@@ -129,7 +129,9 @@ EMPTY_SETUP = re.compile(
 def empty_setup(text: str) -> bool:
     """\"Kabir set out his position.\": cites a statement and says nothing of it. Short, no figure."""
     t = (text or "").strip()
-    return len(t.split()) <= 10 and not re.search(r"\d", t) and bool(EMPTY_SETUP.search(t))
+    from . import figures
+    return (len(t.split()) <= 10 and not re.search(r"\d", t) and not figures.value_set(t, spoken_min=figures.SPOKEN_MIN)
+            and bool(EMPTY_SETUP.search(t)))
 
 
 # ------------------------------------------------------------------ repairs

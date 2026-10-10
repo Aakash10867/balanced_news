@@ -50,7 +50,6 @@ Reply as JSON: {{"brief": [{{"id": "a12", "text": "..."}}, ...]}} in the same or
 
 
 # -- code checks ---------------------------------------------------------------------------------------------
-NUM = re.compile(r"\d+(?:[.,]\d+)*")
 CAP = re.compile(r"\b[A-Z][\w'’-]+")
 NEG = re.compile(r"(?i)\b(not|no|never|n't|without|nor)\b|n't\b")
 COMMON = {"The", "A", "An", "In", "On", "At", "After", "Before", "He", "She", "They", "It", "This", "That", "These",
@@ -58,17 +57,16 @@ COMMON = {"The", "A", "An", "In", "On", "At", "After", "Before", "He", "She", "T
           "Saturday", "Sunday", "Meanwhile", "Also", "Separately", "While", "With", "From", "For", "As", "Of", "And", "But"}
 
 
-WORDNUM = {w: str(i) for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen "
-                                             "fourteen fifteen sixteen seventeen eighteen nineteen twenty".split())}
-WORDNUM.update({"thirty": "30", "forty": "40", "fifty": "50", "hundred": "100", "thousand": "1000", "lakh": "100000",
-                "crore": "10000000", "million": "1000000", "billion": "1000000000", "dozen": "12", "first": "1",
-                "second": "2", "third": "3", "half": "0.5", "once": "1", "twice": "2"})
+# words of order and frequency are not figures (figures.py), but a brief sentence may no more add them than a number
+ORDER_WORDS = {"first": "1st", "second": "2nd", "third": "3rd", "half": "half", "once": "once", "twice": "twice"}
 SAYS = re.compile(r"(?i)\b(said|says|told|stated|according to|alleged|alleges|claimed|claims|announced|added)\b")
 
 
 def _nums(s: str) -> set[str]:
-    words = {WORDNUM[w] for w in re.findall(r"[a-z]+", s.lower()) if w in WORDNUM}
-    return {n.replace(",", "") for n in NUM.findall(s)} | words
+    """The figures of a text by value, however written (figures.py: 26 = twenty-six = 26), and its words of
+    order. Identifies only: the brief keeps the lead's own way of writing."""
+    from . import figures
+    return figures.canon_set(s) | {ORDER_WORDS[w] for w in re.findall(r"[a-z]+", s.lower()) if w in ORDER_WORDS}
 
 
 def _initials(name: str, source: str) -> bool:
@@ -205,9 +203,9 @@ def _brief_section(router: Router | None, label: str, items: list[dict], stats: 
 
 def _uses(text: str, second: str, first: str) -> bool:
     """The brief sentence carries something only the lead's second sentence has (a number or a name)."""
-    only = (_nums(second) - _nums(first)) | ({w for w in CAP.findall(second) if w not in COMMON}
-                                            - set(CAP.findall(first)))
-    return any(w in text for w in only)
+    only = _nums(second) - _nums(first)
+    names = {w for w in CAP.findall(second) if w not in COMMON} - set(CAP.findall(first))
+    return bool(only & _nums(text)) or any(w in text for w in names)
 
 
 def build(store, router: Router | None, rows: list[dict], day: str) -> tuple[dict, dict, dict]:

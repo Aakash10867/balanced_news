@@ -45,9 +45,6 @@ APPROX = re.compile(r"(?i)\b(about|around|nearly|approximately|roughly|some|over
                     r"almost|close to|up to|estimated|~)\b")
 LOWER = re.compile(r"(?i)\b(at least|over|more than|above|upwards of|in excess of)\b")
 UPPER = re.compile(r"(?i)\b(up to|at most|less than|under|below|fewer than)\b")
-MULT = {"thousand": 1e3, "lakh": 1e5, "lakhs": 1e5, "million": 1e6, "mn": 1e6, "crore": 1e7, "crores": 1e7,
-        "billion": 1e9, "bn": 1e9, "trillion": 1e12, "k": 1e3}
-NUM = re.compile(r"(\d+(?:[.,]\d+)*)\s*(thousand|lakhs?|million|mn|crores?|billion|bn|trillion|k)?\b", re.I)
 
 
 def words(text: str | None) -> frozenset[str]:
@@ -63,21 +60,12 @@ def action_key(action: str | None) -> str:
     return " ".join(sorted(words(a)))
 
 
-BPS = re.compile(r"(?i)\b(\d+(?:\.\d+)?)\s*(?:basis points?|bps)\b")
-
-
 def numbers(text: str | None) -> list[float]:
-    # 25 basis points is 0.25 per cent: one figure, read as one (story 13970: "by 0.25 percent" and "by
-    # 25 basis points" stayed two statements)
-    text = BPS.sub(lambda m: f"{float(m.group(1)) / 100:g} percent", text or "")
-    out = []
-    for n, mult in NUM.findall(text or ""):
-        try:
-            v = float(n.replace(",", ""))
-        except ValueError:
-            continue
-        out.append(v * MULT.get((mult or "").lower(), 1))
-    return out
+    """The figures of a text as values, however they are written: 26, twenty-six, 1.2 lakh, 120,000, २६
+    (figures.py). 25 basis points is 0.25 per cent: one figure, read as one (story 13970: "by 0.25 percent" and
+    "by 25 basis points" stayed two statements)."""
+    from . import figures
+    return figures.values(text)
 
 
 def normalize(frame: dict | None) -> dict | None:

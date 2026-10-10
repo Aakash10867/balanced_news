@@ -26,12 +26,12 @@ from __future__ import annotations
 
 import re
 
+from . import figures
 from .frames import STOP as _STOP, _stem, numbers as _numbers, words as _roots
 
-WORD_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
-            "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
-            "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
-            "hundred": 100, "dozen": 12}
+# the words of a spelled number ("twenty", "six", "crore", "dozen") are not root words: their value is in `nums`,
+# so "twenty-six crore" and "26 crore" have the same words as well as the same figures
+_NUMBER_STEMS = {_stem(w) for w in figures.NUMBER_WORDS}
 NEGATION = re.compile(r"(?i)\b(not|no|never|nobody|none|neither|nor|without|denied|denies|deny|refused|"
                       r"refuses|rejected|rejects)\b|n't\b")
 # words that say how a line was reported, not what happened: never a difference between two lines
@@ -81,10 +81,8 @@ class Profile:
         # the numbers of a date are a time, compared as one (times), not figures ("October 8, 2026")
         nt = re.sub(r"(?i)\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?" + _MONTHS + r"\b(?:,?\s+(?:19|20)\d\d)?|"
                     + _MONTHS + r"\s+\d{1,2}(?:st|nd|rd|th)?\b(?:,?\s+(?:19|20)\d\d)?|\b(?:19|20)\d\d\b", " ", t)
-        nums = {round(x, 3) for x in _numbers(nt)}
-        nums |= {float(n) for n in re.findall(r"\b(\d+)(?:st|nd|rd|th)\b", nt)}      # "29th"
-        nums |= {float(WORD_NUM[w]) for w in re.findall(r"[a-z]+", t.lower()) if w in WORD_NUM}
-        self.nums = frozenset(nums)
+        # figures.py: 26 = twenty-six = twenty six = २६, 1.2 lakh = 1,20,000, "29th", "Section IV" = "Section 4"
+        self.nums = frozenset(round(x, 3) for x in _numbers(nt))
         # names: capitalised words inside the sentence (the first word is capitalised anyway)
         toks = re.findall(r"[A-Za-z][\w'-]*", t)
         names = {_stem(w.lower()) for w in toks[1:] if w[0].isupper() and len(w) > 1}
@@ -94,7 +92,8 @@ class Profile:
         # days and months are dates, compared as dates (times), not names: "on Thursday" kept two
         # tellings of one call apart (Oct 8 2026, story 14231)
         self.names = frozenset(names - _DATE_WORDS)
-        self.roots = frozenset(SYNONYM.get(r, r) for r in _roots(t) if r not in FILLER and not r.isdigit())
+        self.roots = frozenset(SYNONYM.get(r, r) for r in _roots(t)
+                               if r not in FILLER and r not in _NUMBER_STEMS and not r.isdigit())
         self.neg = bool(NEGATION.search(t))
         from .frames import date_of
         self.date = date_of(t)

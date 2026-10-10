@@ -276,6 +276,26 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   weaker; a later sentence in the same paragraph that says all of an earlier one and more replaces it).
   Both `match.py` (arrival: code "same" only) and `consolidate.py` use it. Disputes are a separate,
   later step (frames still propose contradictions).
+- **A figure is one figure however it is written (owner, Oct 11 2026; `figures.py`; story seen: "twenty six", "twenty-six"
+  and "26" in one sentence).** Four places read numbers on their own and none read a spelled number as a whole:
+  `relate.Profile` made "twenty-six" the figures 20 and 6, so "26 were killed" and "twenty-six were killed" were two facts
+  (never merged, offered as a possible dispute) and the writer printed all three spellings; the validator
+  (`narrative._numbers`) read digits only, so a wrong spelled figure ("twenty-seven" for 26) passed unchecked; `recap` and
+  `frames` each had their own table. Now ONE reader, `figures.find/values/value_set`: digits (Indian grouping 1,00,000,
+  decimals, Devanagari ०-९), scales (lakh, crore, million, billion, cr, mn, k, "25 basis points" = 0.25), digit ordinals
+  (29th), spelled numbers with compounds ("twenty-six", "one hundred and five", "two lakh fifty thousand", "twelve
+  thousand crore", "a dozen"), roman numerals ONLY after a label word and only I/V/X to 39 ("Section IV", "Phase II",
+  "World War II", "Class X"; "Group C/D" are labels, not 100/500). Not figures: "twenty-sixth", "two-thirds", spoken
+  years, first/second, half/once. **IDENTIFY ONLY, NEVER REWRITE (owner): an outlet may have meant words, digits or
+  roman, so no text is changed and there is no house spelling; texts are compared by VALUE and printed as written.**
+  Used by `frames.numbers` (so `relate`, `split`, `disputes`), `relate.Profile` (number words also leave the root words,
+  so "twenty-six crore" and "26 crore" have the same words), `narrative._numbers` (the writer's sentence is checked against
+  its statements by value; a written spelled number below `figures.SPOKEN_MIN` = 2 is not checked, "no one" / "one of"
+  are not figures, but "two" may not appear unless the statements have 2: NEW, may drop a few sentences that really carry a
+  wrong spelled figure), `_is_figure` ("By the numbers" now also takes spelled figures), `recap._nums`, the headline check
+  (`news`), `grammar.empty_setup`, and the omission check (`textmatch`: a figure is found by value in the outlet's text).
+  Not done: Hindi number words (the statements are English; Devanagari DIGITS are read). Tests: `tests/test_figures.py`
+  (needs no database). Not run on real stories; the database-backed tests did not run (no sqlalchemy / pytest in the sandbox).
 - **One fact per statement (owner, Oct 8 2026; `split.py`, story 13970).** "The repo rate is the rate at which
   the RBI lends to banks" was written three times, the rate decision four: outlets write compound sentences
   (A = shared fact + x, B = shared fact + y), neither covers the other, so the shared fact stayed in two
