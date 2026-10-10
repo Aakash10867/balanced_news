@@ -223,32 +223,57 @@ def _units_today(store: Store) -> int:
 
 
 def fetch_new(store: Store, limit: int = 6, key: str | None = None, get=None) -> list[int]:
-    """Videos for new live articles that have none yet (each article once)."""
     from .router import quota_day
+    from .db import claims # Make sure to import claims
+    
     key = key if key is not None else os.environ.get("YOUTUBE_API_KEY", "").strip()
     if not key:
         return []
+        
     since = utcnow() - dt.timedelta(hours=NEW_HOURS)
     done_ids = {r["story_id"] for r in store.rows(select(videos.c.story_id))}
     rows = [r for r in store.rows(select(published.c.story_id, published.c.headline_en, published.c.headline_hi)
                                   .where(published.c.updated_at >= since).order_by(published.c.updated_at.desc()))
             if r["story_id"] not in done_ids]
+            
     done: list[int] = []
     for r in rows[:limit]:
         if _units_today(store) + 200 > DAY_UNITS:
             break
+            
+        # 1. Fetch the extracted frames for this story to build a smart query
+        event_claims = store.rows(
+            select(claims.c.rel).where(claims.c.story_id == r["story_id"], claims.c.kind == "event")
+        )
+        
+        entities = []
+        for cr in event_claims:
+            frame = (cr.get("rel") or {}).get("frame") or {}
+            for field in ("who", "what", "where"):
+                val = frame.get(field)
+                # Keep meaningful entities and avoid duplicates
+                if val and len(val) > 2 and val.lower() not in [e.lower() for e in entities]:
+                    entities.append(val)
+            if len(entities) >= 3:
+                break
+                
+        # Fallback to the English headline if extraction failed or frame is empty
+        smart_query = " ".join(entities[:4]) if entities else r["headline_en"]
+        clean_query = re.sub(r"\s+", " ", smart_query)
+        
         first = store.one(select(func.min(articles.c.published_at).label("t")).where(articles.c.story_id == r["story_id"]))
         after = ((first or {}).get("t") or since) - dt.timedelta(hours=1)
         lists = []
         heads = [r["headline_en"], r["headline_hi"]]
 
-        for q, lang in ((r["headline_hi"], "hi"), (r["headline_en"], "en")):
+        # 2. Run the deep search using our new entity-dense query
+        for q, lang in ((clean_query, "hi"), (clean_query, "en")):
             if not q:
                 continue
             try:
-                results = _search(key, re.sub(r"\s+", " ", q), after, lang, get)
+                results = _search(key, q, after, lang, get)
                 lists.append([v for v in results if relevant(v["title"], heads)])
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.info("youtube search failed for %s: %s", r["story_id"], e)
                 lists.append(None)
             store.quota_add("youtube-search", quota_day(), 100, 0)
@@ -258,4 +283,5 @@ def fetch_new(store: Store, limit: int = 6, key: str | None = None, get=None) ->
 
         store.exec(insert(videos).values(story_id=r["story_id"], fetched_at=utcnow(), items=pick(lists)))
         done.append(r["story_id"])
+        
     return done
