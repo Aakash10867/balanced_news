@@ -3507,3 +3507,111 @@ def test_a_planned_article_is_not_joined_again_by_length():
     paras = [[s(1)], [s(2)], [s(3)]]
     assert len(shape_paragraphs(paras, ["explained"] * 3, by)[0]) == 1          # old behaviour: short ones are joined
     assert len(shape_paragraphs(paras, ["explained"] * 3, by, join=False)[0]) == 3
+
+
+# ---------------------------------------------------------------- sentence grammar (owner, Oct 10 2026, phase 4)
+
+def _flow_items():
+    def mk(i, text, **k):
+        return dict(_item(i, text, k.pop("verdict", "unverified"), k.pop("speaker", None)), n_sources=3, **k)
+    return {1: mk(1, "Police registered a case against the driver"),
+            2: mk(2, "The transport department suspended the bus permit"),
+            3: mk(3, "The permit belonged to Orion Travels"),
+            4: mk(4, "The company denied using substandard cement", speaker="Orion Builders", responds_to=[5]),
+            5: mk(5, "The contractor used substandard cement", speaker="Asha Rao", responded_by=[4]),
+            6: mk(6, "Asha Rao asked for a CBI inquiry", speaker="Asha Rao"),
+            7: mk(7, "The bridge reopened", time={"start": "2026-10-09T10:00:00", "when_text": "9 October"}),
+            8: mk(8, "The bridge was inspected", time={"start": "2026-10-07T10:00:00", "when_text": "7 October"})}
+
+
+def test_link_line_says_how_a_statement_connects_to_the_one_before():
+    from nishpaksh.sentences import link_line
+    by = _flow_items()
+    assert link_line(by[1], None) is None
+    assert "same speaker as #5" in link_line(by[6], by[5])
+    assert "answer to #5" in link_line(by[4], by[5])
+    assert "later than #8" in link_line(by[7], by[8]) and "9 October" in link_line(by[7], by[8])
+    assert "same subject as #2" in link_line(by[3], by[2])          # "permit"
+    assert link_line(by[8], by[1]) is None                          # a new point: no connective needed
+
+
+def test_the_plan_block_carries_the_links():
+    from nishpaksh import plan
+    from nishpaksh.sentences import link_line
+    items = _plan_items()
+    sec = {i["id"]: "say" for i in items if i["id"] in (6, 8, 9)}
+    pl = plan.build([i for i in items if i["id"] in sec], sec)
+    text = plan.block(pl, {i["id"]: i for i in items}, lambda i: f"#{i['id']} line", link_line)
+    assert "#8 line | LINK: same speaker as #6" in text
+    assert "#6 line\n" in text or text.rstrip().endswith("#6 line")       # the first of a paragraph has none
+    assert "LINK" not in plan.block(pl, {i["id"]: i for i in items}, lambda i: f"#{i['id']} line")
+
+
+def test_filler_openers_are_taken_off_only_when_the_sentence_still_passes():
+    from nishpaksh.sentences import polish, strip_filler
+    assert strip_filler("Furthermore, the bridge reopened on Thursday.") == "The bridge reopened on Thursday."
+    assert strip_filler("Notably, the court stayed the order on Friday.") == "The court stayed the order on Friday."
+    assert strip_filler("However, the company denied it.") is None            # contrast is a fact about the join
+    assert strip_filler("Meanwhile, the company denied it.") is None
+    by = _flow_items()
+    para = [[{"text": "Furthermore, police registered a case against the driver.", "ids": [1]}]]
+    out, done = polish(para, by, lambda s: True)
+    assert out[0][0]["text"] == "Police registered a case against the driver." and done["filler"] == 1
+    out, done = polish(para, by, lambda s: False)                              # a failed check keeps the writer's sentence
+    assert out[0][0]["text"].startswith("Furthermore") and done["filler"] == 0
+
+
+def test_a_stacked_sentence_is_split_into_one_claim_each():
+    from nishpaksh.narrative import _still_ok
+    from nishpaksh.sentences import polish, split_stacked
+    by = _flow_items()
+    ok = lambda s: _still_ok(s, by, set(), [])                                 # noqa: E731
+    sent = {"text": "Police registered a case against the driver; the transport department suspended the "
+                    "permit of Orion Travels.", "ids": [1, 2, 3]}
+    two = split_stacked(sent, by, ok)
+    assert [s["text"] for s in two] == ["Police registered a case against the driver.",
+                                        "The transport department suspended the permit of Orion Travels."]
+    assert [s["ids"] for s in two] == [[1], [2, 3]]
+    out, done = polish([[sent]], by, ok)
+    assert len(out[0]) == 2 and done["split"] == 1
+    # not split: a check that fails, parts, a quotation, a short two-statement sentence, a response and its answer
+    assert split_stacked(sent, by, lambda s: False) is None
+    assert split_stacked(dict(sent, parts=[{"text": "x", "ids": [1]}]), by, ok) is None
+    assert split_stacked({"text": "Police registered a case; the department suspended the permit.", "ids": [1, 2]}, by, ok) is None
+    resp = {"text": "The contractor used substandard cement, Asha Rao said; the company denied using substandard "
+                    "cement on any of its sites, Orion Builders said.", "ids": [5, 4]}
+    assert split_stacked(resp, by, ok) is None
+
+
+def test_flow_stats_count_what_code_can_still_see():
+    from nishpaksh.sentences import stats
+    by = _flow_items()
+    para = [{"text": "The bridge reopened.", "ids": [7]}, {"text": "The bridge was inspected.", "ids": [8]},
+            {"text": "Asha Rao asked for a CBI inquiry.", "ids": [6]},
+            {"text": " ".join(["word"] * 50) + ".", "ids": [1]}]
+    s = stats([para], by)
+    assert s == {"joins": 3, "alike": 1, "long": 1, "unlinked": 2}, s
+
+
+def test_the_article_carries_the_flow_counts_and_the_links_reach_the_writer():
+    from nishpaksh.narrative import write_narrative
+    items = _plan_items()
+    payload = {"headline": "x", "news": [3], "lead": [3], "sources": [], "background": [],
+               "established": [i for i in items if i["verdict"] == "corroborated"],
+               "undated": [i for i in items if i["verdict"] != "corroborated"], "contested": [], "context": [],
+               "timeline": []}
+    seen = {}
+
+    class Writer(FakeBackend):
+        def generate(self, model, prompt, json_mode, grounded):
+            if "Write the story below as ONE news article" in prompt:
+                seen["prompt"] = prompt
+                sents = [{"text": "Furthermore, " + i["text"] + (f", {i['speaker']} said" if i.get("speaker") else "") + ".",
+                          "ids": [i["id"]]} for i in items]
+                return json.dumps({"paragraphs": [sents]}), [], 100
+            return super().generate(model, prompt, json_mode, grounded)
+    nar = write_narrative(_router(None, Writer()), payload, set())
+    assert "| LINK:" in seen["prompt"]
+    assert set(nar["flow"]) >= {"filler", "split", "joins", "alike", "long", "unlinked"}
+    assert nar["flow"]["filler"] >= 1
+    assert not any(s["text"].startswith("Furthermore") for p in nar["paragraphs"] for s in p)

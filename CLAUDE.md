@@ -173,11 +173,34 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   same draft and fill prompts, so the free-tier call count is unchanged. `WRITER_VERSION` not raised (old pages keep
   their text). NOT RUN ON REAL STORIES (no data in the repo, no pytest / sqlalchemy in the sandbox): the unit tests
   and 6 new plan tests ran as plain Python; the 72 database-backed tests did not run.
-  Not yet built (next, in this order): measure which rules fail most on stored data (`tools/replay.py`: the `fixed:`
-  counts of phase 2 and `narrative.plan.moved` of phase 3 now say where the writer still goes wrong); sentence-level
-  grammar (one claim per sentence, repeated subjects, connection between consecutive sentences); titles learned from
-  outlets (a title seen before a name in 2+ independent outlets enters the registry, with dates; needs a migration if
-  stored in the database).
+  **Phase 4, done (owner: "continue from here and build the next phase", Oct 10 2026): sentence grammar** (`sentences.py`,
+  no model in it): what is inside a paragraph, same direction (GIVE the writer the connection, APPLY safe fixes by code, never
+  a new prohibition that drops a sentence). (1) GIVEN: `sentences.link_line(item, previous)` adds `| LINK: ...` to each
+  statement after the first of its paragraph (`plan.block(..., link=)`, and the fill prompt, using the plan's previous
+  statement): "contrast with #p: both versions in ONE sentence", "the answer to #p", "same speaker as #p: one \"said\" carries
+  both points, or end with \", X said.\"; do not begin with the name again", "later than #p (time)", "same subject as #p: refer
+  back to it, do not repeat its full name"; nothing for a statement that starts a new point. Both prompts explain LINK and tell
+  the writer never to open with Furthermore / Moreover / Additionally / Notably. (2) APPLIED after `shape_paragraphs`
+  (`sentences.polish`): `strip_filler` takes off an empty opening word (Furthermore, Moreover, Additionally, In addition,
+  Notably, Importantly, Interestingly, "It is worth noting that"; NOT However / Meanwhile / Then, which say contrast or time);
+  `split_stacked` makes "A; B" two sentences when it cites 2+ statements and is long (over 30 words, or 3+ statements): only
+  with exactly one ";", no parts, no quotation, no dispute and no partner (contradiction, response, updated figure) among
+  its ids, a second half that does not lean on the first, every statement clearly nearer one half (shared words; a tie =
+  no split) and each half passing on its own. EVERY change goes through `narrative._still_ok` = all the checks of
+  `_check_one` (without repair, counters left untouched) and is kept only if the sentence passes; otherwise the writer's
+  sentence stays. (`style.vary_attribution` still owns runs of one speaker's attributions: not duplicated.) (3) COUNTED, not
+  enforced (`sentences.stats`): `alike` (two sentences in a row opening with the same two words), `long` (past 45 words),
+  `unlinked` (nothing links a sentence to the one before: no shared subject / speaker, no leaning pronoun, no time or contrast
+  opening, no partner), `joins`; with `filler` and `split` (changes kept) they are the article's `narrative.flow`. Read them
+  with the `fixed:` counts (phase 2) and `narrative.plan.moved` (phase 3): a high `unlinked` or `alike` says the LINK lines
+  are not holding. No new model call. `WRITER_VERSION` not raised. NOT RUN ON REAL STORIES: 6 new tests ran as plain Python
+  (db and stemmer stubbed, no pytest / sqlalchemy in the sandbox); on the same harness the original code passes 78 and this
+  passes 84, with the same 12 environment failures (router / pytest.approx, db, stemmer stub); the 72 database-backed tests
+  did not run. `narrative.flow` is not yet printed by `tools/replay.py`.
+  Not yet built (next, in this order): MEASURE on stored data (`tools/replay.py`: `fixed:` counts, `plan.moved`, `flow`) and
+  tune the phase 2-4 rules against what really fails; titles learned from outlets (a title seen before a name in 2+
+  independent outlets enters the registry, with dates; needs a migration if stored in the database); a words-level pass
+  (house vocabulary, the same thing named the same way across sentences).
 - **Story layers (Oct 5 2026, owner):** a story has its own event (core) and CONTEXT: background,
   related events (a separate event the reports connect to this one: written as separate, never
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),

@@ -131,7 +131,8 @@ def main() -> None:
                 model=nar.get("model"), rejected=nar.get("rejected"), reasons=nar.get("reject_reasons"),
                 lead=pe.get("lead"), review=_review(local, sid),
                 paragraphs=[[x["text"] for x in para] for para in nar.get("paragraphs") or []],
-                section_keys=nar.get("section_keys"))
+                section_keys=nar.get("section_keys"), first_draft=nar.get("first_draft_reasons"),
+                plan=nar.get("plan"), flow=nar.get("flow"))
         except Exception as e:  # noqa: BLE001
             log.exception("story %s failed", sid)
             entry["error"] = repr(e)[:500]

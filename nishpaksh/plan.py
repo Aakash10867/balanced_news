@@ -230,8 +230,10 @@ def _open(made: list[Para], key: str, by_id: dict[int, dict]) -> None:
                 p.opens = "what is said; no speaker is named for it"
 
 
-def block(plan: list[Para], by_id: dict[int, dict], line_of) -> str:
-    """The plan as the writer reads it: SECTION, then PARAGRAPH n with how it opens, then its statements."""
+def block(plan: list[Para], by_id: dict[int, dict], line_of, link=None) -> str:
+    """The plan as the writer reads it: SECTION, then PARAGRAPH n with how it opens, then its statements.
+    `link(item, previous_item)` (sentences.link_line, phase 4) adds to each statement after the first how its
+    sentence connects to the one before."""
     out: list[str] = []
     last = None
     for p in plan:
@@ -243,7 +245,14 @@ def block(plan: list[Para], by_id: dict[int, dict], line_of) -> str:
         if p.opens:
             head += f" (opens with {p.opens})"
         out.append(head + ":")
-        out += [f"    {line_of(by_id[i])}" for i in p.ids if i in by_id]
+        prev = None
+        for i in p.ids:
+            if i not in by_id:
+                continue
+            line = f"    {line_of(by_id[i])}"
+            how = link(by_id[i], prev) if link else None
+            out.append(line + (f" | LINK: {how}" if how else ""))
+            prev = by_id[i]
     return "\n".join(out)
 
 

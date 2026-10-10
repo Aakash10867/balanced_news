@@ -27,7 +27,7 @@ import logging
 import re
 import threading
 
-from . import grammar, voice
+from . import grammar, sentences, voice
 from . import plan as planning
 from .grammar import (ATTRIBUTION_VERBS, CONNECTIVE, DISPUTE_MARKERS, FALSE_MARKERS,  # noqa: F401 (moved to grammar.py)
                       HEDGE_MARKERS)
@@ -62,6 +62,10 @@ Statements marked CONTEXT are not the story's own event: background, a separate 
 an explanation, a reaction, or what happens next.
 A statement may carry a SHAPE: the form of sentence to write it in (who is named, with which verb, what
 is added). Follow it; a statement with no SHAPE is stated plainly.
+A statement may also carry a LINK: how its sentence connects to the statement before it in the same
+paragraph (same speaker, an answer, a contrast, a later time, the same subject). Write the connection it
+says; a statement with no LINK starts a new point and needs no connecting word. Never open a sentence with
+"Furthermore", "Moreover", "Additionally" or "Notably": they carry no fact.
 
 Structure: the article is written in SECTIONS, in this order, so that a reader who knows nothing about
 the story first learns why it matters today, then how it came about, and then follows it as one
@@ -164,7 +168,7 @@ paragraph if needed) and fix each failed sentence (or drop it if it cannot pass)
 they are. Each statement says which planned paragraph it belongs to ("paragraph: n"): write the statements of
 one paragraph number together, one paragraph per number, and never mix numbers. The rest of the article is shown so you continue it: do not repeat what it already says, and
 do not introduce again a person it already introduced.
-Rules as before (a SHAPE on a statement is the form to write it in): only the statements given; no outlet named as a source; no number or speaker the
+Rules as before (a SHAPE on a statement is the form to write it in, a LINK says how its sentence connects to the one before): only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
 disputes give both versions and whose they are; a sentence joining statements of different statuses is
 written in two or three "parts", each with only its own ids (as before); a speaker is named once, then the surname or role
@@ -893,6 +897,19 @@ def _check_one(sent, by_id, banned, outlets, scope: set[str], style: bool, near:
     return sent, None
 
 
+def _still_ok(sent: dict, by_id, banned, outlets) -> bool:
+    """Does this (changed) sentence pass EVERY check, as it stands? For sentences.polish: a change is kept only
+    if so. The rejection counters are left as they were (a refused change is not a rejected sentence)."""
+    saved, last = dict(_reasons()), getattr(_TL, "last", None)
+    try:
+        fixed, ids = _check_one(sent, by_id, banned, outlets, set(), True, "")
+        return ids is not None and fixed.get("text") == sent.get("text")
+    finally:
+        _reasons().clear()
+        _reasons().update(saved)
+        _TL.last = last
+
+
 def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool = True,
                       keys: list[str] | None = None) -> tuple[list[list[dict]], list[dict], int]:
     """Validated sentences only. Sentences that depend on each other stand or fall together
@@ -1483,6 +1500,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     # the paragraph plan: code decides which statements share a paragraph, in what order, how each opens (plan.py)
     pl = planning.build(items + background, sec)
     at = {i: n for n, p_ in enumerate(pl) for i in p_.ids}
+    before = {b: a for p_ in pl for a, b in zip(p_.ids, p_.ids[1:])}     # the statement before, in its paragraph
 
     def lead_ok(paragraphs_, keys_) -> bool:
         if "news" not in keys_:
@@ -1503,7 +1521,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
             bg = ("This story is a later development of an earlier story on the site. The section "
                   "\"background\" holds facts from the earlier story: give at most TWO sentences of them.\n\n")
         prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg,
-                                      statements=planning.block(pl, by_id, _statement_line),
+                                      statements=planning.block(pl, by_id, _statement_line, sentences.link_line),
                                       length=_target_length(items), people=_people(items))
         drafted, model, failure = _call_writer(router, prompt)
 
@@ -1534,6 +1552,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
             banned=", ".join(sorted(banned)) or "(none)", article=_article_with_sections(drafted), people=_people(items),
             keys=", ".join(k for k in group if k == "news" or any(sec.get(i["id"]) == k for i in mine)),
             statements="\n".join(f"[{sec[i['id']]}] " + _statement_line(i) + f" | paragraph: {at[i['id']] + 1}"
+                                 + (f" | LINK: {how}" if (how := sentences.link_line(i, by_id.get(before.get(i['id'])))) else "")
                                  for i in mine),
             failed="\n".join(f'- "{str(f["sentence"].get("text") or "")}" | problem: {f["reason"]}' for f in bad) or "(none)")
         try:
@@ -1591,6 +1610,12 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
             keys = ["news"] + keys[:k] + keys[k + 1:]
     paragraphs, keys = group_speakers(paragraphs, keys, by_id)
     paragraphs, keys = shape_paragraphs(paragraphs, keys, by_id, join=not pl)
+    # sentence grammar (sentences.py): empty openers off, stacked sentences split, each change checked again
+    # by every check and kept only if it passes; then what is still visible is counted
+    flow: dict = {}
+    if paragraphs:
+        paragraphs, flow = sentences.polish(paragraphs, by_id, lambda s_: _still_ok(s_, by_id, banned, outlets))
+        flow.update(sentences.stats(paragraphs, by_id))
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     if rejected:
@@ -1598,7 +1623,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     return _finish(payload, paragraphs, also, by_id,
                    {"model": model, "rejected": rejected, "reject_reasons": dict(_reasons()), "failure": failure,
                     "first_draft_reasons": first_reasons, "repaired": bool(filled), "filled": filled,
-                    "section_keys": keys, "resumed": resumed, "plan": plan_stats,
+                    "section_keys": keys, "resumed": resumed, "plan": plan_stats, "flow": flow,
                     # the sections as drafted, kept with the story if the article falls short (not published)
                     "drafted": [[k, p] for k, p in drafted]})
 
