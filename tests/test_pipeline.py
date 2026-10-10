@@ -1778,13 +1778,12 @@ def test_follow_up_needs_a_lot_of_new_or_a_major_development(store, monkeypatch)
     assert not check(12, old + four, [["a"], ["b"], ["a"], ["b"], ["a"], ["b"]])
     # one major development carried by three outlets
     assert check(13, old + ["A court granted bail to the site engineer"], [["a"], ["b"], ["a", "b", "c"]])
-    # on the parent's own date: a major development carried by five outlets, nothing less
+    # on the parent's own date the same bar applies (no one-per-day limit)
     same_day = NOW - dt.timedelta(days=1)
-    assert not check(14, old + four, [["a", "b", "c", "d", "e"]] * 6, now=same_day + dt.timedelta(minutes=1))
-    assert not check(15, old + ["A court granted bail to the site engineer"], [[], [], ["a", "b", "c"]],
-                     now=same_day + dt.timedelta(minutes=1))
-    assert check(16, old + ["A court granted bail to the site engineer"], [[], [], ["a", "b", "c", "d", "e"]],
-                 now=same_day + dt.timedelta(minutes=1))
+    t = same_day + dt.timedelta(minutes=1)
+    assert not check(14, old + ["Rescue work ended", "Traffic was diverted"], [["a", "b", "c"]] * 4, now=t)
+    assert check(15, old + four, [["a"], ["b"], ["c"], ["a"], ["b"], ["c"]], now=t)
+    assert check(16, old + ["A court granted bail to the site engineer"], [[], [], ["a", "b", "c"]], now=t)
     # the judgement is kept per statement set: no second model call for the same statements
     calls = []
 
@@ -2052,6 +2051,30 @@ def test_the_desk_publishes_at_most_two_an_hour(store, monkeypatch):
     assert desk.published_this_hour(store, at) == 3
     stats = desk.work(store, _router(store, FakeBackend()), now=at)
     assert stats["tried"] == 0 and stats["published"] == []
+
+
+def test_topics_not_yet_written_today_go_first(store):
+    """Owner, Oct 10 2026: no limit on articles per topic per day, but a story whose topic has no article
+    published today is written before one whose topic does; the latter is never held back."""
+    from nishpaksh import desk
+    from nishpaksh.db import story_links
+    now = dt.datetime(2026, 10, 10, 8, 0)             # 13:30 IST, 10 Oct
+    today, yesterday = now - dt.timedelta(hours=2), now - dt.timedelta(days=1)
+    for sid in (1, 2, 3, 4, 5, 6):
+        store.exec(insert(stories).values(id=sid, created_at=yesterday, updated_at=yesterday, dirty=False,
+                                          qualifies=True, analysis={}))
+    for sid, at in ((1, today), (2, yesterday)):       # 1 written today, 2 yesterday
+        store.exec(insert(published).values(story_id=sid, version=1, updated_at=at, headline_en="h", headline_hi="h",
+                                            payload_en={}, payload_hi={}))
+    store.exec(insert(story_links).values(parent_id=1, child_id=3, created_at=yesterday, reason="[]"))   # follows 1 (today)
+    store.exec(insert(story_links).values(parent_id=2, child_id=4, created_at=yesterday, reason="[]"))   # follows 2 (yesterday)
+    store.exec(insert(story_links).values(parent_id=3, child_id=5, created_at=yesterday, reason="[]"))   # follows 3, which follows 1
+    assert desk.fresh_topics(store, [3, 4, 5, 6], now) == {4, 6}
+    # a follow-up written today covers its topic too, even when the parent is older
+    store.exec(insert(published).values(story_id=4, version=1, updated_at=today, headline_en="h", headline_hi="h",
+                                        payload_en={}, payload_hi={}))
+    assert desk.fresh_topics(store, [3, 5, 6], now) == {6}
+    assert desk.fresh_topics(store, [6], now - dt.timedelta(days=2)) == {6}
 
 
 def test_one_outlet_lines_are_written_in_purple():

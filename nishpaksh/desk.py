@@ -27,7 +27,7 @@ import time
 from sqlalchemy import func
 
 from .config import SETTINGS, database_url, gemini_api_keys, load_yaml
-from .db import Store, articles, diagnostics, insert, published, select, stories, utcnow
+from .db import Store, articles, diagnostics, insert, published, select, stories, story_links, utcnow
 from .router import GeminiBackend, Router
 
 log = logging.getLogger("nishpaksh.desk")
@@ -69,8 +69,57 @@ def published_this_hour(store: Store, now: dt.datetime | None = None) -> int:
     return int(row["n"]) if row else 0
 
 
+def _topic_roots(store: Store, ids: set[int]) -> dict[int, int]:
+    """{story id: the oldest story of its topic}: a development is followed up its parents' links
+    (story_links, or the candidate's own `edition.follows`) to the first article of the topic."""
+    links: dict[int, list[int]] = {}
+    for r in store.rows(select(story_links.c.parent_id, story_links.c.child_id)):
+        links.setdefault(r["child_id"], []).append(r["parent_id"])
+    follows = {r["id"]: ((r["analysis"] or {}).get("edition") or {}).get("follows")
+               for r in store.rows(select(stories.c.id, stories.c.analysis).where(stories.c.id.in_(list(ids) or [-1])))}
+    roots: dict[int, int] = {}
+    for sid in ids:
+        cur, seen = sid, {sid}
+        while True:
+            ups = [p for p in links.get(cur, []) if p not in seen]
+            if not ups and follows.get(cur) and follows[cur] not in seen:
+                ups = [follows[cur]]
+            if not ups:
+                break
+            cur = min(ups)              # the oldest parent: story ids only grow
+            seen.add(cur)
+            follows.setdefault(cur, None)
+        roots[sid] = cur
+    return roots
+
+
+def covered_topics(store: Store, now: dt.datetime | None = None) -> set[int]:
+    """Topics (root story ids) that already have an article published today (Indian date)."""
+    from .editions import IST
+    now = now or utcnow()
+    day = now.replace(tzinfo=dt.timezone.utc).astimezone(IST).replace(hour=0, minute=0, second=0, microsecond=0)
+    start = day.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    today = {r["story_id"] for r in store.rows(select(published.c.story_id).where(published.c.updated_at >= start))}
+    if not today:
+        return set()
+    return set(_topic_roots(store, today).values())
+
+
+def fresh_topics(store: Store, ids: list[int], now: dt.datetime | None = None) -> set[int]:
+    """Among `ids`, the stories whose topic has NO article published today: a new event, or a development
+    of an earlier article whose topic has not been written about today."""
+    covered = covered_topics(store, now)
+    if not covered:
+        return set(ids)
+    roots = _topic_roots(store, set(ids))
+    return {sid for sid in ids if roots.get(sid, sid) not in covered}
+
+
 def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
-    """Settled, qualifying, unpublished stories, most important first."""
+    """Settled, qualifying, unpublished stories. There is no limit on articles per topic per day (owner,
+    Oct 10 2026), but a story whose topic has no article yet today goes first (most important first);
+    stories on a topic already written about today follow, in the same order, so they are written
+    whenever no new topic is waiting and are never held back."""
     from . import editions, priority
     from .wire import independence_groups, independent
     now = now or utcnow()
@@ -97,7 +146,8 @@ def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
         if p and p.get("filler"):
             continue
         out.append((priority.value(p, groups, len({a["lang"] for a in arts})), groups, sid))
-    out.sort(reverse=True)
+    fresh = fresh_topics(store, [sid for _, _, sid in out], now)
+    out.sort(key=lambda t: (t[2] in fresh, t[0], t[1], t[2]), reverse=True)
     return [sid for _, _, sid in out]
 
 

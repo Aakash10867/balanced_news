@@ -76,7 +76,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     against its parent (`follow_up_ok`, one Flash-Lite call per statement set): 4+ new non-minor core
     statements (or half the parent's) carried by 3+ independent outlets, or a MAJOR development
     (arrest, FIR/charges, court order/verdict/bail, deaths, resignation/sacking, official decision,
-    result) carried by 3+. On the parent's IST date: only a major development carried by 5+.
+    result) carried by 3+. No per-day limit (owner, Oct 10 2026: it was 5+ major-only on the parent's IST date): the same bar holds all day. The desk (`desk.ready`) writes stories whose topic has NO article published today first (`fresh_topics`, topic = root of the story_links / `edition.follows` chain), then the rest by importance, so a topic already covered today is never held back, only queued behind new topics.
   - After 3 days the article moves to the `archive` branch (`pagearchive.py`, step in hourly.yml:
     `pages/<id>.json.gz`, `index/<YYYY-MM>.jsonl`) and is deleted from Supabase only after the push.
     The site and follow-ups read archived parents from the branch (raw.githubusercontent.com).

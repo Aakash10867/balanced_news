@@ -101,7 +101,6 @@ class Settings:
     settle_max_hours: float = 8            # ...or this long after the publishing rule was first met
     stale_after_hours: float = 36          # a story whose newest source is older than this is not written (old news)
     followup_min_outlets: int = 3          # independent outlets carrying the new information
-    followup_same_day_outlets: int = 5     # on the parent's own (IST) date: a major development only, and this many
     followup_min_new: int = 4              # "a lot of new": this many new non-minor core statements...
     followup_new_share: float = 0.5        # ...or this share of the parent's, whichever is more
 

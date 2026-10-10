@@ -12,8 +12,9 @@ Like a newspaper:
   * Reports about a published event that arrive later gather in a fresh candidate story (grouping
     redirects them, stories.py). The candidate is read like any story, and is published as a
     follow-up only if, against its parent, it carries a lot of new information or a major
-    development (`follow_up_ok`). On the parent's own date only a major development carried by
-    `followup_same_day_outlets` independent outlets will do: one article per topic per day.
+    development (`follow_up_ok`). The same bar holds on the parent's own date: there is no limit of
+    one article per topic per day (owner, Oct 10 2026); the desk only writes a topic not yet covered
+    today first (desk.ready).
   * A follow-up says what the parent already disputed or got wrong itself; the parent is never touched.
 """
 from __future__ import annotations
@@ -226,8 +227,7 @@ def follow_up_ok(store: Store, router: Router | None, sid: int, payload: dict, p
     """Is this story worth publishing as a follow-up of its (latest) parent? Either a lot of new
     information (`followup_min_new` new non-minor statements, or `followup_new_share` of the parent's,
     whichever is more) carried by `followup_min_outlets` independent outlets, or a major development
-    carried by that many. On the parent's own IST date: a major development only, carried by
-    `followup_same_day_outlets`. The decision is kept per statement set, so it costs one cheap model
+    carried by that many, on the parent's own IST date as on any other (no per-day limit). The decision is kept per statement set, so it costs one cheap model
     call per change in the story, not one per run."""
     from .verify import _story_context, support_summary
     now = now or utcnow()
@@ -257,11 +257,8 @@ def follow_up_ok(store: Store, router: Router | None, sid: int, payload: dict, p
                    math.ceil(SETTINGS.followup_new_share * len(_core_major(parent["payload_en"]))))
     written = _parse(parent.get("written_at"))
     same_day = written is not None and ist_date(written) == ist_date(now)
-    if same_day:
-        ok = major_reach >= SETTINGS.followup_same_day_outlets
-    else:
-        ok = ((len(new) >= need_new and len(carried) >= SETTINGS.followup_min_outlets)
-              or major_reach >= SETTINGS.followup_min_outlets)
+    ok = ((len(new) >= need_new and len(carried) >= SETTINGS.followup_min_outlets)
+          or major_reach >= SETTINGS.followup_min_outlets)
     rec.update(new=len(new), need_new=need_new, outlets=len(carried), major_outlets=major_reach,
                same_day=same_day, ok=ok, at=now.isoformat(timespec="minutes"))
     _save(store, sid, an, dict(ed, followup=rec))
