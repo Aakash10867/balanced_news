@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 
+from . import titles as _titles
 from .style import ROLES_LOWER, _candidates
 
 # verbs that say what KIND of act a statement is; each may be written only if the statements say so,
@@ -121,7 +122,7 @@ def pronouns(items: list[dict], min_outlets: int = 2) -> dict[str, str]:
     return out
 
 
-ROLE_ACRONYM = r"MLA|MP|CM|DGP|SP|SSP|IG|DIG|ACP|DCP|SHO|CEO|MLC"
+ROLE_ACRONYM = "|".join(sorted(set("MLA MP CM DGP SP SSP IG DIG ACP DCP SHO CEO MLC".split()) | set(_titles.role_acronyms())))
 
 
 def roles(text: str, people: dict[str, str]) -> dict[str, str]:

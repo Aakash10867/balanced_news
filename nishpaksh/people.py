@@ -25,6 +25,8 @@ TITLES = {
     "police", "station", "house", "sho", "deputy commissioner", "monsignor", "pope", "king", "queen", "prince",
     "princess", "justices", "amicus", "curiae", "patient", "spokesman", "sheikh", "emir", "chancellor", "foreign", "army", "air", "navy", "marshal", "admiral", "lieutenant-general",
 }
+from . import titles as _titles  # noqa: E402
+TITLES |= {w.lower() for w in _titles.person_title_words()}
 NOT_NAMES = {
     "the", "a", "an", "in", "on", "at", "after", "before", "while", "meanwhile", "however", "but", "and", "or", "of",
     "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february", "march",

@@ -1,0 +1,86 @@
+# Titles, roles and how they relate: ONE place for what style.py, people.py and voice.py used to keep
+# in three separate lists (owner, Oct 10 2026: names and titles kept going wrong because every module
+# had its own idea of what a title is).
+#
+# honorifics   words put before a name that say nothing about the job (stripped from a name).
+# roles        one entry per job. `forms` are the ways outlets write it (synonyms; the first is the one
+#              the article uses). `is_a` says it is a KIND OF another role (a CJI is a Supreme Court
+#              judge; a Supreme Court judge is not a CJI). `requires_any` is a condition: the form is read
+#              as this role only when one of these words appears in the article text ("Chief Justice"
+#              alone is the CJI only in an article about the Supreme Court / India). `ref` is how the
+#              article may point back at the person without a name ("the minister").
+#              `person: false` marks a word that may sit before a name but is no evidence of a person
+#              ("Union", "Deputy"): it is stripped, never used to decide something is a person.
+# Entries are added here by hand or from what outlets show (a title seen before a name in two or more
+# independent outlets); a model is never the only source for one.
+
+honorifics: [Mr, Mrs, Ms, Dr, Shri, Smt, Sri, Shrimati, Kumari, Sardar, Pandit, Swami, Maulana, Sheikh, Saint, Prof, Professor]
+
+# words that may open or sit inside a title but prove nothing alone
+qualifiers: [Union, Deputy, Chief, Vice, Senior, Additional, Joint, Assistant, Acting, Former, Late, Retired,
+             State, National, Home, Finance, Defence, External, Affairs, Foreign, Railway, Health, Education,
+             Law, Information, Broadcasting, Agriculture, Commerce, Industry, Rural, Urban, Social, Justice,
+             District, Station, House, Sub, Lieutenant, Air, Wing, Squadron, Group, Flight]
+
+roles:
+  - {id: prime_minister, forms: [Prime Minister, PM], ref: the prime minister}
+  - {id: chief_minister, forms: [Chief Minister, CM], ref: the chief minister}
+  - {id: deputy_chief_minister, forms: [Deputy Chief Minister, Deputy CM], is_a: minister, ref: the deputy chief minister}
+  - {id: union_minister, forms: [Union Minister], is_a: minister, ref: the minister}
+  - {id: minister, forms: [Minister], ref: the minister}
+  - {id: president, forms: [President], ref: the president}
+  - {id: vice_president, forms: [Vice President, Vice-President], ref: the vice president}
+  - {id: governor, forms: [Governor], ref: the governor}
+  - {id: lt_governor, forms: [Lieutenant Governor, Lt Governor, Lt. Governor, LG], is_a: governor, ref: the lieutenant governor}
+  - {id: speaker, forms: [Speaker], ref: the speaker}
+  - {id: leader_of_opposition, forms: [Leader of Opposition, Leader of the Opposition, LoP], ref: the Opposition leader}
+  - {id: cji, forms: [Chief Justice of India, CJI, Chief Justice], is_a: sc_judge, requires_any: [Supreme Court, India, CJI],
+     ref: the Chief Justice}
+  - {id: sc_judge, forms: [Supreme Court judge, Supreme Court justice, SC judge, Justice], requires_any: [Supreme Court, SC],
+     is_a: judge, ref: the judge}
+  - {id: hc_chief_justice, forms: [High Court Chief Justice, Chief Justice of the High Court], is_a: hc_judge, ref: the Chief Justice}
+  - {id: hc_judge, forms: [High Court judge, High Court justice, HC judge], is_a: judge, ref: the judge}
+  - {id: judge, forms: [Judge, Justice, Magistrate], ref: the judge}
+  - {id: attorney_general, forms: [Attorney General, AG], ref: the Attorney General}
+  - {id: solicitor_general, forms: [Solicitor General, SG], ref: the Solicitor General}
+  - {id: advocate, forms: [Advocate, Senior Advocate, Counsel, Lawyer], ref: the advocate}
+  - {id: mla, forms: [MLA, Member of Legislative Assembly], ref: the MLA}
+  - {id: mlc, forms: [MLC], ref: the MLC}
+  - {id: mp, forms: [MP, Member of Parliament], ref: the MP}
+  - {id: sarpanch, forms: [Sarpanch], ref: the sarpanch}
+  - {id: mayor, forms: [Mayor], ref: the mayor}
+  - {id: councillor, forms: [Councillor], ref: the councillor}
+  - {id: spokesperson, forms: [Spokesperson, Spokesman], ref: the spokesperson}
+  - {id: leader, forms: [Leader], ref: the leader}
+  - {id: cec, forms: [Chief Election Commissioner, CEC], is_a: election_commissioner, ref: the Chief Election Commissioner}
+  - {id: election_commissioner, forms: [Election Commissioner], ref: the Election Commissioner}
+  - {id: collector, forms: [District Collector, Collector, DM, District Magistrate], ref: the collector}
+  - {id: commissioner, forms: [Commissioner], ref: the commissioner}
+  - {id: secretary, forms: [Secretary, Home Secretary, Foreign Secretary], ref: the secretary}
+  - {id: dgp, forms: [Director General of Police, DGP], ref: the DGP}
+  - {id: igp, forms: [Inspector General, IG, IGP], ref: the IG}
+  - {id: dig, forms: [Deputy Inspector General, DIG], ref: the DIG}
+  - {id: ssp, forms: [Senior Superintendent of Police, SSP], is_a: sp, ref: the SSP}
+  - {id: sp, forms: [Superintendent of Police, SP], ref: the SP}
+  - {id: acp, forms: [Assistant Commissioner of Police, ACP], ref: the ACP}
+  - {id: dcp, forms: [Deputy Commissioner of Police, DCP], ref: the DCP}
+  - {id: sho, forms: [Station House Officer, SHO], ref: the SHO}
+  - {id: inspector, forms: [Inspector, Sub-Inspector, Sub Inspector, SI], ref: the inspector}
+  - {id: constable, forms: [Constable, Head Constable, Havildar], ref: the constable}
+  - {id: officer, forms: [Officer], ref: the officer}
+  - {id: general, forms: [General, Lieutenant General, Lieutenant-General, Major General, Major-General, Brigadier, Colonel, Major, Captain, Admiral, Air Marshal, Air Chief Marshal, Wing Commander, Squadron Leader, Group Captain, Marshal],
+     ref: the officer}
+  - {id: jawan, forms: [Jawan, Sepoy, Naik, Sergeant], ref: the jawan}
+  - {id: ceo, forms: [CEO, Chief Executive Officer], ref: the CEO}
+  - {id: chairman, forms: [Chairman, Chairperson, Chair], ref: the chairman}
+  - {id: director, forms: [Director, Managing Director, MD], ref: the director}
+  - {id: founder, forms: [Founder, Co-founder], ref: the founder}
+  - {id: professor, forms: [Professor, Prof], ref: the professor}
+  - {id: doctor, forms: [Doctor, Dr], ref: the doctor}
+  - {id: actor, forms: [Actor, Actress], ref: the actor}
+  - {id: coach, forms: [Coach, Head Coach], ref: the coach}
+  - {id: ambassador, forms: [Ambassador], ref: the ambassador}
+  - {id: senator, forms: [Senator], ref: the senator}
+  - {id: pope, forms: [Pope], ref: the Pope}
+  - {id: king, forms: [King, Queen, Prince, Princess, Emir], ref: the king}
+  - {id: chancellor, forms: [Chancellor], ref: the chancellor}

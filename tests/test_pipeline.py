@@ -2077,6 +2077,45 @@ def test_topics_not_yet_written_today_go_first(store):
     assert desk.fresh_topics(store, [6], now - dt.timedelta(days=2)) == {6}
 
 
+def test_titles_registry_synonyms_and_kinds():
+    """Owner, Oct 10 2026: one registry of titles (config/titles.yaml). CJI and Chief Justice of India are one
+    role; a CJI is a kind of Supreme Court judge, not the same; "Chief Justice" alone is the CJI only in a
+    Supreme Court / India context."""
+    from nishpaksh import titles
+    assert titles.relation("CJI", "Chief Justice of India") == "same"
+    assert titles.relation("CJI", "Supreme Court judge", "Supreme Court") == "a_is_b"
+    assert titles.relation("Supreme Court judge", "CJI", "Supreme Court") == "b_is_a"
+    assert titles.relation("CJI", "Chief Minister") is None
+    assert titles.role_of("Chief Justice", "The Supreme Court heard") == "cji"
+    assert titles.role_of("Chief Justice", "Kerala") is None
+    assert titles.title_before("Assam Chief Minister Himanta Biswa Sarma said", "Himanta Biswa Sarma") == "Assam Chief Minister"
+    assert titles.title_before("It rained on Monday. Supreme Court judge Ujjal Bhuyan said", "Ujjal Bhuyan") == "Supreme Court judge"
+    assert titles.title_before("The Commission for Air Quality Management Kumar said", "Kumar") == ""
+    assert titles.strip("Assam Chief Minister Himanta Biswa Sarma") == "Himanta Biswa Sarma"
+
+
+def test_a_person_is_introduced_once_then_named_by_surname():
+    """Owner, Oct 10 2026: a surname before the person was introduced becomes the full introduction (title and
+    full name); every later mention is the surname alone, whatever the writer wrote."""
+    from nishpaksh.style import shorten_names
+    P = [[{"text": "Bhuyan questioned the order on Monday."},
+          {"text": "Supreme Court judge Ujjal Bhuyan said the bench had erred."},
+          {"text": "Judge Ujjal Bhuyan added that the law was clear."},
+          {"text": "Supreme Court judge Bhuyan later wrote a note."}]]
+    shorten_names(P, ["Ujjal Bhuyan"], ["Supreme Court judge Ujjal Bhuyan said the bench erred"])
+    assert [s["text"] for s in P[0]] == [
+        "Supreme Court judge Ujjal Bhuyan questioned the order on Monday.", "Bhuyan said the bench had erred.",
+        "Bhuyan added that the law was clear.", "Bhuyan later wrote a note."]
+    # no title anywhere: the full name; the statements supply a name the writer shortened away
+    Q = [[{"text": "Verma said funds were released, and Verma added that more would follow."}]]
+    shorten_names(Q, ["Rajesh Verma"], ["Minister Rajesh Verma said funds were released"])
+    assert Q[0][0]["text"].startswith("Minister Rajesh Verma said funds") and "and Verma added" in Q[0][0]["text"]
+    # two people with one surname are left alone
+    T = [[{"text": "Modi spoke."}, {"text": "Narendra Modi and Lalit Modi were named."}]]
+    shorten_names(T, [], ["Prime Minister Narendra Modi"])
+    assert [s["text"] for s in T[0]] == ["Modi spoke.", "Narendra Modi and Lalit Modi were named."]
+
+
 def test_one_outlet_lines_are_written_in_purple():
     """Owner, Oct 7 2026: a line only one outlet reports goes into the article too, shown purple ("one
     outlet only"): it may be an exclusive, or wrong. Never as plain fact."""

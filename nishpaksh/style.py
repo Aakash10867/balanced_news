@@ -52,6 +52,11 @@ And Also During Since As If Though Although Then Yesterday Today Tomorrow Beside
 Addressing Reacting Under With Without Among Amid Despite Unlike Like Both Several Some Other Reports
 Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February March April May June July
 August September October November December Once Now Here There This That These Those It Its""".split())
+# one registry for titles (config/titles.yaml, titles.py): the lists above are only what was here before it
+from . import titles as _titles  # noqa: E402
+TITLES |= set(_titles.person_title_words())     # not the bare qualifiers ("Law", "Health": "Law Commission" is no person)
+PERSON_TITLES |= set(_titles.person_title_words())
+ROLES_LOWER |= set(_titles.role_nouns())
 SPEECH = r"(?:said|says|told|added|stated|alleged|claimed|denied|announced|noted|asked|urged|wrote)"
 NAME = r"[A-Z][a-z]+(?:-[A-Z]?[a-z]+)?|al-[A-Z][a-z]+"
 
@@ -85,25 +90,53 @@ def people(text: str, speakers: list[str] | tuple = ()) -> dict[str, str]:
     return {n: s for n, s in found.items() if last.count(s.lower()) == 1 and s.lower() not in firsts}
 
 
-def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()) -> None:
-    """Full name and title at the first mention, surname after (in place)."""
+def intro_forms(names: dict[str, str], texts: list[str]) -> dict[str, str]:
+    """{full name: the form that introduces the person}: the longest title phrase any statement or sentence
+    writes right before the name (\"Assam Chief Minister Himanta Biswa Sarma\"), or the full name alone."""
+    out = {}
+    for full in names:
+        best = ""
+        for t in texts:
+            tb = _titles.title_before(t, full)
+            if len(tb) > len(best):
+                best = tb
+        out[full] = f"{best} {full}" if best else full
+    return out
+
+
+def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = (), sources: list[str] | tuple = ()) -> None:
+    """A person is introduced once and then named by surname, whatever the writer wrote (owner, Oct 10 2026: names
+    went wrong in both directions). By code, in reading order:
+      * the first mention is the full introduction (title and full name); a bare surname or \"Title Surname\" that
+        comes before the person has been introduced is expanded to it
+      * every later mention is the surname alone: a full name or a title in front of the surname is dropped
+    Only for persons code has evidence for (`people`): places and bodies are never touched."""
     text = " ".join(s["text"] for p in paragraphs for s in p)
-    names = people(text, speakers)
+    # the statements know the full names the writer may have shortened away (\"Verma\" for \"Rajesh Verma\"); only the
+    # persons the article names, in full or by surname, are kept
+    names = {full: short for full, short in people(" ".join([text, *sources]), speakers).items()
+             if re.search(rf"(?<![\w-]){re.escape(short)}(?![\w-])", text)}
     if not names:
         return
+    intro = intro_forms(names, [text, *sources])
     title = rf"(?:(?:the\s+)?(?:[A-Z][a-z]+\s+)?(?:(?:{'|'.join(map(re.escape, TITLES))})\s+)+)?"
     seen: set[str] = set()
+    pats = {full: re.compile(rf"{title}(?<![\w-])(?:(?P<full>{re.escape(full)})|(?P<sur>{re.escape(short)}))(?![\w-])")
+            for full, short in names.items()}
 
     def shorten(t: str) -> str:
         for full, short in names.items():
-            pat = re.compile(rf"{title}\b{re.escape(full)}\b")
-
             def sub(m, full=full, short=short):
-                if full not in seen:
+                if m.group("full"):
+                    if full not in seen:
+                        seen.add(full)
+                        return m.group(0)
+                    return short
+                if full not in seen:               # a surname before the person was introduced
                     seen.add(full)
-                    return m.group(0)
-                return short
-            t = pat.sub(sub, t)
+                    return intro[full]
+                return short                        # \"Chief Minister Sarma\" after the introduction
+            t = pats[full].sub(sub, t)
         return t
 
     for para in paragraphs:
@@ -289,6 +322,6 @@ def polish(payload: dict) -> None:
     text = " ".join(s["text"] for p in paras for s in p)
     names = people(text, speakers)
     refs = Refs(names, pronouns(items), roles(text, names))
-    shorten_names(paras, speakers)
+    shorten_names(paras, speakers, [i.get("text") or "" for i in items])
     by_id = {i["id"]: i for i in items if "id" in i}
     vary_attribution(paras, refs, lambda sent: [(by_id.get(i) or {}).get("speaker") for i in sent.get("ids") or []])

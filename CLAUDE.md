@@ -102,6 +102,25 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   per article). 3.5 Flash-Lite is the writer's first claim: reading stops at 250 left, analysis at 120,
   page at 80 (models.yaml `keep`); writer calls try up to 16 times so they reach it. Quota usage is
   saved as increments (`Store.quota_add`), since both jobs share the keys.
+- **Grammar, not rules (owner, Oct 10 2026; direction agreed, built in phases).** Prohibitions added after each failure
+  fail more than half the time with the small models, and a failed sentence is dropped, so more checks can lower the
+  publish rate. Direction: CONSTRAIN WHAT THE WRITER IS GIVEN (code owns names, paragraph plan, sentence shapes; the
+  model only phrases) rather than only checking what it wrote. Two independent grammars: (1) by statement status
+  (established / developing / unchecked / one outlet / disputed / false: allowed sentence shapes and markers per
+  status), (2) by article structure: article > sections > paragraphs > paragraph links > sentences > words (titles
+  and names included). Only words, names and sentence shapes are checkable by code; "flow" is not a rule, it comes from
+  a sound paragraph plan (one subject per paragraph, set order).
+  **Phase 1, done: titles registry** (`config/titles.yaml`, `titles.py`): one list of honorifics and roles with
+  synonyms (`CJI` = `Chief Justice of India`), kinds (`is_a`: a CJI is a Supreme Court judge, never the same) and
+  conditions (`requires_any`: "Chief Justice" alone is the CJI only in a Supreme Court / India text). `style.py`,
+  `people.py`, `voice.py` take their title words from it (they used to keep three private lists). `style.shorten_names`
+  now owns every mention by code: the FIRST mention is the full introduction (title + full name, the title taken from
+  the statements), a bare surname or "Title Surname" before that is expanded to it, every LATER mention is the surname
+  alone, whatever the writer wrote; full names come from the statements too, not only from the article text.
+  Not yet built (next phases, in this order): measure which rules fail most on stored data (`tools/replay.py`); status
+  tables and sentence-shape checks by code; paragraph plan in code (one call per paragraph group, with the previous
+  paragraph's last sentence); titles learned from outlets (a title seen before a name in 2+ independent outlets enters
+  the registry, with dates; needs a migration if stored in the database).
 - **Story layers (Oct 5 2026, owner):** a story has its own event (core) and CONTEXT: background,
   related events (a separate event the reports connect to this one: written as separate, never
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),
