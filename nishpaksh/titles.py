@@ -12,7 +12,7 @@ is the single place they ask:
     strip(phrase)                a name without its titles
 
 Pure code, no model. The derived word sets (TITLE_WORDS, PERSON_TITLE_WORDS, ROLE_NOUNS, ROLE_ACRONYMS) are what the
-other modules union into their own lists, so adding a title is one line in titles.yaml.
+other modules union into their own lists, so adding a title is one line in titles.yaml (or, learned from the outlets by learn.py, in titles_learned.yaml).
 """
 from __future__ import annotations
 
@@ -22,10 +22,31 @@ import re
 from .config import load_yaml
 
 
+def _learned(have: dict) -> list[dict]:
+    """The learned entries that are well formed and not already in the hand-written registry (by id or by form)."""
+    try:
+        raw = load_yaml("titles_learned.yaml").get("roles") or []
+    except Exception:  # noqa: BLE001
+        return []
+    taken = {f.lower() for r in have.values() for f in r.get("forms") or []}
+    out = []
+    for r in raw:
+        if (isinstance(r, dict) and isinstance(r.get("id"), str) and r["id"] not in have
+                and isinstance(r.get("forms"), list) and r["forms"] and all(isinstance(f, str) and f.strip() for f in r["forms"])
+                and not any(f.lower() in taken for f in r["forms"])):
+            out.append(dict(r))
+            taken.update(f.lower() for f in r["forms"])
+    return out
+
+
 @functools.lru_cache(maxsize=1)
 def _data() -> dict:
     d = load_yaml("titles.yaml")
     roles = {r["id"]: r for r in d.get("roles") or []}
+    # titles learned from the outlets (learn.py appends them to config/titles_learned.yaml): added after the hand-written
+    # ones, which win; a missing or broken file adds nothing and never stops the job
+    for r in _learned(roles):
+        roles[r["id"]] = r
     # form (lower case) -> role ids, in file order
     forms: dict[str, list[str]] = {}
     for rid, r in roles.items():

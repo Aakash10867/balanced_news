@@ -3615,3 +3615,89 @@ def test_the_article_carries_the_flow_counts_and_the_links_reach_the_writer():
     assert set(nar["flow"]) >= {"filler", "split", "joins", "alike", "long", "unlinked"}
     assert nar["flow"]["filler"] >= 1
     assert not any(s["text"].startswith("Furthermore") for p in nar["paragraphs"] for s in p)
+
+
+# ---------------------------------------------------------------- titles learned from the outlets (owner, Oct 10 2026)
+
+def _learn_corpus():
+    texts = {1: ("The Hindu", "India won after Skipper Rohit Sharma scored a century. The skipper said he was happy. "
+                              "Yesterday Rohit Sharma met the press."),
+             2: ("Indian Express", "The side was led by Skipper Harmanpreet Kaur, and the skipper praised the bowlers."),
+             3: ("Deccan Herald", "Analyst Rohit Sharma was not there. The report said the match was close. "
+                                  "Observers noted that Analyst Harmanpreet Kaur agreed.")}
+    arts = [{"id": i, "outlet": o, "text": t} for i, (o, t) in texts.items()]
+    names = {1: {"Rohit Sharma"}, 2: {"Harmanpreet Kaur"}, 3: {"Rohit Sharma", "Harmanpreet Kaur"}}
+    return arts, names
+
+
+def test_a_word_before_names_in_two_independent_outlets_is_learned():
+    from nishpaksh import learn
+    arts, names = _learn_corpus()
+    ev = learn.scan(arts, names, {1: "g1", 2: "g2", 3: "g3"})
+    assert set(ev["Skipper"]["names"]) == {"Rohit Sharma", "Harmanpreet Kaur"} and ev["Skipper"]["lower"] >= 2
+    assert "Yesterday" not in ev                     # a sentence opener stands before names too, but only at the start
+    got = learn.pick(ev, dt.date(2026, 10, 10))
+    assert [e["forms"] for e in got] == [["Skipper"]]     # "Analyst" never appears in lower case: not a common noun here
+    assert got[0]["ref"] == "the skipper" and got[0]["learned"] == "2026-10-10" and got[0]["id"] == "learned_skipper"
+
+
+def test_one_group_or_one_name_is_not_enough():
+    from nishpaksh import learn
+    arts, names = _learn_corpus()
+    same = learn.scan(arts, names, {1: "g1", 2: "g1", 3: "g1"})            # one wire copy, however many outlets
+    assert learn.pick(same) == []
+    one_name = learn.scan(arts, {1: {"Rohit Sharma"}, 2: set(), 3: set()}, {1: "g1", 2: "g2", 3: "g3"})
+    assert learn.pick(one_name) == []
+
+
+def test_the_learned_file_is_only_appended_to_and_never_duplicates():
+    import tempfile
+    from pathlib import Path
+    from nishpaksh import learn
+    arts, names = _learn_corpus()
+    entries = learn.pick(learn.scan(arts, names, {1: "g1", 2: "g2", 3: "g3"}), dt.date(2026, 10, 10))
+    path = Path(tempfile.mkdtemp()) / "titles_learned.yaml"
+    assert learn.append(entries, path) == 1
+    first = path.read_text(encoding="utf-8")
+    assert first.startswith("# Titles learned") and first.rstrip().endswith("}") and "rejected: []" in first
+    assert learn.append(entries, path) == 0                                  # the same word is not added twice
+    assert path.read_text(encoding="utf-8") == first
+    import yaml
+    doc = yaml.safe_load(first)
+    assert doc["roles"][0]["forms"] == ["Skipper"] and doc["roles"][0]["seen"] == ["Harmanpreet Kaur", "Rohit Sharma"]
+
+
+def test_the_registry_reads_learned_titles_but_the_hand_written_ones_win():
+    from nishpaksh import titles
+    real = titles.load_yaml
+    hand = {"roles": [{"id": "minister", "forms": ["Minister"]}]}
+    learned = {"roles": [{"id": "learned_captain", "forms": ["Captain"], "ref": "the captain", "learned": "2026-10-10"},
+                         {"id": "learned_minister", "forms": ["Minister"]},          # already a hand-written form
+                         {"id": "bad", "forms": []}, "not a dict", {"forms": ["NoId"]}]}
+    titles.load_yaml = lambda name: hand if name == "titles.yaml" else learned
+    titles._data.cache_clear()
+    try:
+        d = titles._data()
+        assert set(d["roles"]) == {"minister", "learned_captain"}
+        assert titles.role_of("Captain") == "learned_captain" and titles.ref_for("learned_captain") == "the captain"
+        assert titles.role_of("Minister") == "minister"
+        assert titles.title_before("said Captain Rohit Sharma", "Rohit Sharma") == "Captain"
+        titles.load_yaml = lambda name: hand if name == "titles.yaml" else (_ for _ in ()).throw(FileNotFoundError(name))
+        titles._data.cache_clear()
+        assert set(titles._data()["roles"]) == {"minister"}                     # no learned file: nothing breaks
+    finally:
+        titles.load_yaml = real
+        for f in (titles._data, titles.title_words, titles.person_title_words, titles.role_nouns, titles.role_acronyms):
+            f.cache_clear()
+
+
+def test_a_struck_out_word_is_never_learned_again():
+    from nishpaksh import learn
+    arts, names = _learn_corpus()
+    ev = learn.scan(arts, names, {1: "g1", 2: "g2", 3: "g3"})
+    real = learn.rejected
+    learn.rejected = lambda: {"skipper"}
+    try:
+        assert learn.pick(ev) == []
+    finally:
+        learn.rejected = real

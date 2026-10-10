@@ -109,6 +109,12 @@ jobs:
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: python -m nishpaksh.desk --minutes 20
+      - name: Learn titles from the outlets
+        # appends titles seen before names in 2+ independent outlets to config/titles_learned.yaml and commits that
+        # one file (nishpaksh/learn.py); used from the next run on. Never stops the hour.
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+        continue-on-error: true
+        run: bash .github/scripts/learn_titles.sh
       - name: Save the newsroom
         # always, once a copy was loaded: whatever this hour did is kept, even after a failed step
         id: save

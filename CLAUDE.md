@@ -197,10 +197,30 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (db and stemmer stubbed, no pytest / sqlalchemy in the sandbox); on the same harness the original code passes 78 and this
   passes 84, with the same 12 environment failures (router / pytest.approx, db, stemmer stub); the 72 database-backed tests
   did not run. `narrative.flow` is not yet printed by `tools/replay.py`.
+  **Titles learned from the outlets, done (owner: "I want the titles list saved on GitHub, learned titles appended to that
+  document", Oct 10 2026)** (`learn.py`, `config/titles_learned.yaml`, `.github/scripts/learn_titles.sh`; no model). The
+  hand-written `config/titles.yaml` cannot hold every title, so the job appends the ones the news shows. A word is learned
+  only on counting: it stands in the MIDDLE of a sentence (after a lower-case word; sentence openers like "Yesterday" are
+  out) directly before the full name of a person statements are attributed to (`claims.attributed_to`, bodies out), in 2+
+  independent groups of outlets (`wire.independence_groups`) and 2+ outlets, before 2+ different people, and the same word
+  also appears in lower case in the articles 2+ times (a common noun, not a place, party or company); known titles,
+  honorifics, openers and the person's own name words are skipped; at most 20 new entries a run. The entry is one line
+  `{id: learned_<word>, forms: [Word], ref: the <word>, learned: <date>, seen: [up to 3 names]}`, only ever APPENDED
+  (`learn.append`, text append, header kept). `titles._data` reads it after the hand-written file (the hand-written entry
+  wins by id and by form; a missing, broken or malformed file adds nothing and never stops the job), so every module that asks
+  `titles` (names pass, people, voice) knows the title from the next run on. The job step "Learn titles from the outlets" in
+  `hourly.yml` (after the desk, before saving the newsroom, `continue-on-error`) runs `learn_titles.sh`: pull the branch,
+  `python -m nishpaksh.learn`, commit ONLY `config/titles_learned.yaml`, push to the branch the job runs on with the job's
+  token (`contents: write` was already there); a push by that token starts no other workflow; if the branch is protected
+  the push fails harmlessly and the hour goes on. A WRONG ENTRY: delete its line and put its word in `rejected:` at the
+  top of the file (`learn.rejected`), so it is never learned again. The hand-written list already holds most roles
+  (Captain, Chancellor, Coach, Inspector ...), so expect few entries at first. Dates are kept because people change
+  office; no claim about who holds which office is stored. Run by hand: `python -m nishpaksh.learn --dry-run`. NOT RUN ON
+  REAL DATA: 5 new tests ran as plain Python (89 pass on the stubbed harness, the same 12 environment failures); the
+  database read in `learn.run` and the git step have not run.
   Not yet built (next, in this order): MEASURE on stored data (`tools/replay.py`: `fixed:` counts, `plan.moved`, `flow`) and
-  tune the phase 2-4 rules against what really fails; titles learned from outlets (a title seen before a name in 2+
-  independent outlets enters the registry, with dates; needs a migration if stored in the database); a words-level pass
-  (house vocabulary, the same thing named the same way across sentences).
+  tune the phase 2-4 rules against what really fails; a words-level pass (house vocabulary, the same thing named the same
+  way across sentences). The titles' dates are recorded but not yet used to drop a title after an office changes hands.
 - **Story layers (Oct 5 2026, owner):** a story has its own event (core) and CONTEXT: background,
   related events (a separate event the reports connect to this one: written as separate, never
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),
