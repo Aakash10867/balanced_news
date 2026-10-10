@@ -340,6 +340,38 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   neighbouring paragraphs of up to 2 sentences are joined (up to 4); a paragraph over 6 sentences is cut into
   paragraphs of 2-5 where the speaker or subject changes, never before a sentence leaning on the one before;
   the lead is left as written; sentences are never changed.
+- **A fact is not written twice in two colours (owner, Oct 11 2026: "J&K is an integral part of India, reiterating that
+  J&K is an integral part of India, Bedi said", green half and purple half).** Cause: the short plain line and an outlet's
+  line with a speaker were "covered" (`relate`), the short one was better supported, so `fold_covered` set `adds_to` and the
+  writer was told to write both "in two parts"; the long line added only the speaker and "reiterated". Now (1)
+  `compose.adds_detail`: `adds_to` only when the long line adds a number, a name (the speaker's own name and a name only
+  capitalised by its place in the sentence aside) or a content word (`MIN_EXTRA_WORDS` = 1; speaker and speech verbs,
+  `SPEECH_ONLY`, are not content); otherwise it folds like any covered line (the long line keeps its speaker and its own
+  colour, the short line's outlets are added as sources). (2) `sentences.collapse_same_parts` (in `polish`, counted as
+  `flow.merged`): a sentence whose parts `relate` calls same / covers is collapsed to one (the covering part stays, lead-in
+  "adding that / reiterating that" taken off, ids joined = the weakest colour), kept only if every check passes. Not
+  handled: two parts that say the same in other words that code calls "different" ("appropriate" / "fitting"); the
+  dupes step has to propose those. Old articles are closed and keep their text. Tests ran on a stubbed harness
+  (no sqlalchemy / snowball / pytest in the sandbox), not on real stories.
+- **Blue = one outlet in full, others in part (owner, Oct 11 2026).** A line that got folded (`fold_covered`) keeps its own
+  verdict, but when its sentence then shows superscripts of 2+ INDEPENDENT outlets (its own group plus the groups of the
+  lines folded into it, `item.groups` + `item.folded_groups`, owner groups and wire copies merged as everywhere) "one
+  outlet only" would contradict what the reader sees. `narrative.shade` returns `partial`: RANK 3, between unverified
+  (2) and single (4) (ranks renumbered: disputed 5, false 6; `recap.CLASS_RANK` the same), writer label "ONE OUTLET IN
+  FULL, OTHERS IN PART", grammar shape plain like single. Only for verdict unverified/pending with n_sources <= 1; it
+  never makes anything green. Site: `--par` #2b62ad (text), `--bar-p` #4a86d6, `.s.partial`, legend and bar (key `p`
+  after teal, in `feed.bar_counts` and the site's own `barCounts`), English and Hindi labels, `sw.js` cache np-main-31.
+  Articles already published keep their old class (closed); `editions.mature` recomputes by `shade`, so a stored
+  page whose items lack `groups` / `folded_groups` stays purple.
+- **Synonyms live in `config/synonyms.yaml` (owner, Oct 11 2026: "where they can keep on adding").** `relate.SYNONYM` is
+  built from it (`load_synonym_groups`, `build_synonyms`; a word stays in the first group it appears in; a missing or
+  broken file falls back to `DEFAULT_SYNONYM_GROUPS`). One line per group; the header of the file states the rule: only
+  words that mean the same in a news sentence, never different severity (injured / killed, arrested / questioned). Added
+  on Oct 11: appropriate fitting apt suitable proper; terror terrorist terrorists terrorism; probe investigation inquiry;
+  protest demonstration agitation; and a few more. A lead sentence's pair that differs by a name only (a plain line
+  "... against India" and a line with a speaker, "... , Bedi stated") is NOT merged by code: the speaker's name stops
+  `covers`, which also protects a statement's attribution from being folded away; the topic step (`dupes.py`) proposes
+  such pairs and the model is asked twice.
 - **What already happened is not written as scheduled (owner, Oct 9 2026, story 13792: "The 57th GST Council
   meeting is scheduled to take place ... on Thursday, October 8", written after it).** `compose.drop_past_schedules`
   before writing: a line saying something "is scheduled / set / expected to", "will be held / take place ...",

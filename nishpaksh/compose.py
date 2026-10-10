@@ -150,6 +150,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "id": cid, "kind": c["kind"],
             "text": relation_text(c["rel"], texts) if c["kind"] == "relation" else tidy(c["text"]),
             "verdict": c["verdict"], "n_sources": len(s["support_groups"]), "n_articles": s["n_articles"],
+            "groups": [str(g) for g in s["support_groups"]],
             "supported_by": s["support_perspectives"], "denied_by": s["deny_perspectives"],
             "conflicts_with": [x for x in (c["conflicts"] or []) if x in canon],
             "time": _interval(members.get(cid, [])) if c["kind"] == "event" else None,
@@ -557,6 +558,35 @@ def drop_past_schedules(payload: dict, now: dt.datetime | None = None) -> int:
     return len(gone)
 
 
+# words that only say HOW a thing was said, never what: a long line that differs from a short one by these (and the
+# speaker's name) adds nothing (owner, Oct 11 2026: "J&K is integral, reiterating that J&K is integral, Bedi said")
+SPEECH_ONLY = {"said", "say", "says", "stated", "state", "states", "added", "add", "adds", "noted", "note", "notes",
+               "reiterated", "reiterate", "reaffirmed", "reaffirm", "repeated", "repeat", "stressed", "stress",
+               "emphasised", "emphasized", "emphasise", "emphasize", "underlined", "underline", "asserted", "assert",
+               "declared", "declare", "affirmed", "affirm", "maintained", "maintain", "insisted", "insist",
+               "told", "remarked", "observed", "reportedly", "according", "saying", "adding", "stating", "noting"}
+MIN_EXTRA_WORDS = 1     # content words beyond the short line (after speaker and speech words) that count as a detail
+
+
+def adds_detail(big: dict, small: dict) -> bool:
+    """Does the detailed line say anything the short line does not? True for a number, a name (the speaker's own
+    name aside) or MIN_EXTRA_WORDS content words more. A speaker and a speech verb are not a detail: the two lines are
+    then one fact, and the long one (which keeps its speaker) tells it (fold_covered)."""
+    from .frames import _stem
+    from .relate import Profile
+    pb, ps = Profile(big.get("text") or ""), Profile(small.get("text") or "")
+    if pb.nums - ps.nums:
+        return True
+    skip = {_stem(w) for w in SPEECH_ONLY}
+    for src in (big, small):
+        skip |= {_stem(w.lower()) for w in re.findall(r"[A-Za-z][\w'-]*", str(src.get("speaker") or ""))}
+    if (pb.names - ps.names - ps.roots) - skip:     # a name capitalised only by its place in the sentence is not new
+        return True
+    common = pb.names & ps.names
+    extra = ((pb.roots - common) - (ps.roots - common)) - skip - pb.names
+    return len(extra) >= MIN_EXTRA_WORDS
+
+
 def fold_covered(payload: dict, covered: dict) -> int:
     """A line another line says in full, with more (relate.py), is not written on its own: its outlets
     are listed as sources of the detailed line, which keeps its own colour (it never borrows their
@@ -570,13 +600,23 @@ def fold_covered(payload: dict, covered: dict) -> int:
             # the short line is better supported than the detailed one (four outlets vs one): both are
             # kept and written as one sentence in two parts, so its fact can take its own colour
             # (owner, Oct 7 2026); otherwise there is nothing to gain and the short line folds away
-            if RANK.get(shade(items[small]), 2) < RANK.get(shade(items[big]), 2) and not items[big].get("adds_to"):
+            # ...but only when the detailed line really adds a fact (adds_detail): a speaker and a speech verb are
+            # not one, and "X, adding that X, Bedi said" is the same fact written twice in two colours (owner,
+            # Oct 11 2026); then it folds like any covered line
+            if (RANK.get(shade(items[small]), 2) < RANK.get(shade(items[big]), 2) and not items[big].get("adds_to")
+                    and adds_detail(items[big], items[small])):
                 items[big]["adds_to"] = small
                 continue
             have = {s["url"] for s in items[big].get("sources") or []}
             items[big]["sources"] = list(items[big].get("sources") or []) + [
                 s for s in items[small].get("sources") or [] if s["url"] not in have]
             items[big].setdefault("covers_ids", []).append(small)
+            # the independent outlets of the folded line, kept: shade() then shows "partial", not "one outlet only"
+            # (owner, Oct 11 2026), when the sentence's own superscripts name more than one independent outlet
+            items[big]["folded_groups"] = sorted(set(items[big].get("folded_groups") or [])
+                                                 | {str(g) for g in items[small].get("groups") or []}
+                                                 | ({str(g) for g in items[big].get("groups") or []}
+                                                    if items[small].get("groups") else set()))
             gone.add(small)
     if gone:
         for key in ("undated", "established", "contested", "context"):

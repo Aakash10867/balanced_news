@@ -101,6 +101,70 @@ def _leans(text: str) -> bool:
     return bool(narrative.LEANS_BACK.search(t) or narrative.PRONOUN_START.match(t))
 
 
+# "..., reiterating that X" / "..., adding that X": the words that bring a second part in
+LEAD_IN = re.compile(r"(?i)^[,;\s]*(?:and\s+)?(?:(?:adding|reiterating|noting|stating|saying|stressing|emphasi[sz]ing|"
+                     r"asserting|declaring|affirming|reaffirming|repeating|insisting|maintaining)\s+(?:that\s+)?)?")
+
+
+def _bare(text: str) -> str:
+    return LEAD_IN.sub("", text.strip()).strip()
+
+
+def _sentence_case(text: str) -> str:
+    t = text.strip()
+    t = re.sub(r"[,;:\s]+$", "", t) if not re.search(r"[.!?][\"”'’)]*$", t) else t
+    t = t[:1].upper() + t[1:] if t else t
+    return t if re.search(r"[.!?][\"”'’)]*$", t) else t + "."
+
+
+def collapse_same_parts(sent: dict, check) -> dict | None:
+    """A sentence in coloured parts whose parts say the SAME fact (owner, Oct 11 2026: \"Jammu and Kashmir is an
+    integral part of India, reiterating that Jammu and Kashmir is an integral part of India, Bedi said.\", the two
+    halves green and purple) says it once: the part the other covers goes, its statements join the one that stays
+    (the sentence takes the weakest colour of them, never a stronger one). `check` = every check of narrative.py;
+    a collapse that does not pass it leaves the sentence as the writer wrote it. Returns the new sentence or None."""
+    from .relate import relate
+    parts = [p for p in sent.get("parts") or [] if isinstance(p, dict)]
+    if len(parts) < 2:
+        return None
+    parts = [dict(p, ids=list(p.get("ids") or [])) for p in parts]
+    changed = True
+    dropped = False
+    while changed and len(parts) > 1:
+        changed = False
+        for i in range(len(parts)):
+            for j in range(i + 1, len(parts)):
+                r = relate(_bare(parts[i]["text"]), _bare(parts[j]["text"]))
+                if r not in ("same", "a_covers_b", "b_covers_a"):
+                    continue
+                # the covering part stays; for \"same\" the longer one (it keeps the speaker)
+                keep, gone = (i, j) if r == "a_covers_b" else (j, i) if r == "b_covers_a" else \
+                    ((i, j) if len(parts[i]["text"]) >= len(parts[j]["text"]) else (j, i))
+                parts[keep]["ids"] = list(dict.fromkeys(parts[keep]["ids"] + parts[gone]["ids"]))
+                del parts[gone]
+                changed = dropped = True
+                break
+            if changed:
+                break
+    if not dropped:
+        return None
+    done_parts = []
+    for k, p in enumerate(parts):
+        t = p["text"].strip()
+        if k == 0:
+            t = _bare(t)
+            t = t[:1].upper() + t[1:]
+        if k == len(parts) - 1:
+            t = _sentence_case(t)               # the sentence ends with a full stop, not the comma of a dropped part
+        done_parts.append(dict(p, text=t))
+    out = {k: v for k, v in sent.items() if k != "parts"}
+    out["text"] = " ".join(p["text"] for p in done_parts)
+    out["ids"] = list(dict.fromkeys(x for p in done_parts for x in p["ids"]))
+    if len(done_parts) > 1:
+        out["parts"] = done_parts
+    return out if check(out) else None
+
+
 def split_stacked(sent: dict, by_id: dict, check) -> list[dict] | None:
     """One sentence of two clauses joined by \";\" that cites several statements, as two sentences with one claim
     each. Only when: no parts, no quotation, exactly one \";\", the sentence is long (or cites 3+ statements), no
@@ -149,8 +213,8 @@ def split_stacked(sent: dict, by_id: dict, check) -> list[dict] | None:
 def polish(paragraphs: list, by_id: dict, check) -> tuple[list, dict]:
     """The paragraphs with the empty openers taken off and the stacked sentences split, every change checked
     again (`check(sentence) -> bool`, all of narrative's checks) and kept only if it passes. Returns
-    (paragraphs, {\"filler\": n, \"split\": n})."""
-    done = {"filler": 0, "split": 0}
+    (paragraphs, {\"filler\": n, \"split\": n, \"merged\": n})."""
+    done = {"filler": 0, "split": 0, "merged": 0}
     out: list = []
     for para in paragraphs:
         new: list = []
@@ -158,6 +222,11 @@ def polish(paragraphs: list, by_id: dict, check) -> tuple[list, dict]:
             if not isinstance(sent, dict) or not sent.get("text"):
                 new.append(sent)
                 continue
+            if sent.get("parts"):
+                one = collapse_same_parts(sent, check)
+                if one:
+                    sent = one
+                    done["merged"] += 1
             if not sent.get("parts"):
                 bare = strip_filler(sent["text"])
                 if bare:

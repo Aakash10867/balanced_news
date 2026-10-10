@@ -42,17 +42,40 @@ must also new current currently""".split()}
 # the same meaning in other words, as Indian news writes it (owner, Oct 7 2026): each group is read as
 # ONE word. Kept short and hand-checked: words that differ in meaning are never grouped ("injured" and
 # "killed" stay apart; so do "arrested" and "questioned").
-SYNONYM_GROUPS = [
+# The list lives in config/synonyms.yaml so it can keep growing without touching code (owner, Oct 11 2026: "where
+# they can keep on adding"); this short list is only the fallback when that file is missing or broken.
+DEFAULT_SYNONYM_GROUPS = [
     "injured hurt wounded", "killed dead died death deaths die dies lost", "arrested detained nabbed apprehended",
     "attack attacked assault assaulted", "vessel ship boat", "blast explosion", "fire blaze",
     "police cops", "rescued saved", "missing untraceable", "village hamlet", "residents locals",
     "part section portion", "collapsed caved",
 ]
-SYNONYM = {}
-for _g in SYNONYM_GROUPS:
-    _ws = [_stem(w) for w in _g.split()]
-    for _w in _ws:
-        SYNONYM[_w] = _ws[0]
+
+
+def load_synonym_groups() -> list[str]:
+    """The groups of config/synonyms.yaml (one string of space-separated words each); the built-in list when the
+    file is missing, broken or empty. A line that is not a string of 2+ words is skipped."""
+    try:
+        from .config import load_yaml
+        raw = (load_yaml("synonyms.yaml") or {}).get("groups") or []
+        groups = [" ".join(str(g).lower().split()) for g in raw if isinstance(g, str) and len(str(g).split()) >= 2]
+        return groups or list(DEFAULT_SYNONYM_GROUPS)
+    except Exception:  # noqa: BLE001  (a missing or malformed file must never stop a run)
+        return list(DEFAULT_SYNONYM_GROUPS)
+
+
+def build_synonyms(groups: list[str]) -> dict[str, str]:
+    """{stemmed word: the group's first stemmed word}. A word already in an earlier group stays there."""
+    out: dict[str, str] = {}
+    for g in groups:
+        ws = [_stem(w) for w in g.split()]
+        for w in ws:
+            out.setdefault(w, ws[0])
+    return out
+
+
+SYNONYM_GROUPS = load_synonym_groups()
+SYNONYM = build_synonyms(SYNONYM_GROUPS)
 
 SAME_WORDS = 0.8        # share of root words for "same" (with the same numbers and names)
 COVER_WORDS = 0.85      # share of the short line's root words the detailed line must contain

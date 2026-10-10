@@ -2415,9 +2415,11 @@ def test_a_covered_line_is_folded_into_the_detailed_one_without_lending_it_colou
     p = {"timeline": [[big, small]], "undated": [], "established": [], "contested": [], "context": []}
     assert fold_covered(p, {"2": 1}) == 1
     assert p["timeline"] == [[big]] and [s["url"] for s in big["sources"]] == ["a", "b"]
-    # the short line better supported: both kept, written as one sentence in two parts
-    big = {"id": 1, "verdict": "unverified", "n_sources": 1, "sources": [{"url": "a"}], "text": "x"}
-    small = {"id": 2, "verdict": "corroborated", "n_sources": 4, "sources": [{"url": "b"}], "text": "y"}
+    # the short line better supported AND the detailed line adds a fact: both kept, one sentence in two parts
+    big = {"id": 1, "verdict": "unverified", "n_sources": 1, "sources": [{"url": "a"}],
+           "text": "12 crew members, including 11 Indian nationals, were injured in the attack."}
+    small = {"id": 2, "verdict": "corroborated", "n_sources": 4, "sources": [{"url": "b"}],
+             "text": "12 crew members were injured in the attack."}
     p = {"timeline": [[big, small]], "undated": [], "established": [], "contested": [], "context": []}
     assert fold_covered(p, {"2": 1}) == 0 and big["adds_to"] == 2 and big["verdict"] == "unverified"
 
@@ -2521,7 +2523,7 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
     assert not any("payload" in q for q in reads if "FROM published" not in q)  # pictures: links only
     assert json.loads((out / "en.json").read_text(encoding="utf-8"))["stories"][0]["id"] == row["story_id"]
     assert feed.bar_counts([[{"class": "single"}, {"class": "disputed", "parts": [
-        {"class": "established"}, {"class": "disputed"}]}]]) == {"e": 1, "v": 0, "o": 1, "d": 1, "r": 0, "u": 0}
+        {"class": "established"}, {"class": "disputed"}]}]]) == {"e": 1, "v": 0, "p": 0, "o": 1, "d": 1, "r": 0, "u": 0}
 
 
 def test_feed_card_picture_is_the_lead_reports_and_never_an_outlets_default(store, tmp_path):
@@ -3701,3 +3703,102 @@ def test_a_struck_out_word_is_never_learned_again():
         assert learn.pick(ev) == []
     finally:
         learn.rejected = real
+
+
+def test_a_speaker_and_a_speech_verb_are_not_a_detail_so_the_same_fact_is_not_written_twice():
+    """Owner, Oct 11 2026: "J&K is an integral part of India, reiterating that J&K is an integral part of India,
+    Bedi said." The long line only adds the speaker and "reiterated": it folds into nothing new, no two parts."""
+    from nishpaksh.compose import adds_detail, fold_covered
+    small = {"id": 2, "verdict": "corroborated", "n_sources": 4, "sources": [{"url": "b"}],
+             "text": "Jammu and Kashmir is an integral and inalienable part of India."}
+    big = {"id": 1, "verdict": "unverified", "n_sources": 1, "sources": [{"url": "a"}], "speaker": "Bedi",
+           "text": "Bedi reiterated that Jammu and Kashmir is an integral and inalienable part of India."}
+    assert not adds_detail(big, small)
+    p = {"timeline": [[big, small]], "undated": [], "established": [], "contested": [], "context": []}
+    assert fold_covered(p, {"2": 1}) == 1 and "adds_to" not in big and p["timeline"] == [[big]]
+    assert [s["url"] for s in big["sources"]] == ["a", "b"] and big["verdict"] == "unverified"
+    # a real detail (a number, a name, a content word) still counts
+    assert adds_detail({"text": "12 crew members, including 11 Indians, were injured.", "speaker": None},
+                       {"text": "12 crew members were injured."})
+    assert adds_detail({"text": "Police arrested Ram Singh from his house in Patna.", "speaker": None},
+                       {"text": "Police arrested Ram Singh in Patna."})
+
+
+def test_parts_that_say_the_same_fact_collapse_to_one_and_different_facts_stay_in_parts():
+    from nishpaksh.sentences import collapse_same_parts
+    ok = lambda s: True  # noqa: E731
+    parts = [{"text": "Jammu and Kashmir is an integral and inalienable part of India,", "ids": [1]},
+             {"text": "reiterating that Jammu and Kashmir is an integral and inalienable part of India, Bedi said.",
+              "ids": [2]}]
+    sent = {"text": " ".join(p["text"] for p in parts), "ids": [1, 2], "parts": parts}
+    one = collapse_same_parts(sent, ok)
+    assert one["text"] == "Jammu and Kashmir is an integral and inalienable part of India, Bedi said."
+    assert sorted(one["ids"]) == [1, 2] and "parts" not in one
+    # a check that fails keeps the writer's sentence
+    assert collapse_same_parts(sent, lambda s: False) is None
+    # two different facts in two parts are left alone
+    diff = [{"text": "Twelve crew members were injured in the attack,", "ids": [5]},
+            {"text": "11 of them Indian nationals.", "ids": [6]}]
+    assert collapse_same_parts({"text": " ".join(p["text"] for p in diff), "ids": [5, 6], "parts": diff}, ok) is None
+
+
+def test_polish_counts_the_merged_parts():
+    from nishpaksh.sentences import polish
+    parts = [{"text": "India will make no distinction between those who sponsor terrorism and those who mastermind it,",
+              "ids": [3]},
+             {"text": "adding that India will make no distinction between sponsors and masterminds of terrorism, "
+                      "Bedi said.", "ids": [4]}]
+    sent = {"text": " ".join(p["text"] for p in parts), "ids": [3, 4], "parts": parts}
+    out, done = polish([[sent]], {}, lambda s: True)
+    assert done["merged"] == 1 and out[0][0]["text"].endswith("Bedi said.") and "adding that" not in out[0][0]["text"]
+
+
+def test_a_line_with_folded_outlets_is_blue_not_one_outlet_only():
+    """Owner, Oct 11 2026: a line one independent outlet reports in full, with shorter lines from other independent
+    outlets folded into it, shows several superscripts: it is "partial" (blue), not "one outlet only" (purple)."""
+    from nishpaksh.compose import fold_covered
+    from nishpaksh.feed import bar_counts
+    from nishpaksh.narrative import CLASS, RANK, STATUS_LABEL, shade
+    big = {"id": 1, "verdict": "unverified", "n_sources": 1, "groups": ["g1"], "sources": [{"url": "a"}], "speaker": "Bedi",
+           "text": "Bedi said India will make no distinction between sponsors and masterminds of terrorism."}
+    small = {"id": 2, "verdict": "unverified", "n_sources": 2, "groups": ["g2", "g3"], "sources": [{"url": "b"}],
+             "text": "India will make no distinction between sponsors and masterminds of terrorism."}
+    assert shade(big) == "single"
+    p = {"timeline": [[big, small]], "undated": [], "established": [], "contested": [], "context": []}
+    assert fold_covered(p, {"2": 1}) == 1
+    assert shade(big) == "partial" and STATUS_LABEL["partial"].startswith("ONE OUTLET IN FULL")
+    # between "not cross-checked" and "one outlet only"; never stronger than green, never weaker than purple
+    assert RANK["unverified"] < RANK["partial"] < RANK["single"] and CLASS[RANK["partial"]] == "partial"
+    assert bar_counts([[{"class": "partial"}]])["p"] == 1
+    # the same outlet group again is not another independent outlet: it stays purple
+    same = {"id": 3, "verdict": "unverified", "n_sources": 1, "groups": ["g1"], "sources": [{"url": "c"}],
+            "text": "India will make no distinction between sponsors and masterminds of terrorism."}
+    big2 = {"id": 4, "verdict": "unverified", "n_sources": 1, "groups": ["g1"], "sources": [{"url": "a"}], "speaker": "Bedi",
+            "text": "Bedi said India will make no distinction between sponsors and masterminds of terrorism."}
+    p2 = {"timeline": [[big2, same]], "undated": [], "established": [], "contested": [], "context": []}
+    fold_covered(p2, {"3": 4})
+    assert shade(big2) == "single"
+
+
+def test_synonyms_come_from_the_yaml_file_and_a_broken_file_falls_back():
+    from unittest import mock
+    from nishpaksh import relate
+    # "appropriate" / "fitting" (owner, Oct 11 2026) and "terror" / "terrorist" are one word each
+    assert relate.relate("Any terrorist attack will receive an appropriate response.",
+                         "Any terrorist attack will receive a fitting response.") == "same"
+    assert relate.relate("Any terror attack will receive a fitting response.",
+                         "Any terrorist attack will receive a fitting response.") == "same"
+    # words that differ in meaning stay apart
+    assert relate.SYNONYM.get(relate._stem("injured")) != relate.SYNONYM.get(relate._stem("killed"))
+    assert relate.SYNONYM.get(relate._stem("arrested")) != relate.SYNONYM.get(relate._stem("questioned"))
+    # a word in two groups stays in the first
+    syn = relate.build_synonyms(["firm company", "strong firm stern"])
+    assert syn[relate._stem("firm")] == syn[relate._stem("company")] != syn[relate._stem("stern")]
+    # missing / broken / empty file: the built-in list
+    with mock.patch("nishpaksh.config.load_yaml", side_effect=FileNotFoundError):
+        assert relate.load_synonym_groups() == relate.DEFAULT_SYNONYM_GROUPS
+    with mock.patch("nishpaksh.config.load_yaml", return_value={"groups": [3, "one", None]}):
+        assert relate.load_synonym_groups() == relate.DEFAULT_SYNONYM_GROUPS
+    with mock.patch("nishpaksh.config.load_yaml", return_value={"groups": ["Good  Fine", "x"]}):
+        assert relate.load_synonym_groups() == ["good fine"]
+

@@ -1,0 +1,47 @@
+# Words that mean the same thing, read as ONE word when two statements are compared (nishpaksh/relate.py: SYNONYM,
+# used by relate, disputes, and everything that asks "is this the same fact?").
+#
+# HOW TO ADD: one line per group, words separated by spaces, lower case, single words only (the loader stems them,
+# so "arrested" also covers "arrests"; list the different forms that stemming does not join, like terror / terrorist).
+# Add a line whenever two outlets say one fact in different words and the pipeline kept them as two statements.
+#
+# THE RULE: only words that mean the SAME thing in a news sentence. Never group words that differ in meaning or in
+# severity: injured / killed, arrested / questioned, accused / convicted, dead / missing, probe / arrest,
+# raised / cut. A wrong group can merge two different facts, which is worse than a missed one. When unsure, leave it
+# out: a missed pair is still found by the topic step (dupes.py) and asked twice of the model.
+#
+# A word may stand in one group only (the first one wins). A broken line or file is ignored, never stops a run.
+groups:
+  # people and harm
+  - injured hurt wounded
+  - killed dead died death deaths die dies lost
+  - arrested detained nabbed apprehended
+  - rescued saved
+  - missing untraceable
+  - residents locals
+  - police cops
+
+  # events
+  - attack attacked assault assaulted
+  - terror terrorist terrorists terrorism
+  - blast explosion
+  - fire blaze
+  - collapsed caved
+  - accident mishap
+  - protest demonstration agitation
+  - probe investigation inquiry
+  - launch launched begin began start started commence commenced
+
+  # things
+  - vessel ship boat
+  - village hamlet
+  - part section portion
+  - firm company
+  - govt government
+
+  # how something is described: the same judgement in other words ("an appropriate response" / "a fitting response")
+  - appropriate fitting apt suitable proper
+  - strong stern tough
+  - large big huge
+  - increase hike rise rises rose raise raised
+  - decrease decline dip fell

@@ -54,6 +54,7 @@ STATUS: dict[str, Shape] = {
     "established": Shape("confirmed by independent outlets", _PLAIN),
     "developing": Shape("reported by several outlets, still developing", _PLAIN),
     "unverified": Shape("not cross-checked", _PLAIN),
+    "partial": Shape("one outlet in full, others in part (blue)", _PLAIN),
     "single": Shape("one outlet only (purple)", _PLAIN),
     "disputed": Shape("sources disagree", "both versions, each with its holder",
                       DISPUTE_MARKERS + ATTRIBUTION_VERBS, plain=False),

@@ -36,20 +36,28 @@ from .router import QuotaExhausted, Router
 log = logging.getLogger(__name__)
 WRITER_VERSION = 11   # part of the cache key: pages written by an older writer are rewritten once
 
-RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "single": 3,
-        "disputed": 4, "false": 5}
-CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "single", 4: "disputed", 5: "false"}
+RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pending": 2, "partial": 3, "single": 4,
+        "disputed": 5, "false": 6}
+CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "partial", 4: "single", 5: "disputed", 6: "false"}
 STATUS_LABEL = {"corroborated": "ESTABLISHED", "confirmed": "ESTABLISHED", "developing": "REPORTED",
                 "disputed": "DISPUTED", "unverified": "REPORTED", "pending": "REPORTED", "false": "FALSE",
-                "single": "ONE OUTLET ONLY"}
+                "single": "ONE OUTLET ONLY", "partial": "ONE OUTLET IN FULL, OTHERS IN PART"}
 
 
 def shade(i: dict) -> str:
     """The colour a statement is shown in. Reported by ONE independent outlet only, and not disputed or
-    shown false: purple, "one outlet only" (owner, Oct 7 2026): it may be an exclusive, or wrong.
+    shown false: purple, "one outlet only" (owner, Oct 7 2026): it may be an exclusive, or wrong. The same, but
+    other independent outlets reported shorter lines that were folded into it: "partial" (owner, Oct 11 2026).
     Everything else: its verdict."""
     v = i.get("verdict") or "pending"
     if v in ("unverified", "pending") and (i.get("n_sources") or 0) <= 1:
+        # one outlet reports the full line, but lines it covers (compose.fold_covered) came from other independent
+        # outlets, and the sentence shows all their numbers: "one outlet only" would contradict what the reader sees
+        # (owner, Oct 11 2026): its own colour, "partial". Only independent groups count (owner groups, wire copies
+        # merged), the same way as everywhere else.
+        if len(set(map(str, i.get("groups") or [])) | set(map(str, i.get("folded_groups") or []))) >= 2 \
+                and i.get("folded_groups"):
+            return "partial"
         return "single"
     return v
 

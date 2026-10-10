@@ -25,7 +25,7 @@ ORDER = ["politics", "justice", "business", "world", "life", "more"]
 MORE = ("Also today", "और ख़बरें")
 PER_CALL = 10
 MAX_WORDS = 40
-CLASS_RANK = {"established": 0, "developing": 1, "unverified": 2, "single": 3, "disputed": 4, "false": 5}
+CLASS_RANK = {"established": 0, "developing": 1, "unverified": 2, "partial": 3, "single": 4, "disputed": 5, "false": 6}
 
 PROMPT = """You write the {section} part of a newspaper's short brief of the day.
 

@@ -34,7 +34,7 @@ from .db import Store, articles, claims, published, select, utcnow
 log = logging.getLogger(__name__)
 
 CARD_SENTENCES = 9          # the card fades out after about this much text
-BAR = {"established": "e", "corroborated": "e", "confirmed": "e", "single": "o", "disputed": "d",
+BAR = {"established": "e", "corroborated": "e", "confirmed": "e", "partial": "p", "single": "o", "disputed": "d",
        "false": "r", "unverified": "u", "pending": "u", "developing": "v"}
 
 
@@ -52,8 +52,8 @@ def _sentence_classes(paragraphs: list) -> list[str]:
 
 
 def bar_counts(paragraphs: list) -> dict[str, int]:
-    """How many pieces of the article are green / teal / purple / amber / red / brown (the card's bar)."""
-    c = {"e": 0, "v": 0, "o": 0, "d": 0, "r": 0, "u": 0}
+    """How many pieces of the article are green / teal / blue / purple / amber / red / brown (the card's bar)."""
+    c = {"e": 0, "v": 0, "p": 0, "o": 0, "d": 0, "r": 0, "u": 0}
     for k in _sentence_classes(paragraphs):
         c[BAR.get(k, "u")] += 1
     return c
